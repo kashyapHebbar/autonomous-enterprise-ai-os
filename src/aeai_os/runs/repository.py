@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import replace
 from datetime import UTC, datetime
 from threading import RLock
@@ -11,12 +12,21 @@ from aeai_os.runs.models import (
     ArtifactRecord,
     EvaluationResultRecord,
     GraphNodeRecord,
+    RunCheckpointRecord,
     RunRecord,
 )
 from aeai_os.schemas.enums import ArtifactType, RunStatus
 
 
 class RunNotFoundError(KeyError):
+    pass
+
+
+class GraphNodeNotFoundError(KeyError):
+    pass
+
+
+class RunCheckpointNotFoundError(KeyError):
     pass
 
 
@@ -30,6 +40,7 @@ class InMemoryRunRepository:
         self._graph_nodes: dict[str, list[GraphNodeRecord]] = {}
         self._events: dict[str, list[AgentEventRecord]] = {}
         self._evaluations: dict[str, list[EvaluationResultRecord]] = {}
+        self._checkpoints: dict[str, RunCheckpointRecord] = {}
 
     def create_run(self, task: str, metadata: dict[str, Any] | None = None) -> RunRecord:
         normalized_task = task.strip()
@@ -121,16 +132,43 @@ class InMemoryRunRepository:
             return list(self._artifacts[run_id])
 
     def add_graph_node(self, node: GraphNodeRecord) -> GraphNodeRecord:
+        return self.upsert_graph_node(node)
+
+    def upsert_graph_node(self, node: GraphNodeRecord) -> GraphNodeRecord:
         with self._lock:
             self.get_run(node.run_id)
-            self._graph_nodes[node.run_id].append(node)
+            nodes = self._graph_nodes[node.run_id]
+            for index, existing in enumerate(nodes):
+                if existing.id == node.id:
+                    nodes[index] = node
+                    break
+            else:
+                nodes.append(node)
             return node
+
+    def get_graph_node(self, run_id: str, node_id: str) -> GraphNodeRecord:
+        with self._lock:
+            self.get_run(run_id)
+            for node in self._graph_nodes[run_id]:
+                if node.id == node_id:
+                    return node
+            raise GraphNodeNotFoundError(f"Graph node not found: {node_id}")
+
+    def list_graph_nodes(self, run_id: str) -> list[GraphNodeRecord]:
+        with self._lock:
+            self.get_run(run_id)
+            return list(self._graph_nodes[run_id])
 
     def add_event(self, event: AgentEventRecord) -> AgentEventRecord:
         with self._lock:
             self.get_run(event.run_id)
             self._events[event.run_id].append(event)
             return event
+
+    def list_events(self, run_id: str) -> list[AgentEventRecord]:
+        with self._lock:
+            self.get_run(run_id)
+            return list(self._events[run_id])
 
     def add_evaluation(self, evaluation: EvaluationResultRecord) -> EvaluationResultRecord:
         with self._lock:
@@ -140,6 +178,29 @@ class InMemoryRunRepository:
                 record = replace(record, created_at=utc_now())
             self._evaluations[evaluation.run_id].append(record)
             return record
+
+    def save_checkpoint(self, run_id: str, state: dict[str, Any]) -> RunCheckpointRecord:
+        with self._lock:
+            self.get_run(run_id)
+            now = utc_now()
+            existing = self._checkpoints.get(run_id)
+            checkpoint = RunCheckpointRecord(
+                run_id=run_id,
+                state=deepcopy(state),
+                version=(existing.version + 1 if existing else 1),
+                created_at=(existing.created_at if existing else now),
+                updated_at=now,
+            )
+            self._checkpoints[run_id] = checkpoint
+            return deepcopy(checkpoint)
+
+    def get_checkpoint(self, run_id: str) -> RunCheckpointRecord:
+        with self._lock:
+            self.get_run(run_id)
+            try:
+                return deepcopy(self._checkpoints[run_id])
+            except KeyError as exc:
+                raise RunCheckpointNotFoundError(f"Run checkpoint not found: {run_id}") from exc
 
 
 def utc_now() -> datetime:

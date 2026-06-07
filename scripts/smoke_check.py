@@ -63,7 +63,41 @@ def main() -> int:
     if updated_run.dataset_artifact_id != artifact.id:
         raise AssertionError("Dataset artifact was not attached to the run.")
 
-    print("Smoke check passed: scaffold and health payload are valid.")
+    from aeai_os.agents.base import AgentInput, AgentOutput
+    from aeai_os.agents.registry import build_default_registry
+    from aeai_os.orchestration.graph import ExecutionGraph, ExecutionNode
+    from aeai_os.orchestration.service import OrchestratorService
+
+    class SmokeAgent:
+        agent_type = "data_retrieval"
+
+        def execute(self, agent_input: AgentInput) -> AgentOutput:
+            return AgentOutput(
+                status="succeeded",
+                summary=f"Profiled dataset for {agent_input.run_id}.",
+                artifacts=["smoke_schema_profile"],
+            )
+
+    service = OrchestratorService(
+        repository=repository,
+        registry=build_default_registry(),
+        agents={"data_retrieval": SmokeAgent()},
+    )
+    graph = ExecutionGraph(
+        run_id=run.id,
+        nodes=[
+            ExecutionNode(
+                id="profile",
+                agent="data_retrieval",
+                task="Profile the procurement dataset.",
+            )
+        ],
+    )
+    result = service.execute_run(run.id, graph)
+    if result.status != RunStatus.COMPLETED:
+        raise AssertionError(f"Unexpected orchestrator result: {result.status}")
+
+    print("Smoke check passed: scaffold, run lifecycle, and orchestrator are valid.")
     return 0
 
 

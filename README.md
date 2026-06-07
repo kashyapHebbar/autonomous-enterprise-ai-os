@@ -12,7 +12,7 @@ The first vertical slice is a procurement analytics workflow:
 
 ## Project Status
 
-Current Jira milestone: `SCRUM-8 - Implement API gateway and run lifecycle model`
+Current Jira milestone: `SCRUM-9 - Build LangGraph orchestrator with durable execution`
 
 The architecture blueprint is in [docs/architecture.md](docs/architecture.md).
 Local development instructions are in [docs/development.md](docs/development.md).
@@ -50,6 +50,13 @@ Core API endpoints:
 - `POST /runs/{run_id}/datasets/reference` attaches an external dataset URI.
 - `POST /runs/{run_id}/datasets/upload` uploads a local dataset file.
 - `GET /runs/{run_id}/artifacts` lists artifacts for a run.
+
+Core orchestration capabilities:
+
+- `LangGraphRunState` captures task, plan, outputs, artifacts, approvals, evaluations, and errors.
+- `OrchestratorService` executes dependency-ordered agent graphs with repository checkpoints.
+- Failed nodes retry without resetting completed graph work.
+- Approval-required nodes pause the run and resume after an explicit decision.
 
 Run the full local stack:
 

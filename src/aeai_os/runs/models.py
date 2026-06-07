@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from aeai_os.schemas.enums import ArtifactType, RunStatus
+from aeai_os.schemas.enums import ArtifactType, GraphNodeStatus, RunStatus
 
 
 @dataclass(frozen=True)
@@ -25,7 +25,7 @@ class GraphNodeRecord:
     id: str
     run_id: str
     agent_type: str
-    status: str
+    status: GraphNodeStatus
     depends_on: list[str]
     expected_artifacts: list[str]
     retry_count: int
@@ -66,3 +66,12 @@ class EvaluationResultRecord:
     checks: list[dict[str, Any]] = field(default_factory=list)
     created_at: datetime | None = None
     target_artifact_id: str | None = None
+
+
+@dataclass(frozen=True)
+class RunCheckpointRecord:
+    run_id: str
+    state: dict[str, Any]
+    version: int
+    created_at: datetime
+    updated_at: datetime

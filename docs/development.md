@@ -72,6 +72,19 @@ curl http://localhost:8000/runs/{run_id}
 curl http://localhost:8000/runs/{run_id}/artifacts
 ```
 
+## Orchestrator Kernel
+
+The SCRUM-9 orchestration kernel runs validated execution graphs against registered agents and stores each state transition in the run repository.
+
+Current local behavior:
+
+- Multi-step graphs execute in dependency order.
+- Run checkpoints persist the LangGraph-compatible state shape.
+- Failed nodes retry according to `RetryPolicy` without restarting completed nodes.
+- Nodes that return `waiting_for_approval` pause the run until `approve_node` resumes it.
+
+The in-memory repository is the MVP checkpoint backend. The same model is mirrored by SQLAlchemy table definitions so a Postgres-backed repository can replace it later.
+
 ## Run With Docker Compose
 
 ```bash

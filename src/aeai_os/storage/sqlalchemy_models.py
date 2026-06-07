@@ -64,6 +64,16 @@ class AgentEventModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class RunCheckpointModel(Base):
+    __tablename__ = "run_checkpoints"
+
+    run_id: Mapped[str] = mapped_column(ForeignKey("runs.id"), primary_key=True)
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    state_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class EvaluationResultModel(Base):
     __tablename__ = "evaluation_results"
 
