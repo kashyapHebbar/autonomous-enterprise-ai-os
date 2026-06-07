@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Dict, Iterable
 
 
 @dataclass(frozen=True)
@@ -13,7 +13,7 @@ class AgentRegistration:
 
 class AgentRegistry:
     def __init__(self, registrations: Iterable[AgentRegistration] | None = None) -> None:
-        self._registrations: Dict[str, AgentRegistration] = {}
+        self._registrations: dict[str, AgentRegistration] = {}
         for registration in registrations or []:
             self.register(registration)
 
@@ -38,11 +38,14 @@ def build_default_registry() -> AgentRegistry:
             AgentRegistration("planner", "Creates the execution graph.", "medium"),
             AgentRegistration("security", "Applies tool policy and approval gates.", "high"),
             AgentRegistration("data_retrieval", "Profiles and retrieves datasets.", "low"),
-            AgentRegistration("analytics_code", "Computes KPIs and reproducible analysis.", "medium"),
+            AgentRegistration(
+                "analytics_code",
+                "Computes KPIs and reproducible analysis.",
+                "medium",
+            ),
             AgentRegistration("visualization", "Creates chart and dashboard artifacts.", "low"),
             AgentRegistration("report", "Generates final report artifacts.", "low"),
             AgentRegistration("evaluation", "Scores outputs for quality and grounding.", "low"),
             AgentRegistration("deployment", "Stores or deploys validated artifacts.", "high"),
         ]
     )
-

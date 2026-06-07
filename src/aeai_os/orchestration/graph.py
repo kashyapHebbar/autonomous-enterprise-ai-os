@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Set
 
 
 class GraphValidationError(ValueError):
@@ -13,17 +12,17 @@ class ExecutionNode:
     id: str
     agent: str
     task: str
-    depends_on: List[str] = field(default_factory=list)
-    expected_artifacts: List[str] = field(default_factory=list)
+    depends_on: list[str] = field(default_factory=list)
+    expected_artifacts: list[str] = field(default_factory=list)
     risk: str = "low"
 
 
 @dataclass(frozen=True)
 class ExecutionGraph:
     run_id: str
-    nodes: List[ExecutionNode]
+    nodes: list[ExecutionNode]
 
-    def validate(self, known_agents: Set[str]) -> None:
+    def validate(self, known_agents: set[str]) -> None:
         ids = [node.id for node in self.nodes]
         if len(ids) != len(set(ids)):
             raise GraphValidationError("Execution graph contains duplicate node IDs.")
@@ -35,14 +34,16 @@ class ExecutionGraph:
             missing = set(node.depends_on) - id_set
             if missing:
                 missing_list = ", ".join(sorted(missing))
-                raise GraphValidationError(f"Node {node.id} depends on missing nodes: {missing_list}")
+                raise GraphValidationError(
+                    f"Node {node.id} depends on missing nodes: {missing_list}"
+                )
 
         self._assert_acyclic()
 
     def _assert_acyclic(self) -> None:
-        nodes_by_id: Dict[str, ExecutionNode] = {node.id: node for node in self.nodes}
-        visiting: Set[str] = set()
-        visited: Set[str] = set()
+        nodes_by_id: dict[str, ExecutionNode] = {node.id: node for node in self.nodes}
+        visiting: set[str] = set()
+        visited: set[str] = set()
 
         def visit(node_id: str) -> None:
             if node_id in visited:
@@ -58,4 +59,3 @@ class ExecutionGraph:
 
         for node_id in nodes_by_id:
             visit(node_id)
-

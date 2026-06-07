@@ -3,7 +3,6 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 sys.path.insert(0, str(SRC))
@@ -28,6 +27,7 @@ def main() -> int:
         ROOT / "src" / "aeai_os" / "schemas",
         ROOT / "src" / "aeai_os" / "storage",
         ROOT / "src" / "aeai_os" / "evaluation",
+        ROOT / "src" / "aeai_os" / "runs",
         ROOT / "tests",
     ]
 
@@ -45,10 +45,27 @@ def main() -> int:
         if required not in components:
             raise AssertionError(f"Missing health component: {required}")
 
+    from aeai_os.runs.repository import InMemoryRunRepository
+    from aeai_os.schemas.enums import ArtifactType, RunStatus
+
+    repository = InMemoryRunRepository()
+    run = repository.create_run("Analyze this procurement dataset and create a dashboard.")
+    if run.status != RunStatus.PENDING:
+        raise AssertionError(f"Unexpected initial run status: {run.status}")
+
+    artifact = repository.add_artifact(
+        run_id=run.id,
+        artifact_type=ArtifactType.DATASET,
+        uri="s3://example/procurement.csv",
+        metadata={"source": "reference", "format": "csv"},
+    )
+    updated_run = repository.get_run(run.id)
+    if updated_run.dataset_artifact_id != artifact.id:
+        raise AssertionError("Dataset artifact was not attached to the run.")
+
     print("Smoke check passed: scaffold and health payload are valid.")
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

@@ -8,7 +8,7 @@ This project uses a small Python service plus local infrastructure dependencies.
 - Docker Desktop or compatible Docker runtime
 - Git
 
-On macOS, if `python3.11` is not available, install Python 3.11 first or use the Docker Compose flow. The dependency-free `make smoke` target can run with the system `python3`, but the application dependencies require Python 3.11+.
+On macOS, if `python3.11` is not available, install Python 3.11 first or use the Docker Compose flow. The application and test dependencies require Python 3.11+.
 
 ## Setup
 
@@ -39,6 +39,38 @@ Then open:
 
 - API health: `http://localhost:8000/health`
 - API docs: `http://localhost:8000/docs`
+
+## Run Lifecycle API
+
+Create a run:
+
+```bash
+curl -X POST http://localhost:8000/runs \
+  -H "Content-Type: application/json" \
+  -d '{"task":"Analyze this procurement dataset and create a dashboard."}'
+```
+
+Attach a dataset reference:
+
+```bash
+curl -X POST http://localhost:8000/runs/{run_id}/datasets/reference \
+  -H "Content-Type: application/json" \
+  -d '{"uri":"s3://example/procurement.csv","format":"csv"}'
+```
+
+Upload a local dataset:
+
+```bash
+curl -X POST http://localhost:8000/runs/{run_id}/datasets/upload \
+  -F "file=@data/procurement.csv"
+```
+
+Inspect run state and artifacts:
+
+```bash
+curl http://localhost:8000/runs/{run_id}
+curl http://localhost:8000/runs/{run_id}/artifacts
+```
 
 ## Run With Docker Compose
 

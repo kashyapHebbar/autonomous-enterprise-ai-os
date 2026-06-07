@@ -12,7 +12,7 @@ The first vertical slice is a procurement analytics workflow:
 
 ## Project Status
 
-Current Jira milestone: `SCRUM-7 - Scaffold repository and local development environment`
+Current Jira milestone: `SCRUM-8 - Implement API gateway and run lifecycle model`
 
 The architecture blueprint is in [docs/architecture.md](docs/architecture.md).
 Local development instructions are in [docs/development.md](docs/development.md).
@@ -42,6 +42,14 @@ Run the API:
 ```bash
 make dev
 ```
+
+Core API endpoints:
+
+- `POST /runs` creates a run from a natural-language task.
+- `GET /runs/{run_id}` returns run status and artifacts.
+- `POST /runs/{run_id}/datasets/reference` attaches an external dataset URI.
+- `POST /runs/{run_id}/datasets/upload` uploads a local dataset file.
+- `GET /runs/{run_id}/artifacts` lists artifacts for a run.
 
 Run the full local stack:
 

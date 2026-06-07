@@ -10,4 +10,3 @@ __all__ = [
     "AgentStatus",
     "build_default_registry",
 ]
-

@@ -1,4 +1,4 @@
-PYTHON ?= python3
+PYTHON ?= python3.11
 
 .PHONY: install test lint format smoke dev up down
 

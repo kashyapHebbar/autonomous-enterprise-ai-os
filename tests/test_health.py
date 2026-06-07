@@ -10,4 +10,3 @@ def test_health_payload_has_expected_shape():
 
     component_names = {component["name"] for component in payload["components"]}
     assert {"api", "orchestrator", "agent_registry", "artifact_store"} <= component_names
-

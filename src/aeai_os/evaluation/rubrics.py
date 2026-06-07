@@ -24,4 +24,3 @@ DEFAULT_MVP_CHECKS = [
         description="Report includes assumptions and limitations.",
     ),
 ]
-

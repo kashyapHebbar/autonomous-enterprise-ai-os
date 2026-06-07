@@ -36,4 +36,3 @@ def test_execution_graph_rejects_cycles():
         assert "cycle" in str(exc)
     else:
         raise AssertionError("Expected graph validation to reject a cycle.")
-

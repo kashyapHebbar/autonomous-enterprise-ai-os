@@ -17,4 +17,3 @@ def build_health_payload(settings: AppSettings | None = None) -> dict:
             {"name": "artifact_store", "status": "not_configured"},
         ],
     }
-
