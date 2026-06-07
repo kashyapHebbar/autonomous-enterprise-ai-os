@@ -12,9 +12,10 @@ The first vertical slice is a procurement analytics workflow:
 
 ## Project Status
 
-Initial Jira milestone: `SCRUM-6 - Define platform architecture and MVP scope`
+Current Jira milestone: `SCRUM-7 - Scaffold repository and local development environment`
 
 The architecture blueprint is in [docs/architecture.md](docs/architecture.md).
+Local development instructions are in [docs/development.md](docs/development.md).
 
 ## MVP Technology Direction
 
@@ -25,3 +26,25 @@ The architecture blueprint is in [docs/architecture.md](docs/architecture.md).
 - Artifacts: local object-store compatible layout for MVP, S3/MinIO-ready later
 - Observability: OpenTelemetry, Prometheus-compatible metrics, MLflow or LangSmith
 - Packaging: Docker Compose first, Kubernetes later
+
+## Quick Start
+
+```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
+make install
+make smoke
+make test
+```
+
+Run the API:
+
+```bash
+make dev
+```
+
+Run the full local stack:
+
+```bash
+docker compose up --build
+```

@@ -8,6 +8,9 @@ __pycache__/
 .mypy_cache/
 .venv/
 venv/
+build/
+dist/
+*.egg-info/
 
 # Environment
 .env
@@ -18,4 +21,7 @@ venv/
 artifacts/
 reports/
 dashboards/
+data/
 
+# Local Docker volumes and compose overrides
+docker-compose.override.yml
