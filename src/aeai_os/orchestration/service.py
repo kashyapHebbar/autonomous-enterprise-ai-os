@@ -76,6 +76,7 @@ class OrchestratorService:
                     agent_type=node.agent,
                     status=GraphNodeStatus.PENDING,
                     depends_on=list(node.depends_on),
+                    required_tools=list(node.required_tools),
                     expected_artifacts=list(node.expected_artifacts),
                     retry_count=0,
                     created_at=now,

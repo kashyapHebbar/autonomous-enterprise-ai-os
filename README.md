@@ -12,7 +12,7 @@ The first vertical slice is a procurement analytics workflow:
 
 ## Project Status
 
-Current Jira milestone: `SCRUM-9 - Build LangGraph orchestrator with durable execution`
+Current Jira milestone: `SCRUM-10 - Implement planner agent and execution graph contract`
 
 The architecture blueprint is in [docs/architecture.md](docs/architecture.md).
 Local development instructions are in [docs/development.md](docs/development.md).
@@ -53,6 +53,8 @@ Core API endpoints:
 
 Core orchestration capabilities:
 
+- `PlannerAgent` creates a validated procurement dashboard execution graph.
+- Planner output includes dependencies, required tools, expected artifacts, and risk labels.
 - `LangGraphRunState` captures task, plan, outputs, artifacts, approvals, evaluations, and errors.
 - `OrchestratorService` executes dependency-ordered agent graphs with repository checkpoints.
 - Failed nodes retry without resetting completed graph work.

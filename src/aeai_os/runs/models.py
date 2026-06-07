@@ -27,6 +27,7 @@ class GraphNodeRecord:
     agent_type: str
     status: GraphNodeStatus
     depends_on: list[str]
+    required_tools: list[str]
     expected_artifacts: list[str]
     retry_count: int
     created_at: datetime

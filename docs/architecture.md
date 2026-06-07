@@ -133,6 +133,7 @@ The planner should produce a graph shaped like this:
       "agent": "data_retrieval",
       "depends_on": [],
       "task": "Profile procurement dataset",
+      "required_tools": ["dataset_reader", "schema_profiler", "quality_checker"],
       "expected_artifacts": ["schema_profile", "quality_report"],
       "risk": "low"
     },
@@ -141,7 +142,8 @@ The planner should produce a graph shaped like this:
       "agent": "analytics_code",
       "depends_on": ["data_profile"],
       "task": "Compute procurement KPIs and insights",
-      "expected_artifacts": ["kpi_tables", "insight_json", "analysis_code"],
+      "required_tools": ["dataframe_query", "python_analysis", "code_artifact_writer"],
+      "expected_artifacts": ["kpi_table", "code"],
       "risk": "medium"
     }
   ]
@@ -154,6 +156,7 @@ The orchestrator validates this graph before execution:
 - Dependencies refer to existing nodes.
 - Agent names exist in the registry.
 - Expected artifact types are known.
+- Required tools are explicit so security policy can classify risk before execution.
 - Risk levels map to the security policy.
 - Cycles are rejected.
 
@@ -184,6 +187,7 @@ Represents a planned executable step.
 | agent_type | string | Registry key |
 | status | enum | pending, running, waiting_for_approval, completed, failed, skipped |
 | depends_on | json | Node dependency IDs |
+| required_tools | json | Tool capabilities required by the node |
 | expected_artifacts | json | Artifact type list |
 | retry_count | integer | Number of retries |
 | started_at | timestamp | Nullable |
@@ -259,4 +263,3 @@ The MVP demo should produce:
 8. Implement evaluation and security gates.
 9. Add observability instrumentation.
 10. Package the procurement demo.
-

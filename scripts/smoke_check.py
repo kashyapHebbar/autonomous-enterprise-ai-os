@@ -64,9 +64,20 @@ def main() -> int:
         raise AssertionError("Dataset artifact was not attached to the run.")
 
     from aeai_os.agents.base import AgentInput, AgentOutput
+    from aeai_os.agents.planner import PlannerAgent
     from aeai_os.agents.registry import build_default_registry
     from aeai_os.orchestration.graph import ExecutionGraph, ExecutionNode
     from aeai_os.orchestration.service import OrchestratorService
+
+    planner = PlannerAgent()
+    plan = planner.create_plan(
+        run_id=run.id,
+        user_task="Analyze this procurement dataset and create a dashboard.",
+        dataset_artifact_id=artifact.id,
+    )
+    if not plan.nodes[0].required_tools:
+        raise AssertionError("Planner did not include required tools.")
+    plan.to_execution_graph().validate(set(build_default_registry().list_agent_types()))
 
     class SmokeAgent:
         agent_type = "data_retrieval"

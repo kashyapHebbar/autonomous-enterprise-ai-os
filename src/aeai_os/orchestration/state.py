@@ -47,6 +47,7 @@ def node_to_plan_item(node: ExecutionNode) -> dict[str, Any]:
         "agent": node.agent,
         "task": node.task,
         "depends_on": list(node.depends_on),
+        "required_tools": list(node.required_tools),
         "expected_artifacts": list(node.expected_artifacts),
         "risk": node.risk,
     }

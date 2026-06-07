@@ -1,4 +1,4 @@
-PYTHON ?= python3.11
+PYTHON ?= $(shell if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3.11; fi)
 
 .PHONY: install test lint format smoke dev up down
 
@@ -9,10 +9,10 @@ test:
 	$(PYTHON) -m pytest
 
 lint:
-	ruff check src tests scripts
+	$(PYTHON) -m ruff check src tests scripts
 
 format:
-	ruff format src tests scripts
+	$(PYTHON) -m ruff format src tests scripts
 
 smoke:
 	$(PYTHON) scripts/smoke_check.py

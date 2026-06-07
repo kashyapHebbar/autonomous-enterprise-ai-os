@@ -85,6 +85,17 @@ Current local behavior:
 
 The in-memory repository is the MVP checkpoint backend. The same model is mirrored by SQLAlchemy table definitions so a Postgres-backed repository can replace it later.
 
+## Planner Contract
+
+The SCRUM-10 planner defines a structured execution graph contract that can be produced by a deterministic MVP planner now and by structured LLM output later.
+
+Current planner behavior:
+
+- `PlannerAgent.create_plan` supports the procurement analytics dashboard/report workflow.
+- `ExecutionPlanSchema` defines the JSON schema for planner output.
+- Each plan node includes agent assignment, dependencies, required tools, expected artifacts, and risk.
+- `validate_planner_output` rejects unknown agents, missing dependencies, invalid risk labels, and unknown artifact types with actionable errors.
+
 ## Run With Docker Compose
 
 ```bash

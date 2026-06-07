@@ -32,6 +32,7 @@ class GraphNodeModel(Base):
     agent_type: Mapped[str] = mapped_column(String(128), nullable=False)
     status: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     depends_on: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    required_tools: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     expected_artifacts: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     retry_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
