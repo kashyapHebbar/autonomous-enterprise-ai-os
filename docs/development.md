@@ -96,6 +96,17 @@ Current planner behavior:
 - Each plan node includes agent assignment, dependencies, required tools, expected artifacts, and risk.
 - `validate_planner_output` rejects unknown agents, missing dependencies, invalid risk labels, and unknown artifact types with actionable errors.
 
+## Data Ingestion
+
+The SCRUM-11 data retrieval agent supports local CSV ingestion for the procurement MVP.
+
+Current data behavior:
+
+- `profile_csv_dataset` infers column types, missing value counts, duplicate rows, examples, and numeric summary statistics.
+- `DataRetrievalAgent` reads a dataset artifact or local dataset URI, writes schema and quality JSON files, and registers them as run artifacts.
+- `CsvDatasetAdapter` exposes preview, row access, and grouped sum queries for downstream analytics agents.
+- `SnowflakeQueryAdapter` defines the future warehouse adapter boundary without requiring Snowflake credentials in the MVP.
+
 ## Run With Docker Compose
 
 ```bash

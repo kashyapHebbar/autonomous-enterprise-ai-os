@@ -21,7 +21,7 @@ dist/
 artifacts/
 reports/
 dashboards/
-data/
+/data/
 
 # Local Docker volumes and compose overrides
 docker-compose.override.yml

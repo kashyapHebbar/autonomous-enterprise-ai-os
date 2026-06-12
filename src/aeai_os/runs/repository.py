@@ -26,6 +26,10 @@ class GraphNodeNotFoundError(KeyError):
     pass
 
 
+class ArtifactNotFoundError(KeyError):
+    pass
+
+
 class RunCheckpointNotFoundError(KeyError):
     pass
 
@@ -130,6 +134,14 @@ class InMemoryRunRepository:
         with self._lock:
             self.get_run(run_id)
             return list(self._artifacts[run_id])
+
+    def get_artifact(self, run_id: str, artifact_id: str) -> ArtifactRecord:
+        with self._lock:
+            self.get_run(run_id)
+            for artifact in self._artifacts[run_id]:
+                if artifact.id == artifact_id:
+                    return artifact
+            raise ArtifactNotFoundError(f"Artifact not found: {artifact_id}")
 
     def add_graph_node(self, node: GraphNodeRecord) -> GraphNodeRecord:
         return self.upsert_graph_node(node)

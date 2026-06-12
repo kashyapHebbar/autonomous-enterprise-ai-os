@@ -9,6 +9,7 @@ from aeai_os.runs.models import (
     RunRecord,
 )
 from aeai_os.runs.repository import (
+    ArtifactNotFoundError,
     GraphNodeNotFoundError,
     InMemoryRunRepository,
     RunCheckpointNotFoundError,
@@ -17,6 +18,7 @@ from aeai_os.runs.repository import (
 
 __all__ = [
     "AgentEventRecord",
+    "ArtifactNotFoundError",
     "ArtifactRecord",
     "EvaluationResultRecord",
     "GraphNodeNotFoundError",
