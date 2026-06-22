@@ -1,0 +1,166 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any
+
+from aeai_os.agents.base import AgentInput, AgentOutput
+from aeai_os.analytics import (
+    AnalyticsError,
+    CodeSafetyDecision,
+    PythonCodeGuard,
+    analyze_procurement_dataset,
+)
+from aeai_os.analytics.reproducible import generate_reproducible_analysis_code
+from aeai_os.data import CsvDatasetAdapter, DataIngestionError
+from aeai_os.runs.models import ArtifactRecord
+from aeai_os.runs.repository import InMemoryRunRepository
+from aeai_os.schemas.enums import AgentEventType, ArtifactType
+
+
+class AnalyticsCodeAgent:
+    agent_type = "analytics_code"
+
+    def __init__(
+        self,
+        repository: InMemoryRunRepository,
+        artifact_root: str | Path,
+        code_guard: PythonCodeGuard | None = None,
+    ) -> None:
+        self._repository = repository
+        self._artifact_root = Path(artifact_root)
+        self._code_guard = code_guard or PythonCodeGuard()
+
+    def execute(self, agent_input: AgentInput) -> AgentOutput:
+        source_code = agent_input.context.get("analysis_code")
+        if source_code is None:
+            source_code = generate_reproducible_analysis_code()
+        if not isinstance(source_code, str):
+            return self._failed_output("Analysis code must be a string.")
+
+        safety_report = self._code_guard.evaluate(source_code)
+        if safety_report.decision == CodeSafetyDecision.BLOCKED:
+            reasons = [violation.message for violation in safety_report.violations]
+            return self._failed_output(
+                "Generated analysis code violates the execution policy.",
+                errors=reasons,
+                safety_report=safety_report.to_dict(),
+            )
+        if (
+            safety_report.decision == CodeSafetyDecision.APPROVAL_REQUIRED
+            and "approved" not in agent_input.approvals
+        ):
+            return AgentOutput(
+                status="waiting_for_approval",
+                summary="Analysis code requires approval before it can be accepted.",
+                events=[
+                    {
+                        "event_type": AgentEventType.APPROVAL_REQUEST,
+                        "message": "Generated code contains approval-required operations.",
+                        "safety_report": safety_report.to_dict(),
+                    }
+                ],
+                metrics={"safety_report": safety_report.to_dict()},
+            )
+
+        try:
+            dataset = self._resolve_dataset_artifact(agent_input)
+            adapter = CsvDatasetAdapter.from_path(dataset.uri)
+            analysis = analyze_procurement_dataset(adapter).to_dict()
+            output_dir = self._artifact_root / agent_input.run_id / agent_input.node_id
+            output_dir.mkdir(parents=True, exist_ok=True)
+            analysis_path = output_dir / "procurement_analysis.json"
+            code_path = output_dir / "procurement_analysis.py"
+            _write_json(analysis_path, analysis)
+            code_path.write_text(source_code, encoding="utf-8")
+
+            kpi_artifact = self._repository.add_artifact(
+                run_id=agent_input.run_id,
+                artifact_type=ArtifactType.KPI_TABLE,
+                uri=str(analysis_path),
+                metadata={
+                    "source": "analytics_code_agent",
+                    "format": "json",
+                    "total_spend": analysis["kpis"]["total_spend"],
+                    "insight_count": len(analysis["insights"]),
+                },
+                source_artifact_ids=[dataset.id],
+                producer_node_id=agent_input.node_id,
+            )
+            code_artifact = self._repository.add_artifact(
+                run_id=agent_input.run_id,
+                artifact_type=ArtifactType.CODE,
+                uri=str(code_path),
+                metadata={
+                    "source": "analytics_code_agent",
+                    "language": "python",
+                    "safety_decision": safety_report.decision.value,
+                    "execution_mode": "validated_artifact_only",
+                },
+                source_artifact_ids=[dataset.id],
+                producer_node_id=agent_input.node_id,
+            )
+        except (AnalyticsError, DataIngestionError, KeyError, OSError) as exc:
+            return self._failed_output(str(exc), safety_report=safety_report.to_dict())
+
+        return AgentOutput(
+            status="succeeded",
+            summary=(
+                f"Analyzed {analysis['dataset']['row_count']} procurement rows with total spend "
+                f"{analysis['kpis']['total_spend']}."
+            ),
+            artifacts=[kpi_artifact.id, code_artifact.id],
+            events=[
+                {
+                    "event_type": AgentEventType.LOG,
+                    "message": "Procurement KPIs and reproducible code artifacts registered.",
+                    "dataset_artifact_id": dataset.id,
+                    "kpi_artifact_id": kpi_artifact.id,
+                    "code_artifact_id": code_artifact.id,
+                }
+            ],
+            metrics={
+                "total_spend": analysis["kpis"]["total_spend"],
+                "supplier_count": analysis["kpis"]["supplier_count"],
+                "category_count": analysis["kpis"]["category_count"],
+                "outlier_count": analysis["kpis"]["outlier_count"],
+                "estimated_savings": analysis["kpis"]["estimated_savings"],
+                "safety_report": safety_report.to_dict(),
+            },
+        )
+
+    def _resolve_dataset_artifact(self, agent_input: AgentInput) -> ArtifactRecord:
+        artifact_id = (
+            agent_input.context.get("dataset_artifact_id")
+            or self._repository.get_run(agent_input.run_id).dataset_artifact_id
+        )
+        if not artifact_id:
+            raise AnalyticsError("No dataset artifact is attached to the run.")
+        artifact = self._repository.get_artifact(agent_input.run_id, artifact_id)
+        if artifact.type != ArtifactType.DATASET:
+            raise AnalyticsError(f"Artifact is not a dataset: {artifact_id}")
+        return artifact
+
+    @staticmethod
+    def _failed_output(
+        summary: str,
+        errors: list[str] | None = None,
+        safety_report: dict[str, Any] | None = None,
+    ) -> AgentOutput:
+        return AgentOutput(
+            status="failed",
+            summary=summary,
+            errors=list(errors or [summary]),
+            events=[
+                {
+                    "event_type": AgentEventType.ERROR,
+                    "message": summary,
+                    "safety_report": safety_report,
+                }
+            ],
+            metrics={"safety_report": safety_report} if safety_report else {},
+        )
+
+
+def _write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")

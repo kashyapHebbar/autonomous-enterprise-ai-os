@@ -107,6 +107,17 @@ Current data behavior:
 - `CsvDatasetAdapter` exposes preview, row access, and grouped sum queries for downstream analytics agents.
 - `SnowflakeQueryAdapter` defines the future warehouse adapter boundary without requiring Snowflake credentials in the MVP.
 
+## Procurement Analytics
+
+The SCRUM-12 analytics/code agent converts the ingested procurement CSV into structured KPIs and a reproducible code artifact.
+
+Current analytics behavior:
+
+- `analyze_procurement_dataset` calculates total spend, supplier/category rankings, monthly trends, transaction outliers, estimated savings opportunities, and missing-data risks.
+- `AnalyticsCodeAgent` writes `procurement_analysis.json` and a reproducible Python script, then registers `kpi_table` and `code` artifacts with dataset lineage.
+- `PythonCodeGuard` blocks network, process, dynamic execution, and destructive operations before code can be accepted.
+- Filesystem writes are classified as `approval_required`; generated source is validated and stored but never dynamically executed in the MVP.
+
 ## Run With Docker Compose
 
 ```bash
@@ -133,6 +144,8 @@ docker compose down --remove-orphans
 src/aeai_os/
   api/              FastAPI app factory and health endpoint
   agents/           Agent interfaces and registry
+  analytics/        Procurement KPIs and safe-code policy
+  data/             CSV profiling and query adapters
   orchestration/    Execution graph primitives
   schemas/          Shared enums and lightweight DTOs
   storage/          Artifact path helpers

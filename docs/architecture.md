@@ -119,6 +119,7 @@ Agent execution rules:
 - Every tool call creates an event.
 - Every output artifact records its producer node and source artifact IDs.
 - High-risk tool calls return `waiting_for_approval` before execution.
+- Generated analysis code is statically validated; the MVP stores reproducible code artifacts and does not dynamically execute arbitrary source.
 
 ## Execution Graph Model
 

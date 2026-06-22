@@ -1,5 +1,6 @@
 """Agent interfaces and registry."""
 
+from aeai_os.agents.analytics_code import AnalyticsCodeAgent
 from aeai_os.agents.base import AgentInput, AgentOutput, AgentStatus
 from aeai_os.agents.data_retrieval import DataRetrievalAgent
 from aeai_os.agents.planner import (
@@ -17,6 +18,7 @@ __all__ = [
     "AgentOutput",
     "AgentRegistry",
     "AgentStatus",
+    "AnalyticsCodeAgent",
     "DataRetrievalAgent",
     "ExecutionPlanSchema",
     "PlanNodeSchema",

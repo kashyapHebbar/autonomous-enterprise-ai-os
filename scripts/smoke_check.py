@@ -24,6 +24,7 @@ def main() -> int:
         ROOT / "docs" / "development.md",
         ROOT / "src" / "aeai_os" / "api",
         ROOT / "src" / "aeai_os" / "agents",
+        ROOT / "src" / "aeai_os" / "analytics",
         ROOT / "src" / "aeai_os" / "data",
         ROOT / "src" / "aeai_os" / "orchestration",
         ROOT / "src" / "aeai_os" / "schemas",
@@ -47,6 +48,7 @@ def main() -> int:
         if required not in components:
             raise AssertionError(f"Missing health component: {required}")
 
+    from aeai_os.agents.analytics_code import AnalyticsCodeAgent
     from aeai_os.agents.data_retrieval import DataRetrievalAgent
     from aeai_os.agents.planner import PlannerAgent
     from aeai_os.agents.registry import build_default_registry
@@ -101,7 +103,11 @@ def main() -> int:
                 "data_retrieval": DataRetrievalAgent(
                     repository=repository,
                     artifact_root=tmp_path / "artifacts",
-                )
+                ),
+                "analytics_code": AnalyticsCodeAgent(
+                    repository=repository,
+                    artifact_root=tmp_path / "artifacts",
+                ),
             },
         )
         graph = ExecutionGraph(
@@ -112,7 +118,15 @@ def main() -> int:
                     agent="data_retrieval",
                     task="Profile the procurement dataset.",
                     expected_artifacts=["schema_profile", "quality_report"],
-                )
+                ),
+                ExecutionNode(
+                    id="analytics",
+                    agent="analytics_code",
+                    task="Compute procurement KPIs.",
+                    depends_on=["data_profile"],
+                    expected_artifacts=["kpi_table", "code"],
+                    risk="medium",
+                ),
             ],
         )
         result = service.execute_run(run.id, graph)
@@ -120,12 +134,16 @@ def main() -> int:
             raise AssertionError(f"Unexpected orchestrator result: {result.status}")
 
         artifact_types = {artifact.type for artifact in repository.list_artifacts(run.id)}
-        if {ArtifactType.SCHEMA_PROFILE, ArtifactType.QUALITY_REPORT} - artifact_types:
-            raise AssertionError("Data retrieval agent did not register profile artifacts.")
+        expected_artifact_types = {
+            ArtifactType.SCHEMA_PROFILE,
+            ArtifactType.QUALITY_REPORT,
+            ArtifactType.KPI_TABLE,
+            ArtifactType.CODE,
+        }
+        if expected_artifact_types - artifact_types:
+            raise AssertionError("Data and analytics agents did not register expected artifacts.")
 
-    print(
-        "Smoke check passed: scaffold, run lifecycle, orchestrator, and data ingestion are valid."
-    )
+    print("Smoke check passed: run lifecycle, data ingestion, and procurement analytics are valid.")
     return 0
 
 
