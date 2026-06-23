@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from aeai_os.api.app import create_app
+from aeai_os.runs.models import EvaluationResultRecord
 from aeai_os.runs.repository import InMemoryRunRepository
 from aeai_os.schemas.enums import ArtifactType
 
@@ -91,6 +92,48 @@ def test_get_artifact_and_lineage(tmp_path):
         {"source_artifact_id": dataset.id, "target_artifact_id": report.id}
     ]
     assert missing_response.status_code == 404
+
+
+def test_run_detail_and_evaluations_endpoint_include_failed_evaluation(tmp_path):
+    repository = InMemoryRunRepository()
+    app = create_app(repository=repository, artifact_root=tmp_path / "artifacts")
+    client = TestClient(app)
+    run = repository.create_run("Analyze procurement spend.")
+    report = repository.add_artifact(
+        run_id=run.id,
+        artifact_type=ArtifactType.REPORT,
+        uri=str(tmp_path / "report.md"),
+        metadata={"source": "test", "format": "markdown"},
+        producer_node_id="report",
+    )
+    evaluation = repository.add_evaluation(
+        EvaluationResultRecord(
+            id="evaluation_failed",
+            run_id=run.id,
+            target_artifact_id=report.id,
+            score=0.75,
+            passed=False,
+            checks=[
+                {
+                    "name": "data_consistency",
+                    "passed": False,
+                    "score": 0.0,
+                    "required": True,
+                    "message": "Report total does not match computed KPI total.",
+                    "details": {"report_matches": False},
+                }
+            ],
+        )
+    )
+
+    detail_response = client.get(f"/runs/{run.id}")
+    evaluations_response = client.get(f"/runs/{run.id}/evaluations")
+
+    assert detail_response.status_code == 200
+    assert detail_response.json()["evaluations"][0]["id"] == evaluation.id
+    assert detail_response.json()["evaluations"][0]["passed"] is False
+    assert evaluations_response.status_code == 200
+    assert evaluations_response.json()[0]["checks"][0]["name"] == "data_consistency"
 
 
 def test_upload_dataset_rejects_unsupported_file_type(tmp_path):

@@ -11,10 +11,12 @@ from aeai_os.api.run_schemas import (
     ArtifactResponse,
     AttachDatasetReferenceRequest,
     CreateRunRequest,
+    EvaluationResponse,
     RunDetailResponse,
     RunResponse,
     artifact_lineage_to_response,
     artifact_to_response,
+    evaluation_to_response,
     run_to_detail_response,
     run_to_response,
 )
@@ -40,7 +42,11 @@ def build_runs_router(repository: InMemoryRunRepository, artifact_root: Path):
                 metadata={"source": "reference", **request.metadata},
             )
             run = repository.get_run(run.id)
-        return run_to_detail_response(run, repository.list_artifacts(run.id))
+        return run_to_detail_response(
+            run,
+            repository.list_artifacts(run.id),
+            repository.list_evaluations(run.id),
+        )
 
     @router.get("", response_model=list[RunResponse])
     def list_runs() -> list[RunResponse]:
@@ -49,7 +55,18 @@ def build_runs_router(repository: InMemoryRunRepository, artifact_root: Path):
     @router.get("/{run_id}", response_model=RunDetailResponse)
     def get_run(run_id: str) -> RunDetailResponse:
         run = _get_run_or_404(repository, run_id)
-        return run_to_detail_response(run, repository.list_artifacts(run_id))
+        return run_to_detail_response(
+            run,
+            repository.list_artifacts(run_id),
+            repository.list_evaluations(run_id),
+        )
+
+    @router.get("/{run_id}/evaluations", response_model=list[EvaluationResponse])
+    def list_evaluations(run_id: str) -> list[EvaluationResponse]:
+        _get_run_or_404(repository, run_id)
+        return [
+            evaluation_to_response(evaluation) for evaluation in repository.list_evaluations(run_id)
+        ]
 
     @router.get("/{run_id}/artifacts", response_model=list[ArtifactResponse])
     def list_artifacts(run_id: str) -> list[ArtifactResponse]:

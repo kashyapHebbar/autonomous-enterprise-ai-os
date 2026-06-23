@@ -34,6 +34,10 @@ class RunCheckpointNotFoundError(KeyError):
     pass
 
 
+class EvaluationResultNotFoundError(KeyError):
+    pass
+
+
 class InMemoryRunRepository:
     """Small repository used until the Postgres-backed implementation lands."""
 
@@ -190,6 +194,19 @@ class InMemoryRunRepository:
                 record = replace(record, created_at=utc_now())
             self._evaluations[evaluation.run_id].append(record)
             return record
+
+    def list_evaluations(self, run_id: str) -> list[EvaluationResultRecord]:
+        with self._lock:
+            self.get_run(run_id)
+            return list(self._evaluations[run_id])
+
+    def get_evaluation(self, run_id: str, evaluation_id: str) -> EvaluationResultRecord:
+        with self._lock:
+            self.get_run(run_id)
+            for evaluation in self._evaluations[run_id]:
+                if evaluation.id == evaluation_id:
+                    return evaluation
+            raise EvaluationResultNotFoundError(f"Evaluation result not found: {evaluation_id}")
 
     def save_checkpoint(self, run_id: str, state: dict[str, Any]) -> RunCheckpointRecord:
         with self._lock:

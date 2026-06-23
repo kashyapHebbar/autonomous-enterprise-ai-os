@@ -12,8 +12,12 @@ class EvaluationCheck:
 
 DEFAULT_MVP_CHECKS = [
     EvaluationCheck(
+        name="task_completion",
+        description="The workflow produced a report, dashboard, and recommendations.",
+    ),
+    EvaluationCheck(
         name="artifact_completeness",
-        description="Required dashboard, report, and evaluation artifacts were produced.",
+        description="Required KPI, chart, dashboard, and report artifacts were produced.",
     ),
     EvaluationCheck(
         name="data_consistency",

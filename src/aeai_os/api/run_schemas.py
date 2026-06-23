@@ -6,7 +6,7 @@ from typing import Any
 from pydantic import BaseModel, Field, field_validator
 
 from aeai_os.artifacts import ArtifactLineage
-from aeai_os.runs.models import ArtifactRecord, RunRecord
+from aeai_os.runs.models import ArtifactRecord, EvaluationResultRecord, RunRecord
 from aeai_os.schemas.enums import ArtifactType, RunStatus
 
 
@@ -68,6 +68,16 @@ class ArtifactLineageResponse(BaseModel):
     edges: list[ArtifactLineageEdgeResponse]
 
 
+class EvaluationResponse(BaseModel):
+    id: str
+    run_id: str
+    target_artifact_id: str | None
+    score: float
+    passed: bool
+    checks: list[dict[str, Any]]
+    created_at: datetime
+
+
 class RunResponse(BaseModel):
     id: str
     task: str
@@ -82,6 +92,7 @@ class RunResponse(BaseModel):
 
 class RunDetailResponse(RunResponse):
     artifacts: list[ArtifactResponse]
+    evaluations: list[EvaluationResponse]
 
 
 def artifact_to_response(artifact: ArtifactRecord) -> ArtifactResponse:
@@ -113,6 +124,20 @@ def artifact_lineage_to_response(lineage: ArtifactLineage) -> ArtifactLineageRes
     )
 
 
+def evaluation_to_response(evaluation: EvaluationResultRecord) -> EvaluationResponse:
+    if evaluation.created_at is None:
+        raise ValueError(f"Evaluation record is missing created_at: {evaluation.id}")
+    return EvaluationResponse(
+        id=evaluation.id,
+        run_id=evaluation.run_id,
+        target_artifact_id=evaluation.target_artifact_id,
+        score=evaluation.score,
+        passed=evaluation.passed,
+        checks=evaluation.checks,
+        created_at=evaluation.created_at,
+    )
+
+
 def run_to_response(run: RunRecord) -> RunResponse:
     return RunResponse(
         id=run.id,
@@ -130,9 +155,11 @@ def run_to_response(run: RunRecord) -> RunResponse:
 def run_to_detail_response(
     run: RunRecord,
     artifacts: list[ArtifactRecord],
+    evaluations: list[EvaluationResultRecord] | None = None,
 ) -> RunDetailResponse:
     base = run_to_response(run)
     return RunDetailResponse(
         **base.model_dump(),
         artifacts=[artifact_to_response(artifact) for artifact in artifacts],
+        evaluations=[evaluation_to_response(evaluation) for evaluation in evaluations or []],
     )

@@ -53,6 +53,7 @@ def main() -> int:
 
     from aeai_os.agents.analytics_code import AnalyticsCodeAgent
     from aeai_os.agents.data_retrieval import DataRetrievalAgent
+    from aeai_os.agents.evaluation import EvaluationAgent
     from aeai_os.agents.planner import PlannerAgent
     from aeai_os.agents.registry import build_default_registry
     from aeai_os.agents.report import ReportAgent
@@ -121,6 +122,10 @@ def main() -> int:
                     repository=repository,
                     artifact_root=tmp_path / "artifacts",
                 ),
+                "evaluation": EvaluationAgent(
+                    repository=repository,
+                    artifact_root=tmp_path / "artifacts",
+                ),
             },
         )
         graph = ExecutionGraph(
@@ -154,6 +159,13 @@ def main() -> int:
                     depends_on=["visualization"],
                     expected_artifacts=["report"],
                 ),
+                ExecutionNode(
+                    id="evaluation",
+                    agent="evaluation",
+                    task="Evaluate procurement outputs.",
+                    depends_on=["report"],
+                    expected_artifacts=["evaluation"],
+                ),
             ],
         )
         result = service.execute_run(run.id, graph)
@@ -169,16 +181,20 @@ def main() -> int:
             ArtifactType.CHART,
             ArtifactType.DASHBOARD,
             ArtifactType.REPORT,
+            ArtifactType.EVALUATION,
         }
         if expected_artifact_types - artifact_types:
             raise AssertionError(
-                "Data, analytics, visualization, and report agents did not register expected "
-                "artifacts."
+                "Data, analytics, visualization, report, and evaluation agents did not register "
+                "expected artifacts."
             )
+        evaluations = repository.list_evaluations(run.id)
+        if not evaluations or not evaluations[-1].passed:
+            raise AssertionError("Evaluation agent did not produce a passing evaluation result.")
 
     print(
         "Smoke check passed: run lifecycle, data ingestion, analytics, visualization, and "
-        "reporting are valid."
+        "reporting/evaluation are valid."
     )
     return 0
 

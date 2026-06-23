@@ -140,6 +140,18 @@ Current reporting behavior:
 - `procurement_report.md` includes executive summary, key findings, KPIs, dataset quality, chart references, recommendations, assumptions, limitations, and lineage.
 - `GET /runs/{run_id}/artifacts/{artifact_id}` retrieves artifact metadata, and `GET /runs/{run_id}/artifacts/{artifact_id}/lineage` returns upstream artifact lineage.
 
+## Procurement Evaluation
+
+The SCRUM-15 evaluation agent scores generated outputs with deterministic quality gates.
+
+Current evaluation behavior:
+
+- `EvaluationAgent` resolves KPI, chart, dashboard, and report artifacts for a run.
+- `evaluate_procurement_outputs` checks task completion, artifact completeness, assumptions/limitations disclosure, and KPI total-spend consistency across computed data, report text, and chart JSON.
+- Evaluation results are stored as repository records and as `evaluation` artifacts with score, pass/fail, target artifact, and per-check details.
+- `GET /runs/{run_id}` includes evaluation results, and `GET /runs/{run_id}/evaluations` lists them directly.
+- In the orchestrated workflow, failed required checks return a failed evaluation node so the run becomes visibly failed.
+
 ## Run With Docker Compose
 
 ```bash
@@ -169,11 +181,11 @@ src/aeai_os/
   analytics/        Procurement KPIs and safe-code policy
   artifacts/        Artifact lineage helpers
   data/             CSV profiling and query adapters
+  evaluation/       Deterministic quality gates and rubrics
   orchestration/    Execution graph primitives
   reports/          Markdown report rendering helpers
   schemas/          Shared enums and lightweight DTOs
   storage/          Artifact path helpers
-  evaluation/       Evaluation/rubric primitives
   visualization/    Static dashboard and chart rendering helpers
 tests/              Unit tests for scaffold contracts
 scripts/            Local maintenance and smoke scripts

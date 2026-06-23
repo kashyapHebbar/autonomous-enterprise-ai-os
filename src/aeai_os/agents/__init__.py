@@ -3,6 +3,7 @@
 from aeai_os.agents.analytics_code import AnalyticsCodeAgent
 from aeai_os.agents.base import AgentInput, AgentOutput, AgentStatus
 from aeai_os.agents.data_retrieval import DataRetrievalAgent
+from aeai_os.agents.evaluation import EvaluationAgent
 from aeai_os.agents.planner import (
     ExecutionPlanSchema,
     PlannerAgent,
@@ -22,6 +23,7 @@ __all__ = [
     "AgentStatus",
     "AnalyticsCodeAgent",
     "DataRetrievalAgent",
+    "EvaluationAgent",
     "ExecutionPlanSchema",
     "PlanNodeSchema",
     "PlannerAgent",
