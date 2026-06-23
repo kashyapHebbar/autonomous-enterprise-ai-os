@@ -12,6 +12,7 @@ from aeai_os.agents.planner import (
     validate_planner_output,
 )
 from aeai_os.agents.registry import AgentRegistry, build_default_registry
+from aeai_os.agents.visualization import VisualizationAgent
 
 __all__ = [
     "AgentInput",
@@ -24,6 +25,7 @@ __all__ = [
     "PlanNodeSchema",
     "PlannerAgent",
     "PlannerValidationError",
+    "VisualizationAgent",
     "build_default_registry",
     "execution_plan_json_schema",
     "validate_planner_output",

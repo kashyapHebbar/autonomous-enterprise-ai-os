@@ -31,6 +31,7 @@ def main() -> int:
         ROOT / "src" / "aeai_os" / "storage",
         ROOT / "src" / "aeai_os" / "evaluation",
         ROOT / "src" / "aeai_os" / "runs",
+        ROOT / "src" / "aeai_os" / "visualization",
         ROOT / "tests",
     ]
 
@@ -52,6 +53,7 @@ def main() -> int:
     from aeai_os.agents.data_retrieval import DataRetrievalAgent
     from aeai_os.agents.planner import PlannerAgent
     from aeai_os.agents.registry import build_default_registry
+    from aeai_os.agents.visualization import VisualizationAgent
     from aeai_os.orchestration.graph import ExecutionGraph, ExecutionNode
     from aeai_os.orchestration.service import OrchestratorService
     from aeai_os.runs.repository import InMemoryRunRepository
@@ -108,6 +110,10 @@ def main() -> int:
                     repository=repository,
                     artifact_root=tmp_path / "artifacts",
                 ),
+                "visualization": VisualizationAgent(
+                    repository=repository,
+                    artifact_root=tmp_path / "artifacts",
+                ),
             },
         )
         graph = ExecutionGraph(
@@ -127,6 +133,13 @@ def main() -> int:
                     expected_artifacts=["kpi_table", "code"],
                     risk="medium",
                 ),
+                ExecutionNode(
+                    id="visualization",
+                    agent="visualization",
+                    task="Create procurement dashboard charts.",
+                    depends_on=["analytics"],
+                    expected_artifacts=["chart", "dashboard"],
+                ),
             ],
         )
         result = service.execute_run(run.id, graph)
@@ -139,11 +152,17 @@ def main() -> int:
             ArtifactType.QUALITY_REPORT,
             ArtifactType.KPI_TABLE,
             ArtifactType.CODE,
+            ArtifactType.CHART,
+            ArtifactType.DASHBOARD,
         }
         if expected_artifact_types - artifact_types:
-            raise AssertionError("Data and analytics agents did not register expected artifacts.")
+            raise AssertionError(
+                "Data, analytics, and visualization agents did not register expected artifacts."
+            )
 
-    print("Smoke check passed: run lifecycle, data ingestion, and procurement analytics are valid.")
+    print(
+        "Smoke check passed: run lifecycle, data ingestion, analytics, and visualization are valid."
+    )
     return 0
 
 

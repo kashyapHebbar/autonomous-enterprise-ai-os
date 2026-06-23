@@ -118,6 +118,17 @@ Current analytics behavior:
 - `PythonCodeGuard` blocks network, process, dynamic execution, and destructive operations before code can be accepted.
 - Filesystem writes are classified as `approval_required`; generated source is validated and stored but never dynamically executed in the MVP.
 
+## Procurement Visualization
+
+The SCRUM-13 visualization agent converts structured analytics output into local dashboard artifacts.
+
+Current visualization behavior:
+
+- `VisualizationAgent` resolves the latest `kpi_table` artifact from the run or accepts an explicit `kpi_artifact_id`.
+- `build_procurement_chart_specs` creates charts for KPIs, supplier concentration, category breakdowns, monthly trends, and anomalies.
+- Each chart is written as a standalone HTML artifact with embedded chart data and lineage back to the KPI artifact.
+- `procurement_dashboard.html` is a self-contained local dashboard that embeds the same chart panels and records source artifact IDs for traceability.
+
 ## Run With Docker Compose
 
 ```bash
@@ -150,6 +161,7 @@ src/aeai_os/
   schemas/          Shared enums and lightweight DTOs
   storage/          Artifact path helpers
   evaluation/       Evaluation/rubric primitives
+  visualization/    Static dashboard and chart rendering helpers
 tests/              Unit tests for scaffold contracts
 scripts/            Local maintenance and smoke scripts
 docs/               Architecture and developer docs

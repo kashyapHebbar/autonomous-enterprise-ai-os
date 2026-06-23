@@ -247,7 +247,8 @@ The MVP demo should produce:
 - Monthly or quarterly spend trend.
 - Outlier or anomaly summary.
 - Savings opportunity summary.
-- Dashboard HTML artifact.
+- Standalone chart HTML artifacts.
+- Dashboard HTML artifact with traceable source artifact IDs.
 - Final report artifact.
 - Evaluation result artifact.
 - Run trace and event log.
@@ -260,7 +261,8 @@ The MVP demo should produce:
 4. Implement planner agent and graph contract.
 5. Implement data ingestion and retrieval agent.
 6. Implement analytics/code agent.
-7. Implement visualization and report agents.
-8. Implement evaluation and security gates.
-9. Add observability instrumentation.
-10. Package the procurement demo.
+7. Implement visualization agent and dashboard artifacts.
+8. Implement report agent.
+9. Implement evaluation and security gates.
+10. Add observability instrumentation.
+11. Package the procurement demo.
