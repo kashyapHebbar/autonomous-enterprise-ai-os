@@ -249,7 +249,7 @@ The MVP demo should produce:
 - Savings opportunity summary.
 - Standalone chart HTML artifacts.
 - Dashboard HTML artifact with traceable source artifact IDs.
-- Final report artifact.
+- Final report artifact with assumptions, limitations, and artifact lineage.
 - Evaluation result artifact.
 - Run trace and event log.
 

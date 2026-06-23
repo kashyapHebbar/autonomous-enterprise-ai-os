@@ -5,6 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
+from aeai_os.artifacts import ArtifactLineage
 from aeai_os.runs.models import ArtifactRecord, RunRecord
 from aeai_os.schemas.enums import ArtifactType, RunStatus
 
@@ -56,6 +57,17 @@ class ArtifactResponse(BaseModel):
     created_at: datetime
 
 
+class ArtifactLineageEdgeResponse(BaseModel):
+    source_artifact_id: str
+    target_artifact_id: str
+
+
+class ArtifactLineageResponse(BaseModel):
+    root_artifact: ArtifactResponse
+    upstream_artifacts: list[ArtifactResponse]
+    edges: list[ArtifactLineageEdgeResponse]
+
+
 class RunResponse(BaseModel):
     id: str
     task: str
@@ -82,6 +94,22 @@ def artifact_to_response(artifact: ArtifactRecord) -> ArtifactResponse:
         metadata=artifact.metadata,
         source_artifact_ids=artifact.source_artifact_ids,
         created_at=artifact.created_at,
+    )
+
+
+def artifact_lineage_to_response(lineage: ArtifactLineage) -> ArtifactLineageResponse:
+    return ArtifactLineageResponse(
+        root_artifact=artifact_to_response(lineage.root_artifact),
+        upstream_artifacts=[
+            artifact_to_response(artifact) for artifact in lineage.upstream_artifacts
+        ],
+        edges=[
+            ArtifactLineageEdgeResponse(
+                source_artifact_id=edge.source_artifact_id,
+                target_artifact_id=edge.target_artifact_id,
+            )
+            for edge in lineage.edges
+        ],
     )
 
 

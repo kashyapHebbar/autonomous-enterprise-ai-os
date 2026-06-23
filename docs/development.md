@@ -129,6 +129,17 @@ Current visualization behavior:
 - Each chart is written as a standalone HTML artifact with embedded chart data and lineage back to the KPI artifact.
 - `procurement_dashboard.html` is a self-contained local dashboard that embeds the same chart panels and records source artifact IDs for traceability.
 
+## Procurement Reporting
+
+The SCRUM-14 report agent generates the final local report artifact and expands artifact lineage.
+
+Current reporting behavior:
+
+- `ReportAgent` resolves upstream KPI, schema, quality, chart, and dashboard artifacts from the run.
+- `ArtifactLineageService` recursively expands source artifact IDs so reports can trace back to the uploaded dataset and producer nodes.
+- `procurement_report.md` includes executive summary, key findings, KPIs, dataset quality, chart references, recommendations, assumptions, limitations, and lineage.
+- `GET /runs/{run_id}/artifacts/{artifact_id}` retrieves artifact metadata, and `GET /runs/{run_id}/artifacts/{artifact_id}/lineage` returns upstream artifact lineage.
+
 ## Run With Docker Compose
 
 ```bash
@@ -156,8 +167,10 @@ src/aeai_os/
   api/              FastAPI app factory and health endpoint
   agents/           Agent interfaces and registry
   analytics/        Procurement KPIs and safe-code policy
+  artifacts/        Artifact lineage helpers
   data/             CSV profiling and query adapters
   orchestration/    Execution graph primitives
+  reports/          Markdown report rendering helpers
   schemas/          Shared enums and lightweight DTOs
   storage/          Artifact path helpers
   evaluation/       Evaluation/rubric primitives

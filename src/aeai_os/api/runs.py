@@ -7,16 +7,19 @@ from typing import Annotated
 from fastapi import APIRouter, Body, File, HTTPException, UploadFile, status
 
 from aeai_os.api.run_schemas import (
+    ArtifactLineageResponse,
     ArtifactResponse,
     AttachDatasetReferenceRequest,
     CreateRunRequest,
     RunDetailResponse,
     RunResponse,
+    artifact_lineage_to_response,
     artifact_to_response,
     run_to_detail_response,
     run_to_response,
 )
-from aeai_os.runs.repository import InMemoryRunRepository, RunNotFoundError
+from aeai_os.artifacts import ArtifactLineageService
+from aeai_os.runs.repository import ArtifactNotFoundError, InMemoryRunRepository, RunNotFoundError
 from aeai_os.schemas.enums import ArtifactType
 
 ALLOWED_UPLOAD_EXTENSIONS = {".csv", ".tsv", ".json", ".parquet"}
@@ -24,6 +27,7 @@ ALLOWED_UPLOAD_EXTENSIONS = {".csv", ".tsv", ".json", ".parquet"}
 
 def build_runs_router(repository: InMemoryRunRepository, artifact_root: Path):
     router = APIRouter(prefix="/runs", tags=["runs"])
+    lineage_service = ArtifactLineageService(repository)
 
     @router.post("", response_model=RunDetailResponse, status_code=status.HTTP_201_CREATED)
     def create_run(request: Annotated[CreateRunRequest, Body(...)]) -> RunDetailResponse:
@@ -51,6 +55,20 @@ def build_runs_router(repository: InMemoryRunRepository, artifact_root: Path):
     def list_artifacts(run_id: str) -> list[ArtifactResponse]:
         _get_run_or_404(repository, run_id)
         return [artifact_to_response(artifact) for artifact in repository.list_artifacts(run_id)]
+
+    @router.get("/{run_id}/artifacts/{artifact_id}", response_model=ArtifactResponse)
+    def get_artifact(run_id: str, artifact_id: str) -> ArtifactResponse:
+        artifact = _get_artifact_or_404(repository, run_id, artifact_id)
+        return artifact_to_response(artifact)
+
+    @router.get(
+        "/{run_id}/artifacts/{artifact_id}/lineage",
+        response_model=ArtifactLineageResponse,
+    )
+    def get_artifact_lineage(run_id: str, artifact_id: str) -> ArtifactLineageResponse:
+        _get_artifact_or_404(repository, run_id, artifact_id)
+        lineage = lineage_service.build_lineage(run_id, artifact_id)
+        return artifact_lineage_to_response(lineage)
 
     @router.post(
         "/{run_id}/datasets/reference",
@@ -121,6 +139,18 @@ def _get_run_or_404(repository: InMemoryRunRepository, run_id: str):
     try:
         return repository.get_run(run_id)
     except RunNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+def _get_artifact_or_404(
+    repository: InMemoryRunRepository,
+    run_id: str,
+    artifact_id: str,
+):
+    _get_run_or_404(repository, run_id)
+    try:
+        return repository.get_artifact(run_id, artifact_id)
+    except ArtifactNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
 

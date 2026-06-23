@@ -25,8 +25,10 @@ def main() -> int:
         ROOT / "src" / "aeai_os" / "api",
         ROOT / "src" / "aeai_os" / "agents",
         ROOT / "src" / "aeai_os" / "analytics",
+        ROOT / "src" / "aeai_os" / "artifacts",
         ROOT / "src" / "aeai_os" / "data",
         ROOT / "src" / "aeai_os" / "orchestration",
+        ROOT / "src" / "aeai_os" / "reports",
         ROOT / "src" / "aeai_os" / "schemas",
         ROOT / "src" / "aeai_os" / "storage",
         ROOT / "src" / "aeai_os" / "evaluation",
@@ -53,6 +55,7 @@ def main() -> int:
     from aeai_os.agents.data_retrieval import DataRetrievalAgent
     from aeai_os.agents.planner import PlannerAgent
     from aeai_os.agents.registry import build_default_registry
+    from aeai_os.agents.report import ReportAgent
     from aeai_os.agents.visualization import VisualizationAgent
     from aeai_os.orchestration.graph import ExecutionGraph, ExecutionNode
     from aeai_os.orchestration.service import OrchestratorService
@@ -114,6 +117,10 @@ def main() -> int:
                     repository=repository,
                     artifact_root=tmp_path / "artifacts",
                 ),
+                "report": ReportAgent(
+                    repository=repository,
+                    artifact_root=tmp_path / "artifacts",
+                ),
             },
         )
         graph = ExecutionGraph(
@@ -140,6 +147,13 @@ def main() -> int:
                     depends_on=["analytics"],
                     expected_artifacts=["chart", "dashboard"],
                 ),
+                ExecutionNode(
+                    id="report",
+                    agent="report",
+                    task="Generate final procurement report.",
+                    depends_on=["visualization"],
+                    expected_artifacts=["report"],
+                ),
             ],
         )
         result = service.execute_run(run.id, graph)
@@ -154,14 +168,17 @@ def main() -> int:
             ArtifactType.CODE,
             ArtifactType.CHART,
             ArtifactType.DASHBOARD,
+            ArtifactType.REPORT,
         }
         if expected_artifact_types - artifact_types:
             raise AssertionError(
-                "Data, analytics, and visualization agents did not register expected artifacts."
+                "Data, analytics, visualization, and report agents did not register expected "
+                "artifacts."
             )
 
     print(
-        "Smoke check passed: run lifecycle, data ingestion, analytics, and visualization are valid."
+        "Smoke check passed: run lifecycle, data ingestion, analytics, visualization, and "
+        "reporting are valid."
     )
     return 0
 
