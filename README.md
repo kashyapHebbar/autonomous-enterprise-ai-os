@@ -125,6 +125,18 @@ docker compose up --build
 
 The local stack includes the API, Postgres, Redis, and MinIO.
 
+Run the procurement workflow through the local API:
+
+```bash
+RUN_ID=$(curl -s -X POST http://127.0.0.1:8000/runs \
+  -H "Content-Type: application/json" \
+  -d '{"task":"Analyze this procurement dataset and create a dashboard report.","dataset_uri":"examples/procurement_demo.csv"}' \
+  | python -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+
+curl -X POST "http://127.0.0.1:8000/runs/${RUN_ID}/execute/procurement"
+curl "http://127.0.0.1:8000/runs/${RUN_ID}"
+```
+
 ## Documentation
 
 - Architecture: [docs/architecture.md](docs/architecture.md)

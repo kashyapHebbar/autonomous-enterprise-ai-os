@@ -13,16 +13,19 @@ from aeai_os.api.run_schemas import (
     CreateRunRequest,
     EvaluationResponse,
     RunDetailResponse,
+    RunExecutionResponse,
     RunResponse,
     artifact_lineage_to_response,
     artifact_to_response,
     evaluation_to_response,
     run_to_detail_response,
+    run_to_execution_response,
     run_to_response,
 )
 from aeai_os.artifacts import ArtifactLineageService
 from aeai_os.runs.repository import ArtifactNotFoundError, InMemoryRunRepository, RunNotFoundError
 from aeai_os.schemas.enums import ArtifactType
+from aeai_os.workflows import ProcurementWorkflowError, execute_procurement_workflow
 
 ALLOWED_UPLOAD_EXTENSIONS = {".csv", ".tsv", ".json", ".parquet"}
 
@@ -59,6 +62,31 @@ def build_runs_router(repository: InMemoryRunRepository, artifact_root: Path):
             run,
             repository.list_artifacts(run_id),
             repository.list_evaluations(run_id),
+        )
+
+    @router.post("/{run_id}/execute/procurement", response_model=RunExecutionResponse)
+    def execute_procurement(run_id: str) -> RunExecutionResponse:
+        _get_run_or_404(repository, run_id)
+        try:
+            result = execute_procurement_workflow(
+                repository=repository,
+                artifact_root=artifact_root,
+                run_id=run_id,
+            )
+        except ProcurementWorkflowError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(exc),
+            ) from exc
+
+        run = repository.get_run(run_id)
+        return run_to_execution_response(
+            run=run,
+            artifacts=repository.list_artifacts(run_id),
+            evaluations=repository.list_evaluations(run_id),
+            completed_node_ids=result.completed_node_ids,
+            failed_node_ids=result.failed_node_ids,
+            waiting_for_approval_node_id=result.waiting_for_approval_node_id,
         )
 
     @router.get("/{run_id}/evaluations", response_model=list[EvaluationResponse])

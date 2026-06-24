@@ -6,6 +6,22 @@ from aeai_os.runs.repository import InMemoryRunRepository
 from aeai_os.schemas.enums import ArtifactType
 
 
+def write_procurement_fixture(path):
+    path.write_text(
+        "\n".join(
+            [
+                "supplier,category,invoice_date,spend_amount,department",
+                "Acme,Software,2026-01-05,100,IT",
+                "Acme,Software,2026-01-06,100,IT",
+                "Zenith,Hardware,2026-02-01,200,Operations",
+                "Acme,Cloud,2026-02-10,1000,IT",
+                "Tiny,Office,2026-03-01,10,Finance",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+
 def build_client(tmp_path):
     app = create_app(repository=InMemoryRunRepository(), artifact_root=tmp_path / "artifacts")
     return TestClient(app)
@@ -175,6 +191,55 @@ def test_metrics_endpoint_exposes_run_artifact_and_evaluation_metrics(tmp_path):
     assert "aeai_artifacts_total 1" in response.text
     assert "aeai_evaluations_total 1" in response.text
     assert "aeai_evaluation_score_average 0.900000" in response.text
+
+
+def test_execute_procurement_workflow_from_api(tmp_path):
+    repository = InMemoryRunRepository()
+    app = create_app(repository=repository, artifact_root=tmp_path / "artifacts")
+    client = TestClient(app)
+    dataset_path = tmp_path / "procurement.csv"
+    write_procurement_fixture(dataset_path)
+
+    run_response = client.post(
+        "/runs",
+        json={
+            "task": "Analyze this procurement dataset and create a dashboard report.",
+            "dataset_uri": str(dataset_path),
+        },
+    )
+    run = run_response.json()
+
+    response = client.post(f"/runs/{run['id']}/execute/procurement")
+
+    body = response.json()
+    artifact_types = {artifact["type"] for artifact in body["artifacts"]}
+    assert response.status_code == 200
+    assert body["status"] == "completed"
+    assert body["trace_id"] == run["trace_id"]
+    assert body["completed_node_ids"] == [
+        "data_profile",
+        "analytics",
+        "visualization",
+        "report",
+        "evaluation",
+    ]
+    assert body["failed_node_ids"] == []
+    assert body["waiting_for_approval_node_id"] is None
+    assert {"dashboard", "report", "evaluation"}.issubset(artifact_types)
+    assert body["evaluations"][-1]["passed"] is True
+
+
+def test_execute_procurement_workflow_requires_dataset(tmp_path):
+    client = build_client(tmp_path)
+    run = client.post(
+        "/runs",
+        json={"task": "Analyze this procurement dataset and create a dashboard report."},
+    ).json()
+
+    response = client.post(f"/runs/{run['id']}/execute/procurement")
+
+    assert response.status_code == 400
+    assert "dataset artifact must be attached" in response.json()["detail"]
 
 
 def test_upload_dataset_rejects_unsupported_file_type(tmp_path):

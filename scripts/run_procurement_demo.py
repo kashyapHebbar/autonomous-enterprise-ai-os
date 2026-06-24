@@ -13,18 +13,11 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 sys.path.insert(0, str(SRC))
 
-from aeai_os.agents.analytics_code import AnalyticsCodeAgent
-from aeai_os.agents.data_retrieval import DataRetrievalAgent
-from aeai_os.agents.evaluation import EvaluationAgent
-from aeai_os.agents.planner import PlannerAgent
-from aeai_os.agents.registry import build_default_registry
-from aeai_os.agents.report import ReportAgent
-from aeai_os.agents.visualization import VisualizationAgent
 from aeai_os.observability.metrics import render_prometheus_metrics
-from aeai_os.orchestration.service import OrchestratorService
 from aeai_os.runs.models import ArtifactRecord, EvaluationResultRecord
 from aeai_os.runs.repository import InMemoryRunRepository
 from aeai_os.schemas.enums import ArtifactType, RunStatus
+from aeai_os.workflows import execute_procurement_workflow
 
 DEFAULT_TASK = "Analyze this procurement dataset and create a dashboard report."
 DEFAULT_DATASET_PATH = ROOT / "examples" / "procurement_demo.csv"
@@ -56,7 +49,7 @@ def run_demo(
 
     repository = InMemoryRunRepository()
     run = repository.create_run(task)
-    dataset = repository.add_artifact(
+    repository.add_artifact(
         run_id=run.id,
         artifact_type=ArtifactType.DATASET,
         uri=str(dataset_path),
@@ -67,23 +60,11 @@ def run_demo(
         },
     )
 
-    plan = PlannerAgent().create_plan(
-        run_id=run.id,
-        user_task=task,
-        dataset_artifact_id=dataset.id,
-    )
-    service = OrchestratorService(
+    result = execute_procurement_workflow(
         repository=repository,
-        registry=build_default_registry(),
-        agents={
-            "data_retrieval": DataRetrievalAgent(repository, artifact_root),
-            "analytics_code": AnalyticsCodeAgent(repository, artifact_root),
-            "visualization": VisualizationAgent(repository, artifact_root),
-            "report": ReportAgent(repository, artifact_root),
-            "evaluation": EvaluationAgent(repository, artifact_root),
-        },
+        artifact_root=artifact_root,
+        run_id=run.id,
     )
-    result = service.execute_run(run.id, plan.to_execution_graph())
     refreshed_run = repository.get_run(run.id)
     run_artifact_dir = artifact_root / run.id
     run_artifact_dir.mkdir(parents=True, exist_ok=True)

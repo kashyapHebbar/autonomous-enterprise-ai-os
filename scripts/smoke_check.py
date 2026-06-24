@@ -39,6 +39,7 @@ def main() -> int:
         ROOT / "src" / "aeai_os" / "evaluation",
         ROOT / "src" / "aeai_os" / "runs",
         ROOT / "src" / "aeai_os" / "visualization",
+        ROOT / "src" / "aeai_os" / "workflows",
         ROOT / "tests",
     ]
 

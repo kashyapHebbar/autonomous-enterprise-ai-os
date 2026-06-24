@@ -76,6 +76,15 @@ curl http://localhost:8000/runs/{run_id}
 curl http://localhost:8000/runs/{run_id}/artifacts
 ```
 
+Execute the procurement workflow for a run with an attached dataset:
+
+```bash
+curl -X POST http://localhost:8000/runs/{run_id}/execute/procurement
+```
+
+The execution response includes run status, trace ID, completed/failed node IDs,
+waiting-for-approval state, artifacts, and evaluations.
+
 ## Procurement Demo
 
 The packaged demo uses `examples/procurement_demo.csv` to run the same planner, orchestrator,
@@ -88,6 +97,9 @@ make demo
 The command prints the run ID, trace ID, dashboard artifact, report artifact, evaluation artifact,
 metrics path, and summary JSON path. The summary JSON includes run metadata, artifact metadata,
 evaluation checks, event count, and the metrics file location.
+
+The CLI and API share the same workflow service in `aeai_os.workflows.procurement`, so `make demo`
+and `POST /runs/{run_id}/execute/procurement` exercise the same planner/orchestrator/agent path.
 
 To use another CSV with the same schema:
 

@@ -95,6 +95,12 @@ class RunDetailResponse(RunResponse):
     evaluations: list[EvaluationResponse]
 
 
+class RunExecutionResponse(RunDetailResponse):
+    completed_node_ids: list[str]
+    failed_node_ids: list[str]
+    waiting_for_approval_node_id: str | None
+
+
 def artifact_to_response(artifact: ArtifactRecord) -> ArtifactResponse:
     return ArtifactResponse(
         id=artifact.id,
@@ -162,4 +168,21 @@ def run_to_detail_response(
         **base.model_dump(),
         artifacts=[artifact_to_response(artifact) for artifact in artifacts],
         evaluations=[evaluation_to_response(evaluation) for evaluation in evaluations or []],
+    )
+
+
+def run_to_execution_response(
+    run: RunRecord,
+    artifacts: list[ArtifactRecord],
+    evaluations: list[EvaluationResultRecord],
+    completed_node_ids: list[str],
+    failed_node_ids: list[str],
+    waiting_for_approval_node_id: str | None,
+) -> RunExecutionResponse:
+    detail = run_to_detail_response(run, artifacts, evaluations)
+    return RunExecutionResponse(
+        **detail.model_dump(),
+        completed_node_ids=completed_node_ids,
+        failed_node_ids=failed_node_ids,
+        waiting_for_approval_node_id=waiting_for_approval_node_id,
     )
