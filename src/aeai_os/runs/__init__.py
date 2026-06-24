@@ -7,6 +7,7 @@ from aeai_os.runs.models import (
     GraphNodeRecord,
     RunCheckpointRecord,
     RunRecord,
+    WorkflowJobRecord,
 )
 from aeai_os.runs.repository import (
     ArtifactNotFoundError,
@@ -15,6 +16,7 @@ from aeai_os.runs.repository import (
     InMemoryRunRepository,
     RunCheckpointNotFoundError,
     RunNotFoundError,
+    WorkflowJobNotFoundError,
 )
 from aeai_os.runs.sqlalchemy_repository import SQLAlchemyRunRepository
 
@@ -32,4 +34,6 @@ __all__ = [
     "RunNotFoundError",
     "RunRecord",
     "SQLAlchemyRunRepository",
+    "WorkflowJobNotFoundError",
+    "WorkflowJobRecord",
 ]

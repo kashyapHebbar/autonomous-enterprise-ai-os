@@ -11,6 +11,13 @@ class RunStatus(StrEnum):
     FAILED = "failed"
 
 
+class WorkflowJobStatus(StrEnum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
 class GraphNodeStatus(StrEnum):
     PENDING = "pending"
     RUNNING = "running"

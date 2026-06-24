@@ -119,12 +119,16 @@ Current local behavior:
 - Run checkpoints persist the LangGraph-compatible state shape.
 - Failed nodes retry according to `RetryPolicy` without restarting completed nodes.
 - Nodes that return `waiting_for_approval` pause the run until `approve_node` resumes it.
+- `POST /runs/{run_id}/execute/procurement/async` persists a workflow job for background
+  processing.
+- `scripts/run_workflow_worker.py` claims one queued procurement job, executes the workflow, and
+  records completion, retry, or failure state.
 
 The in-memory repository remains the default local checkpoint backend. Set
 `AEAI_RUN_REPOSITORY_BACKEND=sqlalchemy` and `AEAI_DATABASE_URL` to use the durable SQLAlchemy
 repository against Postgres or SQLite-compatible test databases. The SQLAlchemy backend persists
-runs, graph nodes, artifacts, agent events, evaluations, and checkpoints behind the same repository
-contract.
+runs, workflow jobs, graph nodes, artifacts, agent events, evaluations, and checkpoints behind the
+same repository contract.
 
 ## Planner Contract
 

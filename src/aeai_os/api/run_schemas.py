@@ -6,8 +6,13 @@ from typing import Any
 from pydantic import BaseModel, Field, field_validator
 
 from aeai_os.artifacts import ArtifactLineage
-from aeai_os.runs.models import ArtifactRecord, EvaluationResultRecord, RunRecord
-from aeai_os.schemas.enums import ArtifactType, RunStatus
+from aeai_os.runs.models import (
+    ArtifactRecord,
+    EvaluationResultRecord,
+    RunRecord,
+    WorkflowJobRecord,
+)
+from aeai_os.schemas.enums import ArtifactType, RunStatus, WorkflowJobStatus
 
 
 class CreateRunRequest(BaseModel):
@@ -101,6 +106,22 @@ class RunExecutionResponse(RunDetailResponse):
     waiting_for_approval_node_id: str | None
 
 
+class WorkflowJobResponse(BaseModel):
+    id: str
+    run_id: str
+    workflow_name: str
+    status: WorkflowJobStatus
+    payload: dict[str, Any]
+    attempt_count: int
+    max_attempts: int
+    worker_id: str | None
+    error_summary: str | None
+    started_at: datetime | None
+    finished_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
 def artifact_to_response(artifact: ArtifactRecord) -> ArtifactResponse:
     return ArtifactResponse(
         id=artifact.id,
@@ -185,4 +206,22 @@ def run_to_execution_response(
         completed_node_ids=completed_node_ids,
         failed_node_ids=failed_node_ids,
         waiting_for_approval_node_id=waiting_for_approval_node_id,
+    )
+
+
+def workflow_job_to_response(job: WorkflowJobRecord) -> WorkflowJobResponse:
+    return WorkflowJobResponse(
+        id=job.id,
+        run_id=job.run_id,
+        workflow_name=job.workflow_name,
+        status=job.status,
+        payload=job.payload,
+        attempt_count=job.attempt_count,
+        max_attempts=job.max_attempts,
+        worker_id=job.worker_id,
+        error_summary=job.error_summary,
+        started_at=job.started_at,
+        finished_at=job.finished_at,
+        created_at=job.created_at,
+        updated_at=job.updated_at,
     )

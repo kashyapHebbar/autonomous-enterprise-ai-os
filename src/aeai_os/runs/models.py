@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from aeai_os.schemas.enums import ArtifactType, GraphNodeStatus, RunStatus
+from aeai_os.schemas.enums import ArtifactType, GraphNodeStatus, RunStatus, WorkflowJobStatus
 
 
 @dataclass(frozen=True)
@@ -18,6 +18,23 @@ class RunRecord:
     dataset_artifact_id: str | None = None
     trace_id: str | None = None
     error_summary: str | None = None
+
+
+@dataclass(frozen=True)
+class WorkflowJobRecord:
+    id: str
+    run_id: str
+    workflow_name: str
+    status: WorkflowJobStatus
+    payload: dict[str, Any]
+    attempt_count: int
+    max_attempts: int
+    created_at: datetime
+    updated_at: datetime
+    worker_id: str | None = None
+    error_summary: str | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
 
 
 @dataclass(frozen=True)

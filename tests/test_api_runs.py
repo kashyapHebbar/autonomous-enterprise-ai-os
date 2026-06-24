@@ -242,6 +242,34 @@ def test_execute_procurement_workflow_from_api(tmp_path):
     assert body["evaluations"][-1]["passed"] is True
 
 
+def test_enqueue_procurement_workflow_from_api(tmp_path):
+    repository = InMemoryRunRepository()
+    app = create_app(repository=repository, artifact_root=tmp_path / "artifacts")
+    client = TestClient(app)
+    dataset_path = tmp_path / "procurement.csv"
+    write_procurement_fixture(dataset_path)
+    run = client.post(
+        "/runs",
+        json={
+            "task": "Analyze this procurement dataset and create a dashboard report.",
+            "dataset_uri": str(dataset_path),
+        },
+    ).json()
+
+    response = client.post(f"/runs/{run['id']}/execute/procurement/async")
+    jobs_response = client.get(f"/runs/{run['id']}/workflow-jobs")
+
+    assert response.status_code == 202
+    job = response.json()
+    assert job["run_id"] == run["id"]
+    assert job["workflow_name"] == "procurement"
+    assert job["status"] == "queued"
+    assert job["attempt_count"] == 0
+    assert job["max_attempts"] == 3
+    assert jobs_response.status_code == 200
+    assert jobs_response.json() == [job]
+
+
 def test_execute_procurement_workflow_requires_dataset(tmp_path):
     client = build_client(tmp_path)
     run = client.post(

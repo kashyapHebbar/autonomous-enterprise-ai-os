@@ -15,17 +15,25 @@ from aeai_os.api.run_schemas import (
     RunDetailResponse,
     RunExecutionResponse,
     RunResponse,
+    WorkflowJobResponse,
     artifact_lineage_to_response,
     artifact_to_response,
     evaluation_to_response,
     run_to_detail_response,
     run_to_execution_response,
     run_to_response,
+    workflow_job_to_response,
 )
 from aeai_os.artifacts import ArtifactLineageService
-from aeai_os.runs.repository import ArtifactNotFoundError, InMemoryRunRepository, RunNotFoundError
+from aeai_os.runs.repository import (
+    ArtifactNotFoundError,
+    InMemoryRunRepository,
+    RunNotFoundError,
+    WorkflowJobNotFoundError,
+)
 from aeai_os.schemas.enums import ArtifactType
 from aeai_os.workflows import ProcurementWorkflowError, execute_procurement_workflow
+from aeai_os.workflows.worker import enqueue_procurement_workflow
 
 ALLOWED_UPLOAD_EXTENSIONS = {".csv", ".tsv", ".json", ".parquet"}
 
@@ -88,6 +96,52 @@ def build_runs_router(repository: InMemoryRunRepository, artifact_root: Path):
             failed_node_ids=result.failed_node_ids,
             waiting_for_approval_node_id=result.waiting_for_approval_node_id,
         )
+
+    @router.post(
+        "/{run_id}/execute/procurement/async",
+        response_model=WorkflowJobResponse,
+        status_code=status.HTTP_202_ACCEPTED,
+    )
+    def enqueue_procurement_execution(run_id: str) -> WorkflowJobResponse:
+        run = _get_run_or_404(repository, run_id)
+        if not run.dataset_artifact_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "A dataset artifact must be attached before enqueueing "
+                    "the procurement workflow."
+                ),
+            )
+        job = enqueue_procurement_workflow(repository=repository, run_id=run_id)
+        return workflow_job_to_response(job)
+
+    @router.get("/{run_id}/workflow-jobs", response_model=list[WorkflowJobResponse])
+    def list_workflow_jobs(run_id: str) -> list[WorkflowJobResponse]:
+        _get_run_or_404(repository, run_id)
+        return [
+            workflow_job_to_response(job)
+            for job in repository.list_workflow_jobs(run_id=run_id)
+        ]
+
+    @router.get(
+        "/{run_id}/workflow-jobs/{job_id}",
+        response_model=WorkflowJobResponse,
+    )
+    def get_workflow_job(run_id: str, job_id: str) -> WorkflowJobResponse:
+        _get_run_or_404(repository, run_id)
+        try:
+            job = repository.get_workflow_job(job_id)
+        except WorkflowJobNotFoundError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(exc),
+            ) from exc
+        if job.run_id != run_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Workflow job not found for run: {job_id}",
+            )
+        return workflow_job_to_response(job)
 
     @router.get("/{run_id}/evaluations", response_model=list[EvaluationResponse])
     def list_evaluations(run_id: str) -> list[EvaluationResponse]:

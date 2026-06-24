@@ -7,7 +7,13 @@ from sqlalchemy.pool import StaticPool
 from aeai_os.runs.models import AgentEventRecord, EvaluationResultRecord, GraphNodeRecord
 from aeai_os.runs.repository import InMemoryRunRepository, RunNotFoundError, utc_now
 from aeai_os.runs.sqlalchemy_repository import SQLAlchemyRunRepository
-from aeai_os.schemas.enums import AgentEventType, ArtifactType, GraphNodeStatus, RunStatus
+from aeai_os.schemas.enums import (
+    AgentEventType,
+    ArtifactType,
+    GraphNodeStatus,
+    RunStatus,
+    WorkflowJobStatus,
+)
 
 
 @pytest.fixture(params=["memory", "sqlalchemy"])
@@ -157,3 +163,65 @@ def test_repository_allows_reused_graph_node_ids_across_runs(repository):
     assert len(repository.list_graph_nodes(second_run.id)) == 1
     assert repository.get_graph_node(first_run.id, "profile").run_id == first_run.id
     assert repository.get_graph_node(second_run.id, "profile").run_id == second_run.id
+
+
+def test_repository_persists_and_claims_workflow_jobs(repository):
+    run = repository.create_run("Analyze procurement data.")
+
+    job = repository.enqueue_workflow_job(
+        run_id=run.id,
+        workflow_name="procurement",
+        payload={"priority": "normal"},
+        max_attempts=2,
+    )
+    claimed = repository.claim_next_workflow_job(
+        worker_id="worker-test",
+        workflow_name="procurement",
+    )
+    requeued = repository.fail_workflow_job(
+        claimed.id,
+        "Temporary warehouse timeout.",
+        retry=True,
+    )
+    claimed_again = repository.claim_next_workflow_job(
+        worker_id="worker-test",
+        workflow_name="procurement",
+    )
+    completed = repository.complete_workflow_job(claimed_again.id)
+
+    assert job.status == WorkflowJobStatus.QUEUED
+    assert job.payload == {"priority": "normal"}
+    assert claimed.id == job.id
+    assert claimed.status == WorkflowJobStatus.RUNNING
+    assert claimed.attempt_count == 1
+    assert claimed.worker_id == "worker-test"
+    assert requeued.status == WorkflowJobStatus.QUEUED
+    assert requeued.error_summary == "Temporary warehouse timeout."
+    assert claimed_again.attempt_count == 2
+    assert completed.status == WorkflowJobStatus.COMPLETED
+    assert completed.finished_at is not None
+    assert repository.get_workflow_job(job.id) == completed
+    assert repository.list_workflow_jobs(run_id=run.id) == [completed]
+    assert repository.list_workflow_jobs(status=WorkflowJobStatus.COMPLETED) == [completed]
+    assert repository.claim_next_workflow_job(worker_id="worker-test") is None
+
+
+def test_repository_marks_workflow_job_failed_after_attempts_are_exhausted(repository):
+    run = repository.create_run("Analyze procurement data.")
+    job = repository.enqueue_workflow_job(
+        run_id=run.id,
+        workflow_name="procurement",
+        max_attempts=1,
+    )
+    claimed = repository.claim_next_workflow_job(worker_id="worker-test")
+
+    failed = repository.fail_workflow_job(
+        claimed.id,
+        "Dataset artifact is missing.",
+        retry=True,
+    )
+
+    assert failed.id == job.id
+    assert failed.status == WorkflowJobStatus.FAILED
+    assert failed.error_summary == "Dataset artifact is missing."
+    assert failed.finished_at is not None

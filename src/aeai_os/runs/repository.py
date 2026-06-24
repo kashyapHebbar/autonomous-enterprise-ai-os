@@ -15,8 +15,9 @@ from aeai_os.runs.models import (
     GraphNodeRecord,
     RunCheckpointRecord,
     RunRecord,
+    WorkflowJobRecord,
 )
-from aeai_os.schemas.enums import AgentEventType, ArtifactType, RunStatus
+from aeai_os.schemas.enums import AgentEventType, ArtifactType, RunStatus, WorkflowJobStatus
 
 
 class RunNotFoundError(KeyError):
@@ -39,8 +40,12 @@ class EvaluationResultNotFoundError(KeyError):
     pass
 
 
+class WorkflowJobNotFoundError(KeyError):
+    pass
+
+
 class InMemoryRunRepository:
-    """Small repository used until the Postgres-backed implementation lands."""
+    """In-memory run repository for local development and fast tests."""
 
     def __init__(self) -> None:
         self._lock = RLock()
@@ -50,6 +55,8 @@ class InMemoryRunRepository:
         self._events: dict[str, list[AgentEventRecord]] = {}
         self._evaluations: dict[str, list[EvaluationResultRecord]] = {}
         self._checkpoints: dict[str, RunCheckpointRecord] = {}
+        self._workflow_jobs: dict[str, WorkflowJobRecord] = {}
+        self._workflow_job_order: list[str] = []
 
     def create_run(
         self,
@@ -106,6 +113,124 @@ class InMemoryRunRepository:
             )
             self._runs[run_id] = updated
             return updated
+
+    def enqueue_workflow_job(
+        self,
+        run_id: str,
+        workflow_name: str,
+        payload: dict[str, Any] | None = None,
+        max_attempts: int = 3,
+        job_id: str | None = None,
+    ) -> WorkflowJobRecord:
+        normalized_workflow = workflow_name.strip()
+        if not normalized_workflow:
+            raise ValueError("Workflow name is required.")
+        if max_attempts < 1:
+            raise ValueError("Workflow job max_attempts must be at least 1.")
+
+        with self._lock:
+            self.get_run(run_id)
+            now = utc_now()
+            job = WorkflowJobRecord(
+                id=job_id or f"job_{uuid4().hex}",
+                run_id=run_id,
+                workflow_name=normalized_workflow,
+                status=WorkflowJobStatus.QUEUED,
+                payload=deepcopy(payload or {}),
+                attempt_count=0,
+                max_attempts=max_attempts,
+                created_at=now,
+                updated_at=now,
+            )
+            self._workflow_jobs[job.id] = job
+            self._workflow_job_order.append(job.id)
+            return job
+
+    def list_workflow_jobs(
+        self,
+        run_id: str | None = None,
+        status: WorkflowJobStatus | None = None,
+    ) -> list[WorkflowJobRecord]:
+        with self._lock:
+            if run_id is not None:
+                self.get_run(run_id)
+            jobs = [self._workflow_jobs[job_id] for job_id in self._workflow_job_order]
+            if run_id is not None:
+                jobs = [job for job in jobs if job.run_id == run_id]
+            if status is not None:
+                jobs = [job for job in jobs if job.status == status]
+            return [deepcopy(job) for job in jobs]
+
+    def get_workflow_job(self, job_id: str) -> WorkflowJobRecord:
+        with self._lock:
+            try:
+                return deepcopy(self._workflow_jobs[job_id])
+            except KeyError as exc:
+                raise WorkflowJobNotFoundError(f"Workflow job not found: {job_id}") from exc
+
+    def claim_next_workflow_job(
+        self,
+        worker_id: str,
+        workflow_name: str | None = None,
+    ) -> WorkflowJobRecord | None:
+        normalized_workflow = workflow_name.strip() if workflow_name else None
+        with self._lock:
+            for job_id in self._workflow_job_order:
+                job = self._workflow_jobs[job_id]
+                if job.status != WorkflowJobStatus.QUEUED:
+                    continue
+                if normalized_workflow is not None and job.workflow_name != normalized_workflow:
+                    continue
+                now = utc_now()
+                claimed = replace(
+                    job,
+                    status=WorkflowJobStatus.RUNNING,
+                    worker_id=worker_id,
+                    attempt_count=job.attempt_count + 1,
+                    started_at=job.started_at or now,
+                    updated_at=now,
+                )
+                self._workflow_jobs[job_id] = claimed
+                return deepcopy(claimed)
+        return None
+
+    def complete_workflow_job(self, job_id: str) -> WorkflowJobRecord:
+        with self._lock:
+            job = self._get_workflow_job_for_update(job_id)
+            now = utc_now()
+            completed = replace(
+                job,
+                status=WorkflowJobStatus.COMPLETED,
+                updated_at=now,
+                finished_at=now,
+            )
+            self._workflow_jobs[job_id] = completed
+            return deepcopy(completed)
+
+    def fail_workflow_job(
+        self,
+        job_id: str,
+        error_summary: str,
+        retry: bool = True,
+    ) -> WorkflowJobRecord:
+        with self._lock:
+            job = self._get_workflow_job_for_update(job_id)
+            now = utc_now()
+            should_retry = retry and job.attempt_count < job.max_attempts
+            failed = replace(
+                job,
+                status=(
+                    WorkflowJobStatus.QUEUED
+                    if should_retry
+                    else WorkflowJobStatus.FAILED
+                ),
+                worker_id=None if should_retry else job.worker_id,
+                error_summary=error_summary,
+                updated_at=now,
+                finished_at=None if should_retry else now,
+            )
+            self._workflow_jobs[job_id] = failed
+            return deepcopy(failed)
 
     def next_artifact_id(self) -> str:
         return f"artifact_{uuid4().hex}"
@@ -269,6 +394,12 @@ class InMemoryRunRepository:
                 return deepcopy(self._checkpoints[run_id])
             except KeyError as exc:
                 raise RunCheckpointNotFoundError(f"Run checkpoint not found: {run_id}") from exc
+
+    def _get_workflow_job_for_update(self, job_id: str) -> WorkflowJobRecord:
+        try:
+            return self._workflow_jobs[job_id]
+        except KeyError as exc:
+            raise WorkflowJobNotFoundError(f"Workflow job not found: {job_id}") from exc
 
 
 def utc_now() -> datetime:
