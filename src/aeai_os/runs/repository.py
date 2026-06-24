@@ -7,6 +7,7 @@ from threading import RLock
 from typing import Any
 from uuid import uuid4
 
+from aeai_os.observability.tracing import ensure_trace_id, start_span
 from aeai_os.runs.models import (
     AgentEventRecord,
     ArtifactRecord,
@@ -15,7 +16,7 @@ from aeai_os.runs.models import (
     RunCheckpointRecord,
     RunRecord,
 )
-from aeai_os.schemas.enums import ArtifactType, RunStatus
+from aeai_os.schemas.enums import AgentEventType, ArtifactType, RunStatus
 
 
 class RunNotFoundError(KeyError):
@@ -50,7 +51,12 @@ class InMemoryRunRepository:
         self._evaluations: dict[str, list[EvaluationResultRecord]] = {}
         self._checkpoints: dict[str, RunCheckpointRecord] = {}
 
-    def create_run(self, task: str, metadata: dict[str, Any] | None = None) -> RunRecord:
+    def create_run(
+        self,
+        task: str,
+        metadata: dict[str, Any] | None = None,
+        trace_id: str | None = None,
+    ) -> RunRecord:
         normalized_task = task.strip()
         if len(normalized_task) < 3:
             raise ValueError("Task must contain at least 3 non-whitespace characters.")
@@ -63,6 +69,7 @@ class InMemoryRunRepository:
             metadata=dict(metadata or {}),
             created_at=now,
             updated_at=now,
+            trace_id=ensure_trace_id(trace_id),
         )
         with self._lock:
             self._runs[run.id] = run
@@ -188,11 +195,43 @@ class InMemoryRunRepository:
 
     def add_evaluation(self, evaluation: EvaluationResultRecord) -> EvaluationResultRecord:
         with self._lock:
-            self.get_run(evaluation.run_id)
+            run = self.get_run(evaluation.run_id)
             record = evaluation
             if record.created_at is None:
                 record = replace(record, created_at=utc_now())
-            self._evaluations[evaluation.run_id].append(record)
+            with start_span(
+                "evaluation.result",
+                {
+                    "run.id": record.run_id,
+                    "run.trace_id": run.trace_id,
+                    "evaluation.id": record.id,
+                    "evaluation.score": record.score,
+                    "evaluation.passed": record.passed,
+                    "evaluation.check_count": len(record.checks),
+                    "evaluation.target_artifact_id": record.target_artifact_id,
+                },
+            ):
+                self._evaluations[evaluation.run_id].append(record)
+                self._events[evaluation.run_id].append(
+                    AgentEventRecord(
+                        id=f"event_{uuid4().hex}",
+                        run_id=record.run_id,
+                        node_id="evaluation",
+                        event_type=AgentEventType.EVALUATION,
+                        payload={
+                            "message": "Evaluation result logged.",
+                            "backend": "opentelemetry",
+                            "evaluation_id": record.id,
+                            "target_artifact_id": record.target_artifact_id,
+                            "score": record.score,
+                            "passed": record.passed,
+                            "check_count": len(record.checks),
+                            "trace_id": run.trace_id,
+                            "timestamp": utc_now().isoformat(),
+                        },
+                        created_at=utc_now(),
+                    )
+                )
             return record
 
     def list_evaluations(self, run_id: str) -> list[EvaluationResultRecord]:

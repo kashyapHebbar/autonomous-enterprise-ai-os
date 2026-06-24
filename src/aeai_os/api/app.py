@@ -18,8 +18,11 @@ def create_app(
     """
     from fastapi import FastAPI
 
+    from aeai_os.api.metrics import build_metrics_router
     from aeai_os.api.runs import build_runs_router
+    from aeai_os.observability.tracing import configure_tracing, current_trace_id, start_span
 
+    configure_tracing()
     settings = get_settings()
     run_repository = repository or InMemoryRunRepository()
     run_artifact_root = artifact_root or Path(settings.artifact_root)
@@ -32,12 +35,37 @@ def create_app(
     app.state.run_repository = run_repository
     app.state.artifact_root = run_artifact_root
 
+    @app.middleware("http")
+    async def trace_requests(request, call_next):
+        with start_span(
+            "http.request",
+            {
+                "http.method": request.method,
+                "http.target": request.url.path,
+            },
+        ) as span:
+            try:
+                response = await call_next(request)
+            except Exception as exc:
+                span.record_exception(exc)
+                span.set_attribute("error", True)
+                raise
+
+            span.set_attribute("http.status_code", response.status_code)
+            if response.status_code >= 500:
+                span.set_attribute("error", True)
+            trace_id = current_trace_id()
+            if trace_id:
+                response.headers["x-trace-id"] = trace_id
+            return response
+
     @app.get("/")
     def root() -> dict[str, str]:
         return {
             "service": "autonomous-enterprise-ai-os",
             "docs": "/docs",
             "health": "/health",
+            "metrics": "/metrics",
         }
 
     @app.get("/health")
@@ -45,5 +73,6 @@ def create_app(
         return build_health_payload()
 
     app.include_router(build_runs_router(run_repository, run_artifact_root))
+    app.include_router(build_metrics_router(run_repository))
 
     return app

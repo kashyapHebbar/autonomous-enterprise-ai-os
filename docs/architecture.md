@@ -60,7 +60,7 @@ flowchart LR
 | Agent Registry | Map graph node types to executable agent implementations | Static registry for MVP |
 | State Store | Persist runs, graph nodes, events, approvals, and evaluations | Postgres |
 | Artifact Store | Store input datasets, generated charts, code, dashboards, and reports | Local filesystem layout with object-store abstraction |
-| Observability Pipeline | Record traces, metrics, logs, evals, and run timing | OpenTelemetry first |
+| Observability Pipeline | Record traces, metrics, logs, evals, and run timing | OpenTelemetry spans with a Prometheus-compatible metrics endpoint |
 | Security Layer | Classify tools, enforce approvals, and audit tool calls | Required for code execution and future cloud tools |
 
 ## MVP Workflow
@@ -177,6 +177,10 @@ Represents one user-submitted workflow.
 | trace_id | string | Observability trace correlation |
 | error_summary | text | Nullable |
 
+Every run receives a 32-character trace ID at creation. API responses include the
+same value in `x-trace-id` when the run is created inside an HTTP request, and
+orchestrator events include the run trace ID for log/trace correlation.
+
 ### GraphNode
 
 Represents a planned executable step.
@@ -236,6 +240,15 @@ Represents validation output for a run or artifact.
 | checks | json | Per-check results |
 | created_at | timestamp | Evaluation time |
 
+### Observability Metrics
+
+The MVP exposes Prometheus-compatible text at `GET /metrics`. Metrics are derived
+from repository state and include run counts by status, error totals, artifact
+count, evaluation count and average score, node retry totals, run duration
+summary, and agent node status counts. The OpenTelemetry integration creates
+spans for HTTP requests, orchestration entry points, agent node execution, tool
+permission decisions, and evaluation result logging.
+
 ## Procurement Demo Outputs
 
 The MVP demo should produce:
@@ -253,6 +266,7 @@ The MVP demo should produce:
 - Evaluation result artifact with pass/fail checks and consistency scores.
 - Security audit events for tool permission decisions and approvals.
 - Run trace and event log.
+- Prometheus-compatible run, artifact, node, retry, and evaluation metrics.
 
 ## Suggested Implementation Sequence
 

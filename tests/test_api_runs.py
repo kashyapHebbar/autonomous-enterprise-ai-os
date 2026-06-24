@@ -25,6 +25,8 @@ def test_create_run_and_fetch_status(tmp_path):
     assert body["status"] == "pending"
     assert body["task"] == "Analyze this procurement dataset and create a dashboard."
     assert body["artifacts"] == []
+    assert len(body["trace_id"]) == 32
+    assert response.headers["x-trace-id"] == body["trace_id"]
 
     get_response = client.get(f"/runs/{body['id']}")
     assert get_response.status_code == 200
@@ -128,12 +130,51 @@ def test_run_detail_and_evaluations_endpoint_include_failed_evaluation(tmp_path)
 
     detail_response = client.get(f"/runs/{run.id}")
     evaluations_response = client.get(f"/runs/{run.id}/evaluations")
+    evaluation_events = [
+        event for event in repository.list_events(run.id) if event.event_type == "evaluation"
+    ]
 
     assert detail_response.status_code == 200
     assert detail_response.json()["evaluations"][0]["id"] == evaluation.id
     assert detail_response.json()["evaluations"][0]["passed"] is False
     assert evaluations_response.status_code == 200
     assert evaluations_response.json()[0]["checks"][0]["name"] == "data_consistency"
+    assert evaluation_events[0].payload["backend"] == "opentelemetry"
+    assert evaluation_events[0].payload["trace_id"] == repository.get_run(run.id).trace_id
+
+
+def test_metrics_endpoint_exposes_run_artifact_and_evaluation_metrics(tmp_path):
+    repository = InMemoryRunRepository()
+    app = create_app(repository=repository, artifact_root=tmp_path / "artifacts")
+    client = TestClient(app)
+    run = repository.create_run("Analyze procurement spend.")
+    repository.add_artifact(
+        run_id=run.id,
+        artifact_type=ArtifactType.REPORT,
+        uri=str(tmp_path / "report.md"),
+        metadata={"source": "test", "format": "markdown"},
+        producer_node_id="report",
+    )
+    repository.add_evaluation(
+        EvaluationResultRecord(
+            id="evaluation_passed",
+            run_id=run.id,
+            target_artifact_id=None,
+            score=0.9,
+            passed=True,
+            checks=[{"name": "task_completion", "passed": True, "score": 1.0}],
+        )
+    )
+
+    response = client.get("/metrics")
+
+    assert response.status_code == 200
+    assert "text/plain" in response.headers["content-type"]
+    assert "aeai_runs_total 1" in response.text
+    assert 'aeai_runs_by_status{status="pending"} 1' in response.text
+    assert "aeai_artifacts_total 1" in response.text
+    assert "aeai_evaluations_total 1" in response.text
+    assert "aeai_evaluation_score_average 0.900000" in response.text
 
 
 def test_upload_dataset_rejects_unsupported_file_type(tmp_path):

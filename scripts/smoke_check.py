@@ -31,6 +31,7 @@ def main() -> int:
         ROOT / "src" / "aeai_os" / "reports",
         ROOT / "src" / "aeai_os" / "schemas",
         ROOT / "src" / "aeai_os" / "security",
+        ROOT / "src" / "aeai_os" / "observability",
         ROOT / "src" / "aeai_os" / "storage",
         ROOT / "src" / "aeai_os" / "evaluation",
         ROOT / "src" / "aeai_os" / "runs",
@@ -59,6 +60,7 @@ def main() -> int:
     from aeai_os.agents.registry import build_default_registry
     from aeai_os.agents.report import ReportAgent
     from aeai_os.agents.visualization import VisualizationAgent
+    from aeai_os.observability.metrics import render_prometheus_metrics
     from aeai_os.orchestration.graph import ExecutionGraph, ExecutionNode
     from aeai_os.orchestration.service import OrchestratorService
     from aeai_os.runs.repository import InMemoryRunRepository
@@ -82,6 +84,8 @@ def main() -> int:
         run = repository.create_run("Analyze this procurement dataset and create a dashboard.")
         if run.status != RunStatus.PENDING:
             raise AssertionError(f"Unexpected initial run status: {run.status}")
+        if not run.trace_id:
+            raise AssertionError("Run did not receive an observability trace ID.")
 
         artifact = repository.add_artifact(
             run_id=run.id,
@@ -206,6 +210,17 @@ def main() -> int:
         ]
         if not tool_events:
             raise AssertionError("Security policy did not record tool audit events.")
+        if not all(event.payload.get("trace_id") for event in repository.list_events(run.id)):
+            raise AssertionError("Observed agent events are missing trace IDs.")
+        metrics = render_prometheus_metrics(repository)
+        for expected_metric in (
+            "aeai_runs_total 1",
+            "aeai_artifacts_total",
+            "aeai_evaluations_total 1",
+            "aeai_agent_node_executions_total",
+        ):
+            if expected_metric not in metrics:
+                raise AssertionError(f"Missing expected metric: {expected_metric}")
 
     print(
         "Smoke check passed: run lifecycle, data ingestion, analytics, visualization, and "

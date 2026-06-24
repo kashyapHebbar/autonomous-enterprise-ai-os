@@ -112,6 +112,13 @@ def test_orchestrator_executes_multistep_graph_and_checkpoints_state():
     }
     assert repository.get_graph_node(run.id, "profile").status == GraphNodeStatus.COMPLETED
     assert analytics_agent.inputs[0].artifacts == ["schema_profile"]
+    completed_events = [
+        event
+        for event in repository.list_events(run.id)
+        if event.payload.get("message") == "Node execution completed."
+    ]
+    assert completed_events[-1].payload["trace_id"] == repository.get_run(run.id).trace_id
+    assert completed_events[-1].payload["duration_ms"] >= 0
 
 
 def test_orchestrator_retries_failed_node_without_restarting_completed_work():

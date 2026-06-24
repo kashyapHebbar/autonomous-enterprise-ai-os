@@ -35,6 +35,7 @@ class ArtifactType(StrEnum):
 class AgentEventType(StrEnum):
     TOOL_CALL = "tool_call"
     LOG = "log"
+    EVALUATION = "evaluation"
     APPROVAL_REQUEST = "approval_request"
     APPROVAL_DECISION = "approval_decision"
     ERROR = "error"

@@ -3,11 +3,13 @@ from __future__ import annotations
 from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass, replace
+from time import perf_counter
 from typing import Any
 from uuid import uuid4
 
 from aeai_os.agents.base import Agent, AgentInput, AgentOutput
 from aeai_os.agents.registry import AgentRegistry
+from aeai_os.observability.tracing import current_trace_id, start_span
 from aeai_os.orchestration.graph import ExecutionGraph
 from aeai_os.orchestration.state import (
     LangGraphRunState,
@@ -72,89 +74,105 @@ class OrchestratorService:
 
     def execute_run(self, run_id: str, graph: ExecutionGraph) -> OrchestrationResult:
         run = self._repository.get_run(run_id)
-        graph.validate(set(self._registry.list_agent_types()))
-        self._assert_agents_available(graph)
+        with start_span(
+            "orchestrator.execute_run",
+            {
+                "run.id": run_id,
+                "run.trace_id": run.trace_id,
+                "graph.node_count": len(graph.nodes),
+            },
+        ):
+            graph.validate(set(self._registry.list_agent_types()))
+            self._assert_agents_available(graph)
 
-        now = utc_now()
-        for node in graph.nodes:
-            self._repository.upsert_graph_node(
-                GraphNodeRecord(
-                    id=node.id,
-                    run_id=run.id,
-                    agent_type=node.agent,
-                    status=GraphNodeStatus.PENDING,
-                    depends_on=list(node.depends_on),
-                    required_tools=list(node.required_tools),
-                    expected_artifacts=list(node.expected_artifacts),
-                    retry_count=0,
-                    created_at=now,
-                    updated_at=now,
+            now = utc_now()
+            for node in graph.nodes:
+                self._repository.upsert_graph_node(
+                    GraphNodeRecord(
+                        id=node.id,
+                        run_id=run.id,
+                        agent_type=node.agent,
+                        status=GraphNodeStatus.PENDING,
+                        depends_on=list(node.depends_on),
+                        required_tools=list(node.required_tools),
+                        expected_artifacts=list(node.expected_artifacts),
+                        retry_count=0,
+                        created_at=now,
+                        updated_at=now,
+                    )
                 )
-            )
 
-        state = build_initial_state(run, graph)
-        self._repository.save_checkpoint(run.id, state)
-        self._repository.update_status(run.id, RunStatus.RUNNING)
-        return self.resume_run(run.id)
+            state = build_initial_state(run, graph)
+            self._repository.save_checkpoint(run.id, state)
+            self._repository.update_status(run.id, RunStatus.RUNNING)
+            return self.resume_run(run.id)
 
     def resume_run(self, run_id: str) -> OrchestrationResult:
-        state = self._load_state(run_id)
-        self._repository.update_status(run_id, RunStatus.RUNNING)
+        run = self._repository.get_run(run_id)
+        with start_span(
+            "orchestrator.resume_run",
+            {
+                "run.id": run_id,
+                "run.trace_id": run.trace_id,
+            },
+        ):
+            state = self._load_state(run_id)
+            self._repository.update_status(run_id, RunStatus.RUNNING)
 
-        while True:
-            state = self._refresh_state_from_nodes(run_id, state)
-            waiting_node_id = state["waiting_for_approval_node_id"]
-            if waiting_node_id:
-                self._repository.update_status(run_id, RunStatus.WAITING_FOR_APPROVAL)
-                self._repository.save_checkpoint(run_id, state)
-                return self._result(run_id, RunStatus.WAITING_FOR_APPROVAL, state)
-
-            nodes = self._ordered_nodes(run_id, state)
-            if nodes and all(node.status == GraphNodeStatus.COMPLETED for node in nodes):
-                self._repository.update_status(run_id, RunStatus.COMPLETED)
-                self._repository.save_checkpoint(run_id, state)
-                return self._result(run_id, RunStatus.COMPLETED, state)
-
-            terminal_failures = [
-                node
-                for node in nodes
-                if node.status == GraphNodeStatus.FAILED
-                and node.retry_count >= self._retry_policy.max_attempts
-            ]
-            if terminal_failures:
-                summary = "; ".join(node.id for node in terminal_failures)
-                self._repository.update_status(
-                    run_id,
-                    RunStatus.FAILED,
-                    error_summary=f"Failed graph nodes: {summary}",
-                )
-                self._repository.save_checkpoint(run_id, state)
-                return self._result(run_id, RunStatus.FAILED, state)
-
-            ready_nodes = [
-                node
-                for node in nodes
-                if node.status in {GraphNodeStatus.PENDING, GraphNodeStatus.FAILED}
-                and node.retry_count < self._retry_policy.max_attempts
-                and self._dependencies_completed(node, nodes)
-            ]
-            if not ready_nodes:
-                self._repository.update_status(
-                    run_id,
-                    RunStatus.FAILED,
-                    error_summary="No executable graph nodes remain.",
-                )
-                self._repository.save_checkpoint(run_id, state)
-                return self._result(run_id, RunStatus.FAILED, state)
-
-            for node in ready_nodes:
-                outcome = self._execute_node(node, state)
-                state = self._load_state(run_id)
-                if outcome == GraphNodeStatus.WAITING_FOR_APPROVAL:
+            while True:
+                state = self._refresh_state_from_nodes(run_id, state)
+                waiting_node_id = state["waiting_for_approval_node_id"]
+                if waiting_node_id:
                     self._repository.update_status(run_id, RunStatus.WAITING_FOR_APPROVAL)
+                    self._repository.save_checkpoint(run_id, state)
                     return self._result(run_id, RunStatus.WAITING_FOR_APPROVAL, state)
-                if outcome == GraphNodeStatus.FAILED:
-                    break
+
+                nodes = self._ordered_nodes(run_id, state)
+                if nodes and all(node.status == GraphNodeStatus.COMPLETED for node in nodes):
+                    self._repository.update_status(run_id, RunStatus.COMPLETED)
+                    self._repository.save_checkpoint(run_id, state)
+                    return self._result(run_id, RunStatus.COMPLETED, state)
+
+                terminal_failures = [
+                    node
+                    for node in nodes
+                    if node.status == GraphNodeStatus.FAILED
+                    and node.retry_count >= self._retry_policy.max_attempts
+                ]
+                if terminal_failures:
+                    summary = "; ".join(node.id for node in terminal_failures)
+                    self._repository.update_status(
+                        run_id,
+                        RunStatus.FAILED,
+                        error_summary=f"Failed graph nodes: {summary}",
+                    )
+                    self._repository.save_checkpoint(run_id, state)
+                    return self._result(run_id, RunStatus.FAILED, state)
+
+                ready_nodes = [
+                    node
+                    for node in nodes
+                    if node.status in {GraphNodeStatus.PENDING, GraphNodeStatus.FAILED}
+                    and node.retry_count < self._retry_policy.max_attempts
+                    and self._dependencies_completed(node, nodes)
+                ]
+                if not ready_nodes:
+                    self._repository.update_status(
+                        run_id,
+                        RunStatus.FAILED,
+                        error_summary="No executable graph nodes remain.",
+                    )
+                    self._repository.save_checkpoint(run_id, state)
+                    return self._result(run_id, RunStatus.FAILED, state)
+
+                for node in ready_nodes:
+                    outcome = self._execute_node(node, state)
+                    state = self._load_state(run_id)
+                    if outcome == GraphNodeStatus.WAITING_FOR_APPROVAL:
+                        self._repository.update_status(run_id, RunStatus.WAITING_FOR_APPROVAL)
+                        return self._result(run_id, RunStatus.WAITING_FOR_APPROVAL, state)
+                    if outcome == GraphNodeStatus.FAILED:
+                        break
 
     def approve_node(
         self,
@@ -235,49 +253,67 @@ class OrchestratorService:
         state: LangGraphRunState,
     ) -> GraphNodeStatus:
         started = utc_now()
-        running = replace(
-            node,
-            status=GraphNodeStatus.RUNNING,
-            started_at=node.started_at or started,
-            updated_at=started,
-        )
-        self._repository.upsert_graph_node(running)
-        self._record_event(
-            run_id=node.run_id,
-            node_id=node.id,
-            event_type=AgentEventType.LOG,
-            payload={
-                "agent": node.agent_type,
-                "message": "Node execution started.",
-                "attempt": node.retry_count + 1,
-                "timestamp": utc_now().isoformat(),
+        started_at_monotonic = perf_counter()
+        with start_span(
+            "agent.node",
+            {
+                "run.id": node.run_id,
+                "run.trace_id": self._repository.get_run(node.run_id).trace_id,
+                "agent.type": node.agent_type,
+                "node.id": node.id,
+                "node.attempt": node.retry_count + 1,
             },
-        )
-        self._repository.save_checkpoint(
-            node.run_id,
-            self._refresh_state_from_nodes(node.run_id, state),
-        )
-
-        security_output = self._authorize_node_tools(running, state)
-        if security_output is not None:
-            if security_output.status == "waiting_for_approval":
-                return self._pause_for_approval(running, state, security_output)
-            return self._fail_node(running, state, security_output)
-
-        output = self._call_agent(running, state)
-        for event in output.events:
+        ) as span:
+            running = replace(
+                node,
+                status=GraphNodeStatus.RUNNING,
+                started_at=node.started_at or started,
+                updated_at=started,
+            )
+            self._repository.upsert_graph_node(running)
             self._record_event(
                 run_id=node.run_id,
                 node_id=node.id,
-                event_type=str(event.get("event_type", AgentEventType.LOG)),
-                payload={key: value for key, value in event.items() if key != "event_type"},
+                event_type=AgentEventType.LOG,
+                payload={
+                    "agent": node.agent_type,
+                    "message": "Node execution started.",
+                    "attempt": node.retry_count + 1,
+                    "status": GraphNodeStatus.RUNNING.value,
+                    "timestamp": utc_now().isoformat(),
+                },
+            )
+            self._repository.save_checkpoint(
+                node.run_id,
+                self._refresh_state_from_nodes(node.run_id, state),
             )
 
-        if output.status == "succeeded":
-            return self._complete_node(running, state, output)
-        if output.status == "waiting_for_approval":
-            return self._pause_for_approval(running, state, output)
-        return self._fail_node(running, state, output)
+            security_output = self._authorize_node_tools(running, state)
+            if security_output is not None:
+                if security_output.status == "waiting_for_approval":
+                    outcome = self._pause_for_approval(running, state, security_output)
+                else:
+                    outcome = self._fail_node(running, state, security_output)
+                _set_node_span_result(span, outcome, started_at_monotonic)
+                return outcome
+
+            output = self._call_agent(running, state)
+            for event in output.events:
+                self._record_event(
+                    run_id=node.run_id,
+                    node_id=node.id,
+                    event_type=str(event.get("event_type", AgentEventType.LOG)),
+                    payload={key: value for key, value in event.items() if key != "event_type"},
+                )
+
+            if output.status == "succeeded":
+                outcome = self._complete_node(running, state, output)
+            elif output.status == "waiting_for_approval":
+                outcome = self._pause_for_approval(running, state, output)
+            else:
+                outcome = self._fail_node(running, state, output)
+            _set_node_span_result(span, outcome, started_at_monotonic)
+            return outcome
 
     def _call_agent(self, node: GraphNodeRecord, state: LangGraphRunState) -> AgentOutput:
         agent = self._agents[node.agent_type]
@@ -364,26 +400,39 @@ class OrchestratorService:
         node: GraphNodeRecord,
         decision: ToolPolicyDecision,
     ) -> None:
-        self._record_event(
-            run_id=node.run_id,
-            node_id=node.id,
-            event_type=AgentEventType.TOOL_CALL,
-            payload={
-                "agent": node.agent_type,
-                "tool": decision.tool,
-                "permission_level": (
-                    decision.permission_level.value if decision.permission_level else None
-                ),
-                "risk": decision.risk.value,
-                "decision": decision.decision.value,
-                "input_summary": decision.input_summary,
-                "reason": decision.reason,
-                "approval_required": decision.approval_required,
-                "approved": decision.approved,
-                "destructive": decision.destructive,
-                "timestamp": utc_now().isoformat(),
+        with start_span(
+            "tool.policy_decision",
+            {
+                "run.id": node.run_id,
+                "agent.type": node.agent_type,
+                "node.id": node.id,
+                "tool.name": decision.tool,
+                "tool.risk": decision.risk.value,
+                "tool.decision": decision.decision.value,
+                "tool.approval_required": decision.approval_required,
+                "tool.destructive": decision.destructive,
             },
-        )
+        ):
+            self._record_event(
+                run_id=node.run_id,
+                node_id=node.id,
+                event_type=AgentEventType.TOOL_CALL,
+                payload={
+                    "agent": node.agent_type,
+                    "tool": decision.tool,
+                    "permission_level": (
+                        decision.permission_level.value if decision.permission_level else None
+                    ),
+                    "risk": decision.risk.value,
+                    "decision": decision.decision.value,
+                    "input_summary": decision.input_summary,
+                    "reason": decision.reason,
+                    "approval_required": decision.approval_required,
+                    "approved": decision.approved,
+                    "destructive": decision.destructive,
+                    "timestamp": utc_now().isoformat(),
+                },
+            )
 
     def _complete_node(
         self,
@@ -409,6 +458,8 @@ class OrchestratorService:
                 "agent": node.agent_type,
                 "message": "Node execution completed.",
                 "summary": output.summary,
+                "status": GraphNodeStatus.COMPLETED.value,
+                "duration_ms": _node_duration_ms(node),
                 "timestamp": utc_now().isoformat(),
             },
         )
@@ -440,6 +491,8 @@ class OrchestratorService:
                 "agent": node.agent_type,
                 "summary": output.summary,
                 "errors": output.errors,
+                "status": GraphNodeStatus.WAITING_FOR_APPROVAL.value,
+                "duration_ms": _node_duration_ms(node),
                 "timestamp": utc_now().isoformat(),
             },
         )
@@ -475,8 +528,10 @@ class OrchestratorService:
                 "agent": node.agent_type,
                 "summary": output.summary,
                 "errors": output.errors,
+                "status": failed.status.value,
                 "retryable": retryable,
                 "retry_count": retry_count,
+                "duration_ms": _node_duration_ms(node),
                 "timestamp": utc_now().isoformat(),
             },
         )
@@ -561,16 +616,39 @@ class OrchestratorService:
         event_type: AgentEventType | str,
         payload: dict[str, Any],
     ) -> None:
+        run = self._repository.get_run(run_id)
+        enriched_payload = deepcopy(payload)
+        enriched_payload.setdefault("trace_id", run.trace_id)
+        active_trace_id = current_trace_id()
+        if active_trace_id:
+            enriched_payload.setdefault("otel_trace_id", active_trace_id)
         self._repository.add_event(
             AgentEventRecord(
                 id=f"event_{uuid4().hex}",
                 run_id=run_id,
                 node_id=node_id,
                 event_type=str(event_type),
-                payload=deepcopy(payload),
+                payload=enriched_payload,
                 created_at=utc_now(),
             )
         )
+
+
+def _set_node_span_result(
+    span: Any,
+    outcome: GraphNodeStatus,
+    started_at_monotonic: float,
+) -> None:
+    span.set_attribute("node.status", outcome.value)
+    span.set_attribute("node.duration_ms", round((perf_counter() - started_at_monotonic) * 1000, 3))
+    if outcome == GraphNodeStatus.FAILED:
+        span.set_attribute("error", True)
+
+
+def _node_duration_ms(node: GraphNodeRecord) -> float | None:
+    if node.started_at is None:
+        return None
+    return round(max((utc_now() - node.started_at).total_seconds(), 0.0) * 1000, 3)
 
 
 def _summarize_tool_input(node: GraphNodeRecord, task: str) -> str:

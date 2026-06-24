@@ -38,6 +38,7 @@ make dev
 Then open:
 
 - API health: `http://localhost:8000/health`
+- API metrics: `http://localhost:8000/metrics`
 - API docs: `http://localhost:8000/docs`
 
 ## Run Lifecycle API
@@ -163,6 +164,19 @@ Current security behavior:
 - Low/medium-risk tools are allowed and audited; high-risk tools pause the run until approval; destructive tools are blocked.
 - Tool audit events record agent, tool, permission level, risk, input summary, decision, approval state, and timestamp.
 - Existing generated Python analysis code still goes through `PythonCodeGuard`, while the orchestrator policy controls graph-level tool permissions.
+
+## Observability
+
+The SCRUM-17 observability layer adds trace IDs, OpenTelemetry spans, evaluation logging, and Prometheus-compatible metrics.
+
+Current observability behavior:
+
+- `RunRecord.trace_id` is populated when a run is created.
+- HTTP responses include `x-trace-id` while running through FastAPI.
+- API requests, orchestrator execution/resume calls, agent nodes, tool permission decisions, and evaluation logging create OpenTelemetry spans.
+- Agent events include `trace_id`, and node completion/failure/approval-pause events include status and duration timing.
+- Evaluation results are logged as structured observability events with `backend: opentelemetry`.
+- `GET /metrics` exposes run counts, run status totals, error totals, artifact count, evaluation count and average score, node retry totals, run duration totals, and node status counts by agent.
 
 ## Run With Docker Compose
 
