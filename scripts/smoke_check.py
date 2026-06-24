@@ -30,6 +30,7 @@ def main() -> int:
         ROOT / "src" / "aeai_os" / "orchestration",
         ROOT / "src" / "aeai_os" / "reports",
         ROOT / "src" / "aeai_os" / "schemas",
+        ROOT / "src" / "aeai_os" / "security",
         ROOT / "src" / "aeai_os" / "storage",
         ROOT / "src" / "aeai_os" / "evaluation",
         ROOT / "src" / "aeai_os" / "runs",
@@ -135,6 +136,7 @@ def main() -> int:
                     id="data_profile",
                     agent="data_retrieval",
                     task="Profile the procurement dataset.",
+                    required_tools=["dataset_reader", "schema_profiler", "quality_checker"],
                     expected_artifacts=["schema_profile", "quality_report"],
                 ),
                 ExecutionNode(
@@ -142,6 +144,7 @@ def main() -> int:
                     agent="analytics_code",
                     task="Compute procurement KPIs.",
                     depends_on=["data_profile"],
+                    required_tools=["dataframe_query", "python_analysis", "code_artifact_writer"],
                     expected_artifacts=["kpi_table", "code"],
                     risk="medium",
                 ),
@@ -150,6 +153,7 @@ def main() -> int:
                     agent="visualization",
                     task="Create procurement dashboard charts.",
                     depends_on=["analytics"],
+                    required_tools=["chart_renderer", "dashboard_renderer"],
                     expected_artifacts=["chart", "dashboard"],
                 ),
                 ExecutionNode(
@@ -157,6 +161,7 @@ def main() -> int:
                     agent="report",
                     task="Generate final procurement report.",
                     depends_on=["visualization"],
+                    required_tools=["artifact_reader", "markdown_report_writer"],
                     expected_artifacts=["report"],
                 ),
                 ExecutionNode(
@@ -164,6 +169,11 @@ def main() -> int:
                     agent="evaluation",
                     task="Evaluate procurement outputs.",
                     depends_on=["report"],
+                    required_tools=[
+                        "artifact_reader",
+                        "deterministic_evaluator",
+                        "evaluation_writer",
+                    ],
                     expected_artifacts=["evaluation"],
                 ),
             ],
@@ -191,6 +201,11 @@ def main() -> int:
         evaluations = repository.list_evaluations(run.id)
         if not evaluations or not evaluations[-1].passed:
             raise AssertionError("Evaluation agent did not produce a passing evaluation result.")
+        tool_events = [
+            event for event in repository.list_events(run.id) if event.event_type == "tool_call"
+        ]
+        if not tool_events:
+            raise AssertionError("Security policy did not record tool audit events.")
 
     print(
         "Smoke check passed: run lifecycle, data ingestion, analytics, visualization, and "

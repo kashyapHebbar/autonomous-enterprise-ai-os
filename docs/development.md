@@ -152,6 +152,18 @@ Current evaluation behavior:
 - `GET /runs/{run_id}` includes evaluation results, and `GET /runs/{run_id}/evaluations` lists them directly.
 - In the orchestrated workflow, failed required checks return a failed evaluation node so the run becomes visibly failed.
 
+## Security Controls
+
+The SCRUM-16 security layer classifies node tool requirements before an agent executes.
+
+Current security behavior:
+
+- `ToolPermissionRegistry` defines read-only, write, external-network, code-execution, and deployment permission levels.
+- `OrchestratorService` evaluates every node `required_tools` entry before calling the agent implementation.
+- Low/medium-risk tools are allowed and audited; high-risk tools pause the run until approval; destructive tools are blocked.
+- Tool audit events record agent, tool, permission level, risk, input summary, decision, approval state, and timestamp.
+- Existing generated Python analysis code still goes through `PythonCodeGuard`, while the orchestrator policy controls graph-level tool permissions.
+
 ## Run With Docker Compose
 
 ```bash
@@ -185,6 +197,7 @@ src/aeai_os/
   orchestration/    Execution graph primitives
   reports/          Markdown report rendering helpers
   schemas/          Shared enums and lightweight DTOs
+  security/         Tool permission and approval policy
   storage/          Artifact path helpers
   visualization/    Static dashboard and chart rendering helpers
 tests/              Unit tests for scaffold contracts

@@ -22,6 +22,12 @@ from aeai_os.runs.repository import (
     utc_now,
 )
 from aeai_os.schemas.enums import AgentEventType, GraphNodeStatus, RunStatus
+from aeai_os.security import (
+    ToolPermissionRegistry,
+    ToolPolicyDecision,
+    ToolPolicyDecisionStatus,
+    default_tool_permission_registry,
+)
 
 
 class OrchestrationError(RuntimeError):
@@ -56,11 +62,13 @@ class OrchestratorService:
         registry: AgentRegistry,
         agents: Mapping[str, Agent],
         retry_policy: RetryPolicy | None = None,
+        tool_permissions: ToolPermissionRegistry | None = None,
     ) -> None:
         self._repository = repository
         self._registry = registry
         self._agents = dict(agents)
         self._retry_policy = retry_policy or RetryPolicy()
+        self._tool_permissions = tool_permissions or default_tool_permission_registry()
 
     def execute_run(self, run_id: str, graph: ExecutionGraph) -> OrchestrationResult:
         run = self._repository.get_run(run_id)
@@ -167,7 +175,13 @@ class OrchestratorService:
             run_id=run_id,
             node_id=node_id,
             event_type=AgentEventType.APPROVAL_DECISION,
-            payload={"approved": approved, "comment": comment},
+            payload={
+                "agent": node.agent_type,
+                "approved": approved,
+                "comment": comment,
+                "decision": decision,
+                "timestamp": utc_now().isoformat(),
+            },
         )
 
         if not approved:
@@ -232,12 +246,23 @@ class OrchestratorService:
             run_id=node.run_id,
             node_id=node.id,
             event_type=AgentEventType.LOG,
-            payload={"message": "Node execution started.", "attempt": node.retry_count + 1},
+            payload={
+                "agent": node.agent_type,
+                "message": "Node execution started.",
+                "attempt": node.retry_count + 1,
+                "timestamp": utc_now().isoformat(),
+            },
         )
         self._repository.save_checkpoint(
             node.run_id,
             self._refresh_state_from_nodes(node.run_id, state),
         )
+
+        security_output = self._authorize_node_tools(running, state)
+        if security_output is not None:
+            if security_output.status == "waiting_for_approval":
+                return self._pause_for_approval(running, state, security_output)
+            return self._fail_node(running, state, security_output)
 
         output = self._call_agent(running, state)
         for event in output.events:
@@ -274,6 +299,92 @@ class OrchestratorService:
                 errors=[str(exc)],
             )
 
+    def _authorize_node_tools(
+        self,
+        node: GraphNodeRecord,
+        state: LangGraphRunState,
+    ) -> AgentOutput | None:
+        if not node.required_tools:
+            return None
+
+        approved = state["approvals"].get(node.id) == "approved"
+        task = self._plan_item(state, node.id)["task"]
+        input_summary = _summarize_tool_input(node=node, task=task)
+        decisions = [
+            self._tool_permissions.evaluate(
+                tool,
+                input_summary=input_summary,
+                approved=approved,
+            )
+            for tool in node.required_tools
+        ]
+        for decision in decisions:
+            self._record_tool_audit_event(node, decision)
+
+        blocked = [
+            decision
+            for decision in decisions
+            if decision.decision == ToolPolicyDecisionStatus.BLOCK
+        ]
+        if blocked:
+            return AgentOutput(
+                status="failed",
+                summary="Security policy blocked one or more required tools.",
+                errors=[f"{decision.tool}: {decision.reason}" for decision in blocked],
+                metrics={
+                    "tool_policy_decisions": [decision.model_dump() for decision in decisions]
+                },
+            )
+
+        approval_required = [
+            decision
+            for decision in decisions
+            if decision.decision == ToolPolicyDecisionStatus.APPROVAL_REQUIRED
+        ]
+        if approval_required:
+            return AgentOutput(
+                status="waiting_for_approval",
+                summary="Security approval is required for high-risk tool calls.",
+                events=[
+                    {
+                        "event_type": AgentEventType.APPROVAL_REQUEST,
+                        "message": "Tool permission policy requires approval.",
+                        "tools": [decision.tool for decision in approval_required],
+                    }
+                ],
+                metrics={
+                    "tool_policy_decisions": [decision.model_dump() for decision in decisions]
+                },
+            )
+
+        return None
+
+    def _record_tool_audit_event(
+        self,
+        node: GraphNodeRecord,
+        decision: ToolPolicyDecision,
+    ) -> None:
+        self._record_event(
+            run_id=node.run_id,
+            node_id=node.id,
+            event_type=AgentEventType.TOOL_CALL,
+            payload={
+                "agent": node.agent_type,
+                "tool": decision.tool,
+                "permission_level": (
+                    decision.permission_level.value if decision.permission_level else None
+                ),
+                "risk": decision.risk.value,
+                "decision": decision.decision.value,
+                "input_summary": decision.input_summary,
+                "reason": decision.reason,
+                "approval_required": decision.approval_required,
+                "approved": decision.approved,
+                "destructive": decision.destructive,
+                "timestamp": utc_now().isoformat(),
+            },
+        )
+
     def _complete_node(
         self,
         node: GraphNodeRecord,
@@ -294,7 +405,12 @@ class OrchestratorService:
             run_id=node.run_id,
             node_id=node.id,
             event_type=AgentEventType.LOG,
-            payload={"message": "Node execution completed.", "summary": output.summary},
+            payload={
+                "agent": node.agent_type,
+                "message": "Node execution completed.",
+                "summary": output.summary,
+                "timestamp": utc_now().isoformat(),
+            },
         )
         self._repository.save_checkpoint(
             node.run_id,
@@ -320,7 +436,12 @@ class OrchestratorService:
             run_id=node.run_id,
             node_id=node.id,
             event_type=AgentEventType.APPROVAL_REQUEST,
-            payload={"summary": output.summary, "errors": output.errors},
+            payload={
+                "agent": node.agent_type,
+                "summary": output.summary,
+                "errors": output.errors,
+                "timestamp": utc_now().isoformat(),
+            },
         )
         self._repository.save_checkpoint(
             node.run_id,
@@ -351,10 +472,12 @@ class OrchestratorService:
             node_id=node.id,
             event_type=AgentEventType.ERROR,
             payload={
+                "agent": node.agent_type,
                 "summary": output.summary,
                 "errors": output.errors,
                 "retryable": retryable,
                 "retry_count": retry_count,
+                "timestamp": utc_now().isoformat(),
             },
         )
         self._repository.save_checkpoint(
@@ -448,3 +571,10 @@ class OrchestratorService:
                 created_at=utc_now(),
             )
         )
+
+
+def _summarize_tool_input(node: GraphNodeRecord, task: str) -> str:
+    summary = f"agent={node.agent_type}; node={node.id}; task={task.strip()}"
+    if len(summary) <= 240:
+        return summary
+    return summary[:237] + "..."

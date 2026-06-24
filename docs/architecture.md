@@ -251,6 +251,7 @@ The MVP demo should produce:
 - Dashboard HTML artifact with traceable source artifact IDs.
 - Final report artifact with assumptions, limitations, and artifact lineage.
 - Evaluation result artifact with pass/fail checks and consistency scores.
+- Security audit events for tool permission decisions and approvals.
 - Run trace and event log.
 
 ## Suggested Implementation Sequence

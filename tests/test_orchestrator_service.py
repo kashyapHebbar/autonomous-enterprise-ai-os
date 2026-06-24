@@ -208,3 +208,86 @@ def test_orchestrator_pauses_for_approval_and_resumes_after_decision():
     assert repository.get_checkpoint(run.id).state["approvals"] == {"deploy": "approved"}
     assert AgentEventType.APPROVAL_REQUEST in event_types
     assert AgentEventType.APPROVAL_DECISION in event_types
+
+
+def test_orchestrator_security_gate_pauses_high_risk_tool_before_agent_execution():
+    repository = InMemoryRunRepository()
+    run = repository.create_run("Deploy validated dashboard.")
+    deployment_agent = StaticAgent("deployment", "deployment_manifest")
+    service = OrchestratorService(
+        repository=repository,
+        registry=build_default_registry(),
+        agents={"deployment": deployment_agent},
+    )
+    graph = ExecutionGraph(
+        run_id=run.id,
+        nodes=[
+            ExecutionNode(
+                id="deploy",
+                agent="deployment",
+                task="Deploy dashboard",
+                required_tools=["deploy_artifact"],
+                risk="high",
+            )
+        ],
+    )
+
+    paused = service.execute_run(run.id, graph)
+    events = repository.list_events(run.id)
+    tool_event = next(event for event in events if event.event_type == AgentEventType.TOOL_CALL)
+
+    assert paused.status == RunStatus.WAITING_FOR_APPROVAL
+    assert deployment_agent.inputs == []
+    assert tool_event.payload["agent"] == "deployment"
+    assert tool_event.payload["tool"] == "deploy_artifact"
+    assert tool_event.payload["decision"] == "approval_required"
+    assert tool_event.payload["input_summary"].startswith("agent=deployment")
+    assert tool_event.payload["timestamp"]
+
+    resumed = service.approve_node(run.id, "deploy", approved=True, comment="Approved for demo.")
+    approved_tool_events = [
+        event
+        for event in repository.list_events(run.id)
+        if event.event_type == AgentEventType.TOOL_CALL and event.payload["decision"] == "allow"
+    ]
+
+    assert resumed.status == RunStatus.COMPLETED
+    assert len(deployment_agent.inputs) == 1
+    assert approved_tool_events[-1].payload["approved"] is True
+
+
+def test_orchestrator_security_gate_blocks_destructive_tool_before_agent_execution():
+    repository = InMemoryRunRepository()
+    run = repository.create_run("Delete dashboard artifact.")
+    deployment_agent = StaticAgent("deployment", "deleted")
+    service = OrchestratorService(
+        repository=repository,
+        registry=build_default_registry(),
+        agents={"deployment": deployment_agent},
+        retry_policy=RetryPolicy(max_attempts=1),
+    )
+    graph = ExecutionGraph(
+        run_id=run.id,
+        nodes=[
+            ExecutionNode(
+                id="delete",
+                agent="deployment",
+                task="Delete dashboard",
+                required_tools=["delete_artifact"],
+                risk="high",
+            )
+        ],
+    )
+
+    result = service.execute_run(run.id, graph)
+    events = repository.list_events(run.id)
+    tool_event = next(event for event in events if event.event_type == AgentEventType.TOOL_CALL)
+
+    assert result.status == RunStatus.FAILED
+    assert deployment_agent.inputs == []
+    assert tool_event.payload["tool"] == "delete_artifact"
+    assert tool_event.payload["decision"] == "block"
+    assert tool_event.payload["destructive"] is True
+    assert repository.get_checkpoint(run.id).state["errors"] == {
+        "delete": ["delete_artifact: Tool is blocked by policy because it is destructive."]
+    }
