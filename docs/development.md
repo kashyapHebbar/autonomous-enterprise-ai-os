@@ -25,9 +25,12 @@ make install
 make smoke
 make test
 make lint
+make demo
 ```
 
 `make smoke` only uses the Python standard library and verifies the scaffold shape plus the health payload.
+`make demo` runs the end-to-end procurement agent workflow and writes generated artifacts under
+`artifacts/procurement_demo/<run_id>/`.
 
 ## Run The API Locally
 
@@ -71,6 +74,27 @@ Inspect run state and artifacts:
 ```bash
 curl http://localhost:8000/runs/{run_id}
 curl http://localhost:8000/runs/{run_id}/artifacts
+```
+
+## Procurement Demo
+
+The packaged demo uses `examples/procurement_demo.csv` to run the same planner, orchestrator,
+security policy, agents, evaluation gates, and observability path used by the tests.
+
+```bash
+make demo
+```
+
+The command prints the run ID, trace ID, dashboard artifact, report artifact, evaluation artifact,
+metrics path, and summary JSON path. The summary JSON includes run metadata, artifact metadata,
+evaluation checks, event count, and the metrics file location.
+
+To use another CSV with the same schema:
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/run_procurement_demo.py \
+  --dataset /path/to/procurement.csv \
+  --artifact-root artifacts/procurement_demo
 ```
 
 ## Orchestrator Kernel

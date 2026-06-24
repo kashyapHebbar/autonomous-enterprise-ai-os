@@ -1,6 +1,7 @@
 # Autonomous Enterprise AI Operating System
 
-An MVP for a durable multi-agent workflow platform where specialized AI agents collaborate on enterprise analytics tasks.
+An MVP for a durable multi-agent workflow platform where specialized AI agents collaborate on
+enterprise analytics tasks.
 
 The first vertical slice is a procurement analytics workflow:
 
@@ -10,26 +11,44 @@ The first vertical slice is a procurement analytics workflow:
 4. The platform stores run state, artifacts, evaluation results, and observability traces.
 5. The user receives a dashboard/report with linked provenance.
 
-## Project Status
+## What It Demonstrates
 
-Current Jira milestone: `SCRUM-11 - Implement data ingestion and retrieval agent`
+- Planner-generated execution graphs with typed nodes and dependencies
+- Repository-backed run state, checkpoints, artifacts, events, and evaluations
+- Data retrieval, analytics/code, visualization, report, and evaluation agents
+- Security policy gates for required tools and risky actions
+- API-driven workflow execution, approval decisions, failed-node retry, and run inspection
+- OpenTelemetry trace IDs, Prometheus-compatible metrics, and optional MLflow evaluation tracking
+- Docker Compose for API, Postgres, Redis, and MinIO
+- Kubernetes starter manifests in `deploy/kubernetes/`
 
-The architecture blueprint is in [docs/architecture.md](docs/architecture.md).
-Local development instructions are in [docs/development.md](docs/development.md).
+## Architecture
 
-## MVP Technology Direction
-
-- Orchestration: LangGraph
-- API: FastAPI
-- State store: Postgres
-- Cache/queue/checkpoint support: Redis
-- Artifacts: local object-store compatible layout for MVP, S3/MinIO-ready later
-- Observability: OpenTelemetry, Prometheus-compatible metrics, MLflow or LangSmith
-- Packaging: Docker Compose first, Kubernetes later
+```mermaid
+flowchart LR
+    User[User request] --> Planner[Planner agent]
+    Planner --> Orchestrator[Orchestrator]
+    Orchestrator --> Data[Data retrieval agent]
+    Data --> Analytics[Analytics/code agent]
+    Analytics --> Viz[Visualization agent]
+    Viz --> Report[Report agent]
+    Report --> Eval[Evaluation agent]
+    Orchestrator --> Security[Tool permission policy]
+    Orchestrator --> Obs[Traces and metrics]
+    Data --> Artifacts[Local artifact store]
+    Analytics --> Artifacts
+    Viz --> Artifacts
+    Report --> Artifacts
+    Eval --> Artifacts
+```
 
 ## Quick Start
 
+Requirements: Python 3.11 or newer.
+
 ```bash
+git clone https://github.com/kashyapHebbar/autonomous-enterprise-ai-os.git
+cd autonomous-enterprise-ai-os
 python3.11 -m venv .venv
 source .venv/bin/activate
 make install
@@ -43,26 +62,77 @@ Run the API:
 make dev
 ```
 
-Core API endpoints:
+Open:
 
-- `POST /runs` creates a run from a natural-language task.
-- `GET /runs/{run_id}` returns run status and artifacts.
-- `POST /runs/{run_id}/datasets/reference` attaches an external dataset URI.
-- `POST /runs/{run_id}/datasets/upload` uploads a local dataset file.
-- `GET /runs/{run_id}/artifacts` lists artifacts for a run.
+- API docs: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+- Health: [http://127.0.0.1:8000/health](http://127.0.0.1:8000/health)
+- Metrics: [http://127.0.0.1:8000/metrics](http://127.0.0.1:8000/metrics)
 
-Core orchestration capabilities:
+## Procurement Demo
 
-- `PlannerAgent` creates a validated procurement dashboard execution graph.
-- `DataRetrievalAgent` profiles CSV datasets and registers schema/quality artifacts.
-- Planner output includes dependencies, required tools, expected artifacts, and risk labels.
-- `LangGraphRunState` captures task, plan, outputs, artifacts, approvals, evaluations, and errors.
-- `OrchestratorService` executes dependency-ordered agent graphs with repository checkpoints.
-- Failed nodes retry without resetting completed graph work.
-- Approval-required nodes pause the run and resume after an explicit decision.
+The demo uses `examples/procurement_demo.csv` and writes generated artifacts under
+`artifacts/procurement_demo/<run_id>/`.
 
-Run the full local stack:
+```bash
+make demo
+```
+
+Expected output includes a run ID, trace ID, generated dashboard path, report path, evaluation
+artifact path, metrics file, and `demo_summary.json`.
+
+You can pass a different dataset while keeping the same workflow:
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/run_procurement_demo.py \
+  --dataset examples/procurement_demo.csv \
+  --artifact-root artifacts/procurement_demo
+```
+
+The generated summary records:
+
+- Run status and trace ID
+- Dataset path
+- Dashboard, report, evaluation, KPI, chart, and code artifacts
+- Evaluation pass/fail score and checks
+- Event count and Prometheus-compatible metrics path
+
+## API Routes
+
+| Route | Purpose |
+| --- | --- |
+| `POST /runs` | Create an agent workflow run |
+| `GET /runs/{run_id}` | Inspect run state, artifacts, evaluations, and trace ID |
+| `POST /runs/{run_id}/datasets/reference` | Attach an external dataset reference |
+| `POST /runs/{run_id}/datasets/upload` | Upload a local dataset file |
+| `POST /runs/{run_id}/execute/procurement` | Execute the procurement workflow synchronously |
+| `POST /runs/{run_id}/execute/procurement/async` | Queue the procurement workflow |
+| `GET /runs/{run_id}/workflow-jobs` | Inspect queued workflow jobs |
+| `GET /runs/{run_id}/graph-nodes` | Inspect execution graph node state |
+| `GET /runs/{run_id}/events` | Inspect agent event telemetry |
+| `GET /runs/{run_id}/timeline` | Inspect chronological run activity |
+| `POST /runs/{run_id}/graph-nodes/{node_id}/approval` | Approve or deny a waiting graph node |
+| `POST /runs/{run_id}/graph-nodes/{node_id}/retry` | Retry a failed graph node |
+| `GET /runs/{run_id}/evaluations` | List evaluation results for a run |
+| `GET /metrics` | Prometheus-compatible run and agent metrics |
+| `GET /health` | Service health |
+| `GET /docs` | Interactive OpenAPI documentation |
+
+## Run With Docker Compose
 
 ```bash
 docker compose up --build
 ```
+
+The local stack includes the API, Postgres, Redis, and MinIO.
+
+## Documentation
+
+- Architecture: [docs/architecture.md](docs/architecture.md)
+- Development guide: [docs/development.md](docs/development.md)
+- Kubernetes baseline: [deploy/kubernetes/README.md](deploy/kubernetes/README.md)
+
+## Responsible Use
+
+This is a prototype platform for local/cloud-ready agent orchestration. Generated analysis should be
+reviewed before production use, especially when workflows depend on external data, code execution,
+approval decisions, or deployment actions.

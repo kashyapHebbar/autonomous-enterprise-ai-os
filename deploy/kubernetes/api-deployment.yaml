@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aeai-api
+  namespace: aeai-os
+  labels:
+    app.kubernetes.io/name: aeai-api
+    app.kubernetes.io/part-of: autonomous-enterprise-ai-os
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: aeai-api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: aeai-api
+        app.kubernetes.io/part-of: autonomous-enterprise-ai-os
+    spec:
+      containers:
+        - name: api
+          image: ghcr.io/kashyaphebbar/state-of-art-radar:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: aeai-api-config
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: aeai-api-secrets
+                  key: postgres-password
+                  optional: true
+            - name: MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aeai-api-secrets
+                  key: minio-access-key
+                  optional: true
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aeai-api-secrets
+                  key: minio-secret-key
+                  optional: true
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi

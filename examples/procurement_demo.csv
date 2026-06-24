@@ -1,0 +1,19 @@
+supplier,category,invoice_date,spend_amount,department
+Acme Cloud,Cloud,2026-01-05,12400.00,IT
+Acme Cloud,Cloud,2026-01-20,11875.50,IT
+Northstar Devices,Hardware,2026-01-24,8200.00,Operations
+Pioneer Office,Office Supplies,2026-02-02,930.25,Finance
+Vertex Security,Software,2026-02-11,6400.00,Security
+Zenith Logistics,Logistics,2026-02-19,3120.75,Operations
+Acme Cloud,Cloud,2026-03-03,12850.00,IT
+Northstar Devices,Hardware,2026-03-17,7600.00,Operations
+Brightline Consulting,Professional Services,2026-03-22,18400.00,Finance
+Pioneer Office,Office Supplies,2026-04-01,870.50,Finance
+Vertex Security,Software,2026-04-08,6700.00,Security
+Zenith Logistics,Logistics,2026-04-15,3295.25,Operations
+Acme Cloud,Cloud,2026-05-02,13200.00,IT
+Northstar Devices,Hardware,2026-05-19,7900.00,Operations
+Brightline Consulting,Professional Services,2026-05-25,41000.00,Finance
+Pioneer Office,Office Supplies,2026-06-03,910.00,Finance
+Vertex Security,Software,2026-06-12,6900.00,Security
+Zenith Logistics,Logistics,2026-06-20,3410.25,Operations

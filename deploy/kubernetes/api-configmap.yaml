@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aeai-api-config
+  namespace: aeai-os
+data:
+  AEAI_ENV: "kubernetes"
+  AEAI_SERVICE_NAME: "model-compass"
+  AEAI_API_PORT: "8000"
+  AEAI_ARTIFACT_ROOT: "/app/artifacts"
+  POSTGRES_HOST: "postgres"
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: "aeai_os"
+  POSTGRES_USER: "aeai"
+  REDIS_HOST: "redis"
+  REDIS_PORT: "6379"
+  MINIO_ENDPOINT: "http://minio:9000"
+  MINIO_BUCKET: "aeai-artifacts"

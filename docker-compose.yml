@@ -15,6 +15,15 @@ services:
         condition: service_started
       minio:
         condition: service_started
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)"
+      interval: 10s
+      timeout: 5s
+      retries: 12
 
   postgres:
     image: postgres:16-alpine
@@ -55,4 +64,3 @@ volumes:
   postgres_data:
   redis_data:
   minio_data:
-

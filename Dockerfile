@@ -7,6 +7,9 @@ WORKDIR /app
 
 COPY pyproject.toml README.md ./
 COPY src ./src
+COPY docs ./docs
+COPY examples ./examples
+COPY scripts ./scripts
 
 RUN python -m pip install --upgrade pip \
     && python -m pip install --no-cache-dir -e ".[dev]"

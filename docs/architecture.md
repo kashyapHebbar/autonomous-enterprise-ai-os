@@ -268,6 +268,11 @@ The MVP demo should produce:
 - Run trace and event log.
 - Prometheus-compatible run, artifact, node, retry, and evaluation metrics.
 
+The packaged local demo entry point is `make demo`, backed by
+`scripts/run_procurement_demo.py` and `examples/procurement_demo.csv`. It runs the
+planner-generated graph end to end and writes `demo_summary.json` plus
+`metrics.prom` beside the generated artifacts.
+
 ## Suggested Implementation Sequence
 
 1. Scaffold repository and local development environment.
