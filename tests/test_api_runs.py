@@ -27,6 +27,19 @@ def build_client(tmp_path):
     return TestClient(app)
 
 
+def test_app_can_select_sqlalchemy_run_repository(tmp_path, monkeypatch):
+    monkeypatch.setenv("AEAI_RUN_REPOSITORY_BACKEND", "sqlalchemy")
+    monkeypatch.setenv("AEAI_DATABASE_URL", f"sqlite+pysqlite:///{tmp_path / 'runs.db'}")
+    app = create_app(artifact_root=tmp_path / "artifacts")
+    client = TestClient(app)
+
+    response = client.post("/runs", json={"task": "Analyze procurement spend."})
+
+    assert app.state.run_repository.__class__.__name__ == "SQLAlchemyRunRepository"
+    assert response.status_code == 201
+    assert response.json()["status"] == "pending"
+
+
 def test_create_run_and_fetch_status(tmp_path):
     client = build_client(tmp_path)
 

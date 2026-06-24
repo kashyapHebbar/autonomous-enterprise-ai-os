@@ -10,6 +10,8 @@ class AppSettings:
     environment: str = "local"
     api_port: int = 8000
     artifact_root: str = "artifacts"
+    run_repository_backend: str = "memory"
+    database_url: str = "postgresql+psycopg://aeai:aeai_password@postgres:5432/aeai_os"
 
 
 def get_settings() -> AppSettings:
@@ -18,4 +20,9 @@ def get_settings() -> AppSettings:
         environment=os.getenv("AEAI_ENV", "local"),
         api_port=int(os.getenv("AEAI_API_PORT", "8000")),
         artifact_root=os.getenv("AEAI_ARTIFACT_ROOT", "artifacts"),
+        run_repository_backend=os.getenv("AEAI_RUN_REPOSITORY_BACKEND", "memory"),
+        database_url=os.getenv(
+            "AEAI_DATABASE_URL",
+            "postgresql+psycopg://aeai:aeai_password@postgres:5432/aeai_os",
+        ),
     )

@@ -4,7 +4,7 @@ from pathlib import Path
 
 from aeai_os.api.health import build_health_payload
 from aeai_os.runs.repository import InMemoryRunRepository
-from aeai_os.settings import get_settings
+from aeai_os.settings import AppSettings, get_settings
 
 
 def create_app(
@@ -24,7 +24,7 @@ def create_app(
 
     configure_tracing()
     settings = get_settings()
-    run_repository = repository or InMemoryRunRepository()
+    run_repository = repository or _build_run_repository(settings)
     run_artifact_root = artifact_root or Path(settings.artifact_root)
 
     app = FastAPI(
@@ -76,3 +76,14 @@ def create_app(
     app.include_router(build_metrics_router(run_repository))
 
     return app
+
+
+def _build_run_repository(settings: AppSettings):
+    backend = settings.run_repository_backend.strip().lower()
+    if backend in {"memory", "in-memory", "in_memory"}:
+        return InMemoryRunRepository()
+    if backend == "sqlalchemy":
+        from aeai_os.runs.sqlalchemy_repository import SQLAlchemyRunRepository
+
+        return SQLAlchemyRunRepository.from_url(settings.database_url, create_schema=True)
+    raise ValueError(f"Unsupported run repository backend: {settings.run_repository_backend}")

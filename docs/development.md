@@ -120,7 +120,11 @@ Current local behavior:
 - Failed nodes retry according to `RetryPolicy` without restarting completed nodes.
 - Nodes that return `waiting_for_approval` pause the run until `approve_node` resumes it.
 
-The in-memory repository is the MVP checkpoint backend. The same model is mirrored by SQLAlchemy table definitions so a Postgres-backed repository can replace it later.
+The in-memory repository remains the default local checkpoint backend. Set
+`AEAI_RUN_REPOSITORY_BACKEND=sqlalchemy` and `AEAI_DATABASE_URL` to use the durable SQLAlchemy
+repository against Postgres or SQLite-compatible test databases. The SQLAlchemy backend persists
+runs, graph nodes, artifacts, agent events, evaluations, and checkpoints behind the same repository
+contract.
 
 ## Planner Contract
 
@@ -227,6 +231,11 @@ Services:
 - Redis: `localhost:6379`
 - MinIO API: `http://localhost:9000`
 - MinIO console: `http://localhost:9001`
+
+The API uses the in-memory run repository unless configured otherwise. To persist run state in the
+Compose Postgres service, set `AEAI_RUN_REPOSITORY_BACKEND=sqlalchemy` and
+`AEAI_DATABASE_URL=postgresql+psycopg://aeai:aeai_password@postgres:5432/aeai_os` in the service
+environment before starting the API.
 
 Stop services:
 

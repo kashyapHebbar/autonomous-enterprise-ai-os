@@ -1,12 +1,29 @@
+from dataclasses import replace
+
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.pool import StaticPool
 
-from aeai_os.runs.repository import InMemoryRunRepository, RunNotFoundError
-from aeai_os.schemas.enums import ArtifactType, RunStatus
+from aeai_os.runs.models import AgentEventRecord, EvaluationResultRecord, GraphNodeRecord
+from aeai_os.runs.repository import InMemoryRunRepository, RunNotFoundError, utc_now
+from aeai_os.runs.sqlalchemy_repository import SQLAlchemyRunRepository
+from aeai_os.schemas.enums import AgentEventType, ArtifactType, GraphNodeStatus, RunStatus
 
 
-def test_repository_creates_pending_run_and_attaches_dataset():
-    repository = InMemoryRunRepository()
+@pytest.fixture(params=["memory", "sqlalchemy"])
+def repository(request):
+    if request.param == "memory":
+        return InMemoryRunRepository()
 
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    return SQLAlchemyRunRepository.from_engine(engine, create_schema=True)
+
+
+def test_repository_creates_pending_run_and_attaches_dataset(repository):
     run = repository.create_run("Analyze procurement data.")
     artifact = repository.add_artifact(
         run_id=run.id,
@@ -18,18 +35,125 @@ def test_repository_creates_pending_run_and_attaches_dataset():
     updated = repository.get_run(run.id)
     assert updated.status == RunStatus.PENDING
     assert updated.dataset_artifact_id == artifact.id
+    assert repository.list_runs() == [updated]
     assert repository.list_artifacts(run.id) == [artifact]
 
 
-def test_repository_rejects_short_task():
-    repository = InMemoryRunRepository()
-
+def test_repository_rejects_short_task(repository):
     with pytest.raises(ValueError):
         repository.create_run("  ")
 
 
-def test_repository_raises_for_missing_run():
-    repository = InMemoryRunRepository()
-
+def test_repository_raises_for_missing_run(repository):
     with pytest.raises(RunNotFoundError):
         repository.get_run("run_missing")
+
+
+def test_repository_updates_run_status(repository):
+    run = repository.create_run("Analyze procurement data.")
+
+    updated = repository.update_status(
+        run_id=run.id,
+        status=RunStatus.FAILED,
+        error_summary="Dataset quality gate failed.",
+    )
+
+    assert updated.status == RunStatus.FAILED
+    assert updated.error_summary == "Dataset quality gate failed."
+    assert updated.updated_at >= run.updated_at
+    assert repository.get_run(run.id) == updated
+
+
+def test_repository_persists_graph_events_evaluations_and_checkpoints(repository):
+    run = repository.create_run("Analyze procurement data.")
+    created_at = utc_now()
+    node = GraphNodeRecord(
+        id="profile",
+        run_id=run.id,
+        agent_type="data_retrieval",
+        status=GraphNodeStatus.PENDING,
+        depends_on=[],
+        required_tools=["local_file_read"],
+        expected_artifacts=["schema_profile"],
+        retry_count=0,
+        created_at=created_at,
+        updated_at=created_at,
+    )
+
+    repository.add_graph_node(node)
+    completed_node = replace(
+        node,
+        status=GraphNodeStatus.COMPLETED,
+        retry_count=1,
+        updated_at=utc_now(),
+    )
+    repository.upsert_graph_node(completed_node)
+    event = AgentEventRecord(
+        id="event_profile_log",
+        run_id=run.id,
+        node_id="profile",
+        event_type=AgentEventType.LOG.value,
+        payload={"message": "profile complete"},
+        created_at=utc_now(),
+    )
+    evaluation = EvaluationResultRecord(
+        id="evaluation_profile",
+        run_id=run.id,
+        target_artifact_id=None,
+        score=0.95,
+        passed=True,
+        checks=[{"name": "schema_profile", "passed": True, "score": 1.0}],
+    )
+
+    repository.add_event(event)
+    saved_evaluation = repository.add_evaluation(evaluation)
+    first_checkpoint = repository.save_checkpoint(
+        run.id,
+        {"run_id": run.id, "completed_node_ids": ["profile"]},
+    )
+    second_checkpoint = repository.save_checkpoint(
+        run.id,
+        {"run_id": run.id, "completed_node_ids": ["profile"], "status": "done"},
+    )
+    second_checkpoint.state["status"] = "mutated"
+
+    assert repository.get_graph_node(run.id, "profile") == completed_node
+    assert repository.list_graph_nodes(run.id) == [completed_node]
+    assert repository.list_events(run.id)[0] == event
+    assert any(
+        logged_event.event_type == AgentEventType.EVALUATION.value
+        for logged_event in repository.list_events(run.id)
+    )
+    assert saved_evaluation.created_at is not None
+    assert repository.get_evaluation(run.id, "evaluation_profile") == saved_evaluation
+    assert repository.list_evaluations(run.id) == [saved_evaluation]
+    assert first_checkpoint.version == 1
+    assert second_checkpoint.version == 2
+    assert repository.get_checkpoint(run.id).state["status"] == "done"
+
+
+def test_repository_allows_reused_graph_node_ids_across_runs(repository):
+    first_run = repository.create_run("Analyze first procurement dataset.")
+    second_run = repository.create_run("Analyze second procurement dataset.")
+    created_at = utc_now()
+
+    for run in [first_run, second_run]:
+        repository.add_graph_node(
+            GraphNodeRecord(
+                id="profile",
+                run_id=run.id,
+                agent_type="data_retrieval",
+                status=GraphNodeStatus.PENDING,
+                depends_on=[],
+                required_tools=[],
+                expected_artifacts=[],
+                retry_count=0,
+                created_at=created_at,
+                updated_at=created_at,
+            )
+        )
+
+    assert len(repository.list_graph_nodes(first_run.id)) == 1
+    assert len(repository.list_graph_nodes(second_run.id)) == 1
+    assert repository.get_graph_node(first_run.id, "profile").run_id == first_run.id
+    assert repository.get_graph_node(second_run.id, "profile").run_id == second_run.id

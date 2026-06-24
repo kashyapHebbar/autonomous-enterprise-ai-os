@@ -143,6 +143,31 @@ curl "http://127.0.0.1:8000/runs/${RUN_ID}"
 - Development guide: [docs/development.md](docs/development.md)
 - Kubernetes baseline: [deploy/kubernetes/README.md](deploy/kubernetes/README.md)
 
+## Tests
+
+```bash
+make test
+make smoke
+make demo
+```
+
+The regression suite covers:
+
+- API and health behavior
+- Run repository behavior for in-memory and SQLAlchemy-backed storage
+- Procurement demo completion with dashboard, report, evaluation, trace metadata, and metrics
+
+## Current Limitations
+
+- The platform is an actively developed prototype, not a production workflow control plane.
+- Connectors and approval policies should be hardened before use with sensitive enterprise systems.
+- Generated analysis should be reviewed before business decisions or deployment actions.
+
+## Direction
+
+The next roadmap is real warehouse connectors, async queues, exporter-backed tracing, LangSmith or
+MLflow integration, deployment approvals, and a UI for inspecting execution graphs and artifacts.
+
 ## Responsible Use
 
 This is a prototype platform for local/cloud-ready agent orchestration. Generated analysis should be

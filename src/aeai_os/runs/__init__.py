@@ -10,16 +10,19 @@ from aeai_os.runs.models import (
 )
 from aeai_os.runs.repository import (
     ArtifactNotFoundError,
+    EvaluationResultNotFoundError,
     GraphNodeNotFoundError,
     InMemoryRunRepository,
     RunCheckpointNotFoundError,
     RunNotFoundError,
 )
+from aeai_os.runs.sqlalchemy_repository import SQLAlchemyRunRepository
 
 __all__ = [
     "AgentEventRecord",
     "ArtifactNotFoundError",
     "ArtifactRecord",
+    "EvaluationResultNotFoundError",
     "EvaluationResultRecord",
     "GraphNodeNotFoundError",
     "GraphNodeRecord",
@@ -28,4 +31,5 @@ __all__ = [
     "RunCheckpointRecord",
     "RunNotFoundError",
     "RunRecord",
+    "SQLAlchemyRunRepository",
 ]

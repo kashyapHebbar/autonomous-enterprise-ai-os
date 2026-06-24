@@ -28,7 +28,12 @@ class GraphNodeModel(Base):
     __tablename__ = "graph_nodes"
 
     id: Mapped[str] = mapped_column(String(96), primary_key=True)
-    run_id: Mapped[str] = mapped_column(ForeignKey("runs.id"), nullable=False, index=True)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("runs.id"),
+        primary_key=True,
+        nullable=False,
+        index=True,
+    )
     agent_type: Mapped[str] = mapped_column(String(128), nullable=False)
     status: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     depends_on: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
