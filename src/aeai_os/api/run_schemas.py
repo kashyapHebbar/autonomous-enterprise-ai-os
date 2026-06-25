@@ -7,12 +7,14 @@ from pydantic import BaseModel, Field, field_validator
 
 from aeai_os.artifacts import ArtifactLineage
 from aeai_os.runs.models import (
+    AgentEventRecord,
     ArtifactRecord,
     EvaluationResultRecord,
+    GraphNodeRecord,
     RunRecord,
     WorkflowJobRecord,
 )
-from aeai_os.schemas.enums import ArtifactType, RunStatus, WorkflowJobStatus
+from aeai_os.schemas.enums import ArtifactType, GraphNodeStatus, RunStatus, WorkflowJobStatus
 
 
 class CreateRunRequest(BaseModel):
@@ -83,6 +85,30 @@ class EvaluationResponse(BaseModel):
     created_at: datetime
 
 
+class GraphNodeResponse(BaseModel):
+    id: str
+    run_id: str
+    agent_type: str
+    status: GraphNodeStatus
+    depends_on: list[str]
+    required_tools: list[str]
+    expected_artifacts: list[str]
+    retry_count: int
+    started_at: datetime | None
+    finished_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class AgentEventResponse(BaseModel):
+    id: str
+    run_id: str
+    node_id: str
+    event_type: str
+    payload: dict[str, Any]
+    created_at: datetime
+
+
 class RunResponse(BaseModel):
     id: str
     task: str
@@ -120,6 +146,20 @@ class WorkflowJobResponse(BaseModel):
     finished_at: datetime | None
     created_at: datetime
     updated_at: datetime
+
+
+class RunTimelineItemResponse(BaseModel):
+    timestamp: datetime
+    kind: str
+    title: str
+    status: str | None = None
+    summary: str | None = None
+    run_id: str
+    node_id: str | None = None
+    artifact_id: str | None = None
+    evaluation_id: str | None = None
+    workflow_job_id: str | None = None
+    payload: dict[str, Any] = Field(default_factory=dict)
 
 
 def artifact_to_response(artifact: ArtifactRecord) -> ArtifactResponse:
@@ -162,6 +202,34 @@ def evaluation_to_response(evaluation: EvaluationResultRecord) -> EvaluationResp
         passed=evaluation.passed,
         checks=evaluation.checks,
         created_at=evaluation.created_at,
+    )
+
+
+def graph_node_to_response(node: GraphNodeRecord) -> GraphNodeResponse:
+    return GraphNodeResponse(
+        id=node.id,
+        run_id=node.run_id,
+        agent_type=node.agent_type,
+        status=node.status,
+        depends_on=node.depends_on,
+        required_tools=node.required_tools,
+        expected_artifacts=node.expected_artifacts,
+        retry_count=node.retry_count,
+        started_at=node.started_at,
+        finished_at=node.finished_at,
+        created_at=node.created_at,
+        updated_at=node.updated_at,
+    )
+
+
+def agent_event_to_response(event: AgentEventRecord) -> AgentEventResponse:
+    return AgentEventResponse(
+        id=event.id,
+        run_id=event.run_id,
+        node_id=event.node_id,
+        event_type=event.event_type,
+        payload=event.payload,
+        created_at=event.created_at,
     )
 
 
@@ -225,3 +293,138 @@ def workflow_job_to_response(job: WorkflowJobRecord) -> WorkflowJobResponse:
         created_at=job.created_at,
         updated_at=job.updated_at,
     )
+
+
+def build_run_timeline(
+    run: RunRecord,
+    workflow_jobs: list[WorkflowJobRecord],
+    graph_nodes: list[GraphNodeRecord],
+    events: list[AgentEventRecord],
+    artifacts: list[ArtifactRecord],
+    evaluations: list[EvaluationResultRecord],
+) -> list[RunTimelineItemResponse]:
+    items: list[RunTimelineItemResponse] = [
+        RunTimelineItemResponse(
+            timestamp=run.created_at,
+            kind="run",
+            title="Run created",
+            status=run.status.value,
+            summary=run.task,
+            run_id=run.id,
+            payload={"trace_id": run.trace_id, "metadata": run.metadata},
+        )
+    ]
+
+    for job in workflow_jobs:
+        items.append(
+            RunTimelineItemResponse(
+                timestamp=job.created_at,
+                kind="workflow_job",
+                title=f"{job.workflow_name} workflow queued",
+                status=job.status.value,
+                summary=job.error_summary,
+                run_id=job.run_id,
+                workflow_job_id=job.id,
+                payload={
+                    "attempt_count": job.attempt_count,
+                    "max_attempts": job.max_attempts,
+                    "worker_id": job.worker_id,
+                },
+            )
+        )
+        if job.started_at:
+            items.append(
+                RunTimelineItemResponse(
+                    timestamp=job.started_at,
+                    kind="workflow_job",
+                    title=f"{job.workflow_name} workflow claimed",
+                    status=WorkflowJobStatus.RUNNING.value,
+                    summary=job.worker_id,
+                    run_id=job.run_id,
+                    workflow_job_id=job.id,
+                    payload={"attempt_count": job.attempt_count},
+                )
+            )
+        if job.finished_at:
+            items.append(
+                RunTimelineItemResponse(
+                    timestamp=job.finished_at,
+                    kind="workflow_job",
+                    title=f"{job.workflow_name} workflow finished",
+                    status=job.status.value,
+                    summary=job.error_summary,
+                    run_id=job.run_id,
+                    workflow_job_id=job.id,
+                    payload={"attempt_count": job.attempt_count},
+                )
+            )
+
+    for node in graph_nodes:
+        items.append(
+            RunTimelineItemResponse(
+                timestamp=node.updated_at,
+                kind="graph_node",
+                title=f"{node.agent_type} node {node.id}",
+                status=node.status.value,
+                summary=", ".join(node.expected_artifacts),
+                run_id=node.run_id,
+                node_id=node.id,
+                payload={
+                    "depends_on": node.depends_on,
+                    "required_tools": node.required_tools,
+                    "retry_count": node.retry_count,
+                },
+            )
+        )
+
+    for event in events:
+        message = event.payload.get("message")
+        items.append(
+            RunTimelineItemResponse(
+                timestamp=event.created_at,
+                kind="agent_event",
+                title=f"{event.event_type} event",
+                status=event.event_type,
+                summary=str(message) if message else event.node_id,
+                run_id=event.run_id,
+                node_id=event.node_id,
+                payload=event.payload,
+            )
+        )
+
+    for artifact in artifacts:
+        items.append(
+            RunTimelineItemResponse(
+                timestamp=artifact.created_at,
+                kind="artifact",
+                title=f"{artifact.type.value} artifact",
+                status=artifact.type.value,
+                summary=artifact.uri,
+                run_id=artifact.run_id,
+                node_id=artifact.producer_node_id,
+                artifact_id=artifact.id,
+                payload={
+                    "metadata": artifact.metadata,
+                    "source_artifact_ids": artifact.source_artifact_ids,
+                },
+            )
+        )
+
+    for evaluation in evaluations:
+        if evaluation.created_at is None:
+            continue
+        items.append(
+            RunTimelineItemResponse(
+                timestamp=evaluation.created_at,
+                kind="evaluation",
+                title="Evaluation result",
+                status="passed" if evaluation.passed else "failed",
+                summary=f"score={evaluation.score}",
+                run_id=evaluation.run_id,
+                evaluation_id=evaluation.id,
+                artifact_id=evaluation.target_artifact_id,
+                payload={"checks": evaluation.checks},
+            )
+        )
+
+    return sorted(items, key=lambda item: (item.timestamp, item.kind, item.title))

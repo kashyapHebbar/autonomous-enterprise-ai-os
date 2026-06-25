@@ -74,7 +74,13 @@ Inspect run state and artifacts:
 ```bash
 curl http://localhost:8000/runs/{run_id}
 curl http://localhost:8000/runs/{run_id}/artifacts
+curl http://localhost:8000/runs/{run_id}/graph-nodes
+curl http://localhost:8000/runs/{run_id}/events
+curl http://localhost:8000/runs/{run_id}/timeline
 ```
+
+The browser inspector for the same data is available at
+`http://localhost:8000/run-inspector/runs/{run_id}`.
 
 Execute the procurement workflow for a run with an attached dataset:
 
@@ -123,6 +129,8 @@ Current local behavior:
   processing.
 - `scripts/run_workflow_worker.py` claims one queued procurement job, executes the workflow, and
   records completion, retry, or failure state.
+- `GET /runs/{run_id}/graph-nodes`, `GET /runs/{run_id}/events`, and
+  `GET /runs/{run_id}/timeline` expose the graph inspection surface used by the run inspector UI.
 
 The in-memory repository remains the default local checkpoint backend. Set
 `AEAI_RUN_REPOSITORY_BACKEND=sqlalchemy` and `AEAI_DATABASE_URL` to use the durable SQLAlchemy

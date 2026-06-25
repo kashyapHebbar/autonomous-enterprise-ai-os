@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Run Inspector | Autonomous Enterprise AI OS</title>
+    <link rel="stylesheet" href="/run-inspector/run-inspector.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <a class="brand" href="/docs">Autonomous Enterprise AI OS</a>
+        <div class="run-heading">
+          <p class="eyebrow">Agent workflow</p>
+          <h1 id="runTitle">Run Inspector</h1>
+        </div>
+        <span class="status-pill" id="runStatus">Loading</span>
+      </header>
+
+      <section class="summary-grid" aria-label="Run summary">
+        <article class="summary-panel">
+          <span>Trace</span>
+          <strong id="traceId">--</strong>
+        </article>
+        <article class="summary-panel">
+          <span>Dataset</span>
+          <strong id="datasetId">--</strong>
+        </article>
+        <article class="summary-panel">
+          <span>Updated</span>
+          <strong id="updatedAt">--</strong>
+        </article>
+        <article class="summary-panel">
+          <span>Artifacts</span>
+          <strong id="artifactCount">--</strong>
+        </article>
+      </section>
+
+      <section class="task-panel">
+        <p id="taskText">Loading run details.</p>
+        <p class="error-text" id="errorText"></p>
+      </section>
+
+      <section class="workspace-grid">
+        <section class="panel graph-panel" aria-labelledby="graphTitle">
+          <div class="section-heading">
+            <p class="eyebrow">Execution graph</p>
+            <h2 id="graphTitle">Nodes</h2>
+          </div>
+          <div class="node-list" id="graphNodes"></div>
+        </section>
+
+        <section class="panel" aria-labelledby="jobsTitle">
+          <div class="section-heading">
+            <p class="eyebrow">Queue</p>
+            <h2 id="jobsTitle">Workflow Jobs</h2>
+          </div>
+          <div class="compact-list" id="workflowJobs"></div>
+        </section>
+
+        <section class="panel timeline-panel" aria-labelledby="timelineTitle">
+          <div class="section-heading">
+            <p class="eyebrow">Chronology</p>
+            <h2 id="timelineTitle">Timeline</h2>
+          </div>
+          <div class="timeline-list" id="timeline"></div>
+        </section>
+
+        <section class="panel" aria-labelledby="artifactsTitle">
+          <div class="section-heading">
+            <p class="eyebrow">Outputs</p>
+            <h2 id="artifactsTitle">Artifacts</h2>
+          </div>
+          <div class="compact-list" id="artifacts"></div>
+        </section>
+
+        <section class="panel" aria-labelledby="evaluationsTitle">
+          <div class="section-heading">
+            <p class="eyebrow">Quality</p>
+            <h2 id="evaluationsTitle">Evaluations</h2>
+          </div>
+          <div class="compact-list" id="evaluations"></div>
+        </section>
+
+        <section class="panel" aria-labelledby="eventsTitle">
+          <div class="section-heading">
+            <p class="eyebrow">Telemetry</p>
+            <h2 id="eventsTitle">Events</h2>
+          </div>
+          <div class="event-list" id="events"></div>
+        </section>
+      </section>
+    </main>
+    <script src="/run-inspector/run-inspector.js" defer></script>
+  </body>
+</html>

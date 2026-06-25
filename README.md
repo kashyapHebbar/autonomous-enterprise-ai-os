@@ -113,6 +113,7 @@ The generated summary records:
 | `POST /runs/{run_id}/graph-nodes/{node_id}/approval` | Approve or deny a waiting graph node |
 | `POST /runs/{run_id}/graph-nodes/{node_id}/retry` | Retry a failed graph node |
 | `GET /runs/{run_id}/evaluations` | List evaluation results for a run |
+| `GET /run-inspector/runs/{run_id}` | Browser run inspector UI |
 | `GET /metrics` | Prometheus-compatible run and agent metrics |
 | `GET /health` | Service health |
 | `GET /docs` | Interactive OpenAPI documentation |

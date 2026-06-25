@@ -1,9 +1,9 @@
 from fastapi.testclient import TestClient
 
 from aeai_os.api.app import create_app
-from aeai_os.runs.models import EvaluationResultRecord
-from aeai_os.runs.repository import InMemoryRunRepository
-from aeai_os.schemas.enums import ArtifactType
+from aeai_os.runs.models import AgentEventRecord, EvaluationResultRecord, GraphNodeRecord
+from aeai_os.runs.repository import InMemoryRunRepository, utc_now
+from aeai_os.schemas.enums import AgentEventType, ArtifactType, GraphNodeStatus
 
 
 def write_procurement_fixture(path):
@@ -60,6 +60,16 @@ def test_create_run_and_fetch_status(tmp_path):
     get_response = client.get(f"/runs/{body['id']}")
     assert get_response.status_code == 200
     assert get_response.json()["id"] == body["id"]
+
+
+def test_run_inspector_page_is_served(tmp_path):
+    client = build_client(tmp_path)
+
+    response = client.get("/run-inspector/runs/run_example")
+
+    assert response.status_code == 200
+    assert "Run Inspector" in response.text
+    assert "/run-inspector/run-inspector.js" in response.text
 
 
 def test_create_run_rejects_blank_task(tmp_path):
@@ -268,6 +278,82 @@ def test_enqueue_procurement_workflow_from_api(tmp_path):
     assert job["max_attempts"] == 3
     assert jobs_response.status_code == 200
     assert jobs_response.json() == [job]
+
+
+def test_run_inspection_endpoints_expose_graph_events_and_timeline(tmp_path):
+    repository = InMemoryRunRepository()
+    app = create_app(repository=repository, artifact_root=tmp_path / "artifacts")
+    client = TestClient(app)
+    run = repository.create_run("Analyze procurement spend.")
+    dataset = repository.add_artifact(
+        run_id=run.id,
+        artifact_type=ArtifactType.DATASET,
+        uri=str(tmp_path / "procurement.csv"),
+        metadata={"source": "test", "format": "csv"},
+    )
+    created_at = utc_now()
+    repository.add_graph_node(
+        GraphNodeRecord(
+            id="data_profile",
+            run_id=run.id,
+            agent_type="data_retrieval",
+            status=GraphNodeStatus.COMPLETED,
+            depends_on=[],
+            required_tools=["local_file_read"],
+            expected_artifacts=["schema_profile", "quality_report"],
+            retry_count=0,
+            created_at=created_at,
+            updated_at=created_at,
+        )
+    )
+    repository.add_event(
+        AgentEventRecord(
+            id="event_data_profile",
+            run_id=run.id,
+            node_id="data_profile",
+            event_type=AgentEventType.TOOL_CALL.value,
+            payload={"message": "Profiled dataset.", "artifact_id": dataset.id},
+            created_at=utc_now(),
+        )
+    )
+    repository.add_evaluation(
+        EvaluationResultRecord(
+            id="evaluation_test",
+            run_id=run.id,
+            target_artifact_id=dataset.id,
+            score=1.0,
+            passed=True,
+            checks=[{"name": "dataset_available", "passed": True, "score": 1.0}],
+        )
+    )
+    job = repository.enqueue_workflow_job(run.id, "procurement")
+    claimed = repository.claim_next_workflow_job("worker-test", "procurement")
+    repository.complete_workflow_job(claimed.id)
+
+    graph_response = client.get(f"/runs/{run.id}/graph-nodes")
+    events_response = client.get(f"/runs/{run.id}/events")
+    timeline_response = client.get(f"/runs/{run.id}/timeline")
+
+    assert graph_response.status_code == 200
+    assert graph_response.json()[0]["id"] == "data_profile"
+    assert graph_response.json()[0]["status"] == "completed"
+    assert graph_response.json()[0]["required_tools"] == ["local_file_read"]
+    assert events_response.status_code == 200
+    event_types = {event["event_type"] for event in events_response.json()}
+    assert {"tool_call", "evaluation"}.issubset(event_types)
+    assert timeline_response.status_code == 200
+    timeline = timeline_response.json()
+    kinds = {item["kind"] for item in timeline}
+    assert {
+        "run",
+        "workflow_job",
+        "graph_node",
+        "agent_event",
+        "artifact",
+        "evaluation",
+    }.issubset(kinds)
+    assert any(item["workflow_job_id"] == job.id for item in timeline)
+    assert any(item["artifact_id"] == dataset.id for item in timeline)
 
 
 def test_execute_procurement_workflow_requires_dataset(tmp_path):

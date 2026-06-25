@@ -7,18 +7,24 @@ from typing import Annotated
 from fastapi import APIRouter, Body, File, HTTPException, UploadFile, status
 
 from aeai_os.api.run_schemas import (
+    AgentEventResponse,
     ArtifactLineageResponse,
     ArtifactResponse,
     AttachDatasetReferenceRequest,
     CreateRunRequest,
     EvaluationResponse,
+    GraphNodeResponse,
     RunDetailResponse,
     RunExecutionResponse,
     RunResponse,
+    RunTimelineItemResponse,
     WorkflowJobResponse,
+    agent_event_to_response,
     artifact_lineage_to_response,
     artifact_to_response,
+    build_run_timeline,
     evaluation_to_response,
+    graph_node_to_response,
     run_to_detail_response,
     run_to_execution_response,
     run_to_response,
@@ -142,6 +148,34 @@ def build_runs_router(repository: InMemoryRunRepository, artifact_root: Path):
                 detail=f"Workflow job not found for run: {job_id}",
             )
         return workflow_job_to_response(job)
+
+    @router.get("/{run_id}/graph-nodes", response_model=list[GraphNodeResponse])
+    def list_graph_nodes(run_id: str) -> list[GraphNodeResponse]:
+        _get_run_or_404(repository, run_id)
+        return [
+            graph_node_to_response(node)
+            for node in repository.list_graph_nodes(run_id)
+        ]
+
+    @router.get("/{run_id}/events", response_model=list[AgentEventResponse])
+    def list_events(run_id: str) -> list[AgentEventResponse]:
+        _get_run_or_404(repository, run_id)
+        return [
+            agent_event_to_response(event)
+            for event in repository.list_events(run_id)
+        ]
+
+    @router.get("/{run_id}/timeline", response_model=list[RunTimelineItemResponse])
+    def get_run_timeline(run_id: str) -> list[RunTimelineItemResponse]:
+        run = _get_run_or_404(repository, run_id)
+        return build_run_timeline(
+            run=run,
+            workflow_jobs=repository.list_workflow_jobs(run_id=run_id),
+            graph_nodes=repository.list_graph_nodes(run_id),
+            events=repository.list_events(run_id),
+            artifacts=repository.list_artifacts(run_id),
+            evaluations=repository.list_evaluations(run_id),
+        )
 
     @router.get("/{run_id}/evaluations", response_model=list[EvaluationResponse])
     def list_evaluations(run_id: str) -> list[EvaluationResponse]:

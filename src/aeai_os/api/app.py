@@ -18,6 +18,8 @@ def create_app(
     are installed.
     """
     from fastapi import FastAPI
+    from fastapi.responses import FileResponse
+    from fastapi.staticfiles import StaticFiles
 
     from aeai_os.api.metrics import build_metrics_router
     from aeai_os.api.runs import build_runs_router
@@ -27,6 +29,7 @@ def create_app(
     settings = get_settings()
     run_repository = repository or build_run_repository(settings)
     run_artifact_root = artifact_root or Path(settings.artifact_root)
+    static_root = Path(__file__).resolve().parents[1] / "web" / "static"
 
     app = FastAPI(
         title="Autonomous Enterprise AI Operating System",
@@ -67,6 +70,7 @@ def create_app(
             "docs": "/docs",
             "health": "/health",
             "metrics": "/metrics",
+            "run_inspector": "/run-inspector",
         }
 
     @app.get("/health")
@@ -75,5 +79,15 @@ def create_app(
 
     app.include_router(build_runs_router(run_repository, run_artifact_root))
     app.include_router(build_metrics_router(run_repository))
+
+    @app.get("/run-inspector/runs/{run_id}", include_in_schema=False)
+    def run_inspector_page(run_id: str) -> FileResponse:
+        return FileResponse(static_root / "run-inspector.html")
+
+    app.mount(
+        "/run-inspector",
+        StaticFiles(directory=static_root, html=True),
+        name="run-inspector",
+    )
 
     return app
