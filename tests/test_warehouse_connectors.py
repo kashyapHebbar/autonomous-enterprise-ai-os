@@ -13,6 +13,7 @@ from aeai_os.data import (
     WarehouseColumn,
     WarehouseConfigurationError,
     WarehouseConnectorError,
+    WarehouseDatasetAdapter,
     WarehouseDatasetReference,
     WarehouseQueryResult,
     dataset_reference_from_metadata,
@@ -79,6 +80,30 @@ def test_sqlite_connector_supports_select_query_references(tmp_path):
 
     assert [row["supplier"] for row in preview] == ["Acme", "Acme"]
     assert [column.name for column in columns] == ["supplier", "spend_amount"]
+
+
+def test_warehouse_dataset_adapter_matches_dataset_query_contract(tmp_path):
+    db_path = tmp_path / "warehouse.db"
+    build_procurement_db(db_path)
+    reference = WarehouseDatasetReference(
+        source="sqlite",
+        table="procurement",
+        database_path=str(db_path),
+    )
+    adapter = WarehouseDatasetAdapter(
+        connector=SqliteWarehouseConnector(db_path),
+        reference=reference,
+    )
+
+    assert adapter.columns() == ["supplier", "category", "spend_amount"]
+    assert adapter.preview(limit=1) == [
+        {"supplier": "Acme", "category": "Software", "spend_amount": "1200.5"}
+    ]
+    assert adapter.rows()[1]["supplier"] == "Zenith"
+    assert adapter.aggregate_sum_by("supplier", "spend_amount") == {
+        "Acme": 1500.5,
+        "Zenith": 800.0,
+    }
 
 
 def test_sqlite_connector_rejects_unsafe_identifiers(tmp_path):

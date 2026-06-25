@@ -12,7 +12,15 @@ from aeai_os.analytics import (
     analyze_procurement_dataset,
 )
 from aeai_os.analytics.reproducible import generate_reproducible_analysis_code
-from aeai_os.data import CsvDatasetAdapter, DataIngestionError
+from aeai_os.data import (
+    CsvDatasetAdapter,
+    DataIngestionError,
+    DatasetQueryAdapter,
+    WarehouseConnectorRegistry,
+    WarehouseDatasetAdapter,
+    dataset_reference_from_metadata,
+    default_warehouse_registry,
+)
 from aeai_os.runs.models import ArtifactRecord
 from aeai_os.runs.repository import InMemoryRunRepository
 from aeai_os.schemas.enums import AgentEventType, ArtifactType
@@ -26,10 +34,14 @@ class AnalyticsCodeAgent:
         repository: InMemoryRunRepository,
         artifact_root: str | Path,
         code_guard: PythonCodeGuard | None = None,
+        warehouse_registry: WarehouseConnectorRegistry | None = None,
+        warehouse_row_limit: int = 10_000,
     ) -> None:
         self._repository = repository
         self._artifact_root = Path(artifact_root)
         self._code_guard = code_guard or PythonCodeGuard()
+        self._warehouse_registry = warehouse_registry or default_warehouse_registry()
+        self._warehouse_row_limit = warehouse_row_limit
 
     def execute(self, agent_input: AgentInput) -> AgentOutput:
         source_code = agent_input.context.get("analysis_code")
@@ -65,7 +77,7 @@ class AnalyticsCodeAgent:
 
         try:
             dataset = self._resolve_dataset_artifact(agent_input)
-            adapter = CsvDatasetAdapter.from_path(dataset.uri)
+            adapter, adapter_name = self._build_dataset_adapter(dataset)
             analysis = analyze_procurement_dataset(adapter).to_dict()
             output_dir = self._artifact_root / agent_input.run_id / agent_input.node_id
             output_dir.mkdir(parents=True, exist_ok=True)
@@ -125,9 +137,30 @@ class AnalyticsCodeAgent:
                 "category_count": analysis["kpis"]["category_count"],
                 "outlier_count": analysis["kpis"]["outlier_count"],
                 "estimated_savings": analysis["kpis"]["estimated_savings"],
+                "adapter": adapter_name,
                 "safety_report": safety_report.to_dict(),
             },
         )
+
+    def _build_dataset_adapter(
+        self, dataset: ArtifactRecord
+    ) -> tuple[DatasetQueryAdapter, str]:
+        dataset_reference = dataset_reference_from_metadata(dataset.uri, dataset.metadata)
+        if dataset_reference.kind == "warehouse":
+            if dataset_reference.warehouse is None:
+                raise AnalyticsError("Warehouse dataset reference is missing source details.")
+            connector = self._warehouse_registry.connector_for_reference(
+                dataset_reference.warehouse
+            )
+            return (
+                WarehouseDatasetAdapter(
+                    connector=connector,
+                    reference=dataset_reference.warehouse,
+                    row_limit=self._warehouse_row_limit,
+                ),
+                connector.__class__.__name__,
+            )
+        return CsvDatasetAdapter.from_path(dataset.uri), "CsvDatasetAdapter"
 
     def _resolve_dataset_artifact(self, agent_input: AgentInput) -> ArtifactRecord:
         artifact_id = (

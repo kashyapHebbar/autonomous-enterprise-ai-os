@@ -5,6 +5,7 @@ from aeai_os.data.profiling import (
     CsvDatasetProfile,
     DataIngestionError,
     profile_csv_dataset,
+    profile_tabular_rows,
 )
 from aeai_os.data.warehouse import (
     DatasetReferenceInfo,
@@ -16,6 +17,7 @@ from aeai_os.data.warehouse import (
     WarehouseConnector,
     WarehouseConnectorError,
     WarehouseConnectorRegistry,
+    WarehouseDatasetAdapter,
     WarehouseDatasetReference,
     WarehouseQueryResult,
     dataset_reference_from_metadata,
@@ -36,6 +38,7 @@ __all__ = [
     "WarehouseColumn",
     "WarehouseConfigurationError",
     "WarehouseConnector",
+    "WarehouseDatasetAdapter",
     "WarehouseConnectorError",
     "WarehouseConnectorRegistry",
     "WarehouseDatasetReference",
@@ -44,5 +47,6 @@ __all__ = [
     "default_warehouse_registry",
     "is_warehouse_dataset",
     "profile_csv_dataset",
+    "profile_tabular_rows",
     "warehouse_reference_from_metadata",
 ]

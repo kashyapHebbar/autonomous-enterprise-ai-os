@@ -1,3 +1,5 @@
+import sqlite3
+
 from fastapi.testclient import TestClient
 
 from aeai_os.api.app import create_app
@@ -20,6 +22,31 @@ def write_procurement_fixture(path):
         ),
         encoding="utf-8",
     )
+
+
+def write_procurement_sqlite_fixture(path):
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE procurement (
+                supplier TEXT,
+                category TEXT,
+                invoice_date TEXT,
+                spend_amount REAL,
+                department TEXT
+            )
+            """
+        )
+        connection.executemany(
+            "INSERT INTO procurement VALUES (?, ?, ?, ?, ?)",
+            [
+                ("Acme", "Software", "2026-01-05", 100, "IT"),
+                ("Acme", "Software", "2026-01-06", 100, "IT"),
+                ("Zenith", "Hardware", "2026-02-01", 200, "Operations"),
+                ("Acme", "Cloud", "2026-02-10", 1000, "IT"),
+                ("Tiny", "Office", "2026-03-01", 10, "Finance"),
+            ],
+        )
 
 
 def build_client(tmp_path):
@@ -249,6 +276,43 @@ def test_execute_procurement_workflow_from_api(tmp_path):
     assert body["failed_node_ids"] == []
     assert body["waiting_for_approval_node_id"] is None
     assert {"dashboard", "report", "evaluation"}.issubset(artifact_types)
+    assert body["evaluations"][-1]["passed"] is True
+
+
+def test_execute_procurement_workflow_from_sqlite_warehouse_reference(tmp_path):
+    repository = InMemoryRunRepository()
+    app = create_app(repository=repository, artifact_root=tmp_path / "artifacts")
+    client = TestClient(app)
+    db_path = tmp_path / "warehouse.db"
+    write_procurement_sqlite_fixture(db_path)
+
+    run = client.post(
+        "/runs",
+        json={"task": "Analyze this procurement dataset and create a dashboard report."},
+    ).json()
+    dataset_response = client.post(
+        f"/runs/{run['id']}/datasets/reference",
+        json={
+            "uri": f"sqlite://{db_path}#procurement",
+            "format": "sqlite",
+            "metadata": {"source": "warehouse"},
+        },
+    )
+
+    response = client.post(f"/runs/{run['id']}/execute/procurement")
+
+    body = response.json()
+    artifact_types = {artifact["type"] for artifact in body["artifacts"]}
+    kpi_artifact = next(
+        artifact for artifact in body["artifacts"] if artifact["type"] == "kpi_table"
+    )
+    assert dataset_response.status_code == 201
+    assert response.status_code == 200
+    assert body["status"] == "completed"
+    assert {"schema_profile", "quality_report", "kpi_table", "dashboard", "report"}.issubset(
+        artifact_types
+    )
+    assert kpi_artifact["metadata"]["total_spend"] == 1410.0
     assert body["evaluations"][-1]["passed"] is True
 
 

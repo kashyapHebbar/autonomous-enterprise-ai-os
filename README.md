@@ -121,10 +121,10 @@ The generated summary records:
 
 ## Warehouse Dataset References
 
-The local procurement workflow still uses CSV files, and the data package now includes a warehouse
-connector framework for the next stage of dataset ingestion. `SqliteWarehouseConnector` provides
-offline table/query tests, while `SnowflakeWarehouseConnector` validates `SNOWFLAKE_*` environment
-settings and keeps Snowflake execution behind parameterized connector calls.
+The procurement workflow supports local CSV files and SQLite-backed warehouse references for offline
+tests and demos. `SqliteWarehouseConnector` provides table/query execution through the same adapter
+contract used by analytics agents, while `SnowflakeWarehouseConnector` validates `SNOWFLAKE_*`
+environment settings and keeps Snowflake execution behind parameterized connector calls.
 
 Dataset artifacts can be marked as warehouse-backed with URIs such as
 `sqlite:///absolute/path/to/warehouse.db#procurement` or

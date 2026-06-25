@@ -321,6 +321,44 @@ class SnowflakeWarehouseConnector:
         return f"({_select_query(reference.query)}) AS warehouse_source"
 
 
+class WarehouseDatasetAdapter:
+    """DatasetQueryAdapter-compatible wrapper around a warehouse connector."""
+
+    def __init__(
+        self,
+        connector: WarehouseConnector,
+        reference: WarehouseDatasetReference,
+        row_limit: int = 10_000,
+    ) -> None:
+        self.connector = connector
+        self.reference = reference
+        self.row_limit = row_limit
+        self._rows: list[dict[str, str]] | None = None
+        self._columns: list[str] | None = None
+
+    def columns(self) -> list[str]:
+        if self._columns is None:
+            described = self.connector.describe(self.reference)
+            column_names = [column.name for column in described]
+            if not column_names:
+                preview = self.preview(limit=1)
+                column_names = list(preview[0]) if preview else []
+            self._columns = column_names
+        return list(self._columns)
+
+    def preview(self, limit: int = 5) -> list[dict[str, str]]:
+        rows = self.connector.preview_rows(self.reference, limit=max(limit, 0))
+        return [_stringify_row(row) for row in rows]
+
+    def rows(self) -> list[dict[str, str]]:
+        if self._rows is None:
+            self._rows = self.preview(limit=max(self.row_limit, 0))
+        return [dict(row) for row in self._rows]
+
+    def aggregate_sum_by(self, group_column: str, value_column: str) -> dict[str, float]:
+        return self.connector.aggregate_sum_by(self.reference, group_column, value_column)
+
+
 ConnectorFactory = Callable[[WarehouseDatasetReference], WarehouseConnector]
 
 
@@ -474,6 +512,10 @@ def _quote_sqlite_string(value: str) -> str:
 def _row_total(row: Mapping[str, Any]) -> float:
     value = row.get("TOTAL") if "TOTAL" in row else row.get("total")
     return float(value or 0.0)
+
+
+def _stringify_row(row: Mapping[str, Any]) -> dict[str, str]:
+    return {str(key): "" if value is None else str(value).strip() for key, value in row.items()}
 
 
 def _select_query(query: str | None) -> str:

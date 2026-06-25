@@ -48,8 +48,12 @@ class AttachDatasetReferenceRequest(BaseModel):
     @classmethod
     def validate_format(cls, value: str) -> str:
         normalized = value.strip().lower()
-        if normalized not in {"csv", "tsv", "parquet", "json"}:
-            raise ValueError("Dataset format must be one of: csv, tsv, parquet, json.")
+        supported = {"csv", "tsv", "parquet", "json", "sqlite", "snowflake", "warehouse"}
+        if normalized not in supported:
+            raise ValueError(
+                "Dataset format must be one of: csv, tsv, parquet, json, sqlite, "
+                "snowflake, warehouse."
+            )
         return normalized
 
 

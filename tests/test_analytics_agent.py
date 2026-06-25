@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 
 from aeai_os.agents.analytics_code import AnalyticsCodeAgent
@@ -27,6 +28,32 @@ def write_analytics_fixture(path: Path) -> None:
         ),
         encoding="utf-8",
     )
+
+
+def write_analytics_sqlite_fixture(path: Path) -> None:
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE procurement (
+                supplier TEXT,
+                category TEXT,
+                invoice_date TEXT,
+                spend_amount REAL,
+                department TEXT
+            )
+            """
+        )
+        connection.executemany(
+            "INSERT INTO procurement VALUES (?, ?, ?, ?, ?)",
+            [
+                ("Acme", "Software", "2026-01-05", 100, "IT"),
+                ("Acme", "Software", "2026-01-06", 100, "IT"),
+                ("Zenith", "Hardware", "2026-02-01", 200, "Operations"),
+                ("Acme", "Cloud", "2026-02-10", 1000, "IT"),
+                ("Acme", "", "2026-02-11", None, "Finance"),
+                ("Tiny", "Office", "2026-03-01", 10, "Finance"),
+            ],
+        )
 
 
 def build_agent_fixture(tmp_path: Path):
@@ -106,6 +133,37 @@ def test_analytics_agent_registers_kpi_and_reproducible_code_artifacts(tmp_path)
     assert PythonCodeGuard().evaluate(source_code).decision == CodeSafetyDecision.SAFE
     compile(source_code, code_artifact.uri, "exec")
     assert code_artifact.metadata["execution_mode"] == "validated_artifact_only"
+
+
+def test_analytics_agent_analyzes_sqlite_warehouse_reference(tmp_path):
+    repository = InMemoryRunRepository()
+    run = repository.create_run("Analyze procurement data.")
+    db_path = tmp_path / "warehouse.db"
+    write_analytics_sqlite_fixture(db_path)
+    dataset = repository.add_artifact(
+        run_id=run.id,
+        artifact_type=ArtifactType.DATASET,
+        uri=f"sqlite://{db_path}#procurement",
+        metadata={"source": "warehouse", "format": "sqlite"},
+    )
+    agent = AnalyticsCodeAgent(repository=repository, artifact_root=tmp_path / "artifacts")
+
+    output = agent.execute(
+        AgentInput(
+            run_id=run.id,
+            node_id="analytics",
+            task="Compute procurement KPIs.",
+            context={"dataset_artifact_id": dataset.id},
+        )
+    )
+
+    kpi_artifact = repository.get_artifact(run.id, output.artifacts[0])
+    analysis = json.loads(Path(kpi_artifact.uri).read_text(encoding="utf-8"))
+
+    assert output.status == "succeeded"
+    assert output.metrics["adapter"] == "SqliteWarehouseConnector"
+    assert analysis["kpis"]["total_spend"] == 1410.0
+    assert analysis["dataset"]["row_count"] == 6
 
 
 def test_code_guard_blocks_network_and_process_access():

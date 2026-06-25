@@ -8,8 +8,12 @@ from aeai_os.agents.base import AgentInput, AgentOutput
 from aeai_os.data import (
     CsvDatasetAdapter,
     DataIngestionError,
+    WarehouseConnectorRegistry,
+    WarehouseDatasetAdapter,
     dataset_reference_from_metadata,
+    default_warehouse_registry,
     profile_csv_dataset,
+    profile_tabular_rows,
 )
 from aeai_os.runs.models import ArtifactRecord
 from aeai_os.runs.repository import InMemoryRunRepository
@@ -19,21 +23,48 @@ from aeai_os.schemas.enums import AgentEventType, ArtifactType
 class DataRetrievalAgent:
     agent_type = "data_retrieval"
 
-    def __init__(self, repository: InMemoryRunRepository, artifact_root: str | Path) -> None:
+    def __init__(
+        self,
+        repository: InMemoryRunRepository,
+        artifact_root: str | Path,
+        warehouse_registry: WarehouseConnectorRegistry | None = None,
+        warehouse_profile_row_limit: int = 10_000,
+    ) -> None:
         self._repository = repository
         self._artifact_root = Path(artifact_root)
+        self._warehouse_registry = warehouse_registry or default_warehouse_registry()
+        self._warehouse_profile_row_limit = warehouse_profile_row_limit
 
     def execute(self, agent_input: AgentInput) -> AgentOutput:
         try:
             dataset = self._resolve_dataset_artifact(agent_input)
             dataset_reference = dataset_reference_from_metadata(dataset.uri, dataset.metadata)
             if dataset_reference.kind == "warehouse":
-                raise DataIngestionError(
-                    "Warehouse dataset references are recognized but local profiling currently "
-                    "supports CSV file datasets only."
+                if dataset_reference.warehouse is None:
+                    raise DataIngestionError(
+                        "Warehouse dataset reference is missing source details."
+                    )
+                connector = self._warehouse_registry.connector_for_reference(
+                    dataset_reference.warehouse
                 )
-            profile = profile_csv_dataset(dataset.uri)
-            adapter = CsvDatasetAdapter.from_path(dataset.uri)
+                adapter = WarehouseDatasetAdapter(
+                    connector=connector,
+                    reference=dataset_reference.warehouse,
+                    row_limit=self._warehouse_profile_row_limit,
+                )
+                profile = profile_tabular_rows(
+                    source_path=dataset.uri,
+                    rows=adapter.rows(),
+                    fieldnames=adapter.columns(),
+                )
+                adapter_name = connector.__class__.__name__
+                dataset_kind = "warehouse"
+            else:
+                profile = profile_csv_dataset(dataset.uri)
+                adapter = CsvDatasetAdapter.from_path(dataset.uri)
+                adapter_name = "CsvDatasetAdapter"
+                dataset_kind = "local_file"
+
             output_dir = self._artifact_root / agent_input.run_id / agent_input.node_id
             output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -48,6 +79,7 @@ class DataRetrievalAgent:
                 uri=str(schema_path),
                 metadata={
                     "source": "data_retrieval_agent",
+                    "dataset_kind": dataset_kind,
                     "row_count": profile.row_count,
                     "column_count": profile.column_count,
                     "format": "json",
@@ -61,6 +93,7 @@ class DataRetrievalAgent:
                 uri=str(quality_path),
                 metadata={
                     "source": "data_retrieval_agent",
+                    "dataset_kind": dataset_kind,
                     "missing_cells": profile.quality_summary["missing_cells"],
                     "duplicate_row_count": profile.quality_summary["duplicate_row_count"],
                     "format": "json",
@@ -104,7 +137,8 @@ class DataRetrievalAgent:
                 "missing_cells": profile.quality_summary["missing_cells"],
                 "columns": [column.name for column in profile.columns],
                 "preview": adapter.preview(limit=3),
-                "adapter": "CsvDatasetAdapter",
+                "adapter": adapter_name,
+                "dataset_kind": dataset_kind,
             },
         )
 

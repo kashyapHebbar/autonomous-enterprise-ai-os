@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 from collections import Counter
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -89,22 +90,51 @@ def profile_csv_dataset(path: str | Path) -> CsvDatasetProfile:
             for row in reader
         ]
 
-    columns = [_profile_column(field, rows) for field in fieldnames]
+    return profile_tabular_rows(
+        source_path=str(csv_path),
+        rows=rows,
+        fieldnames=fieldnames,
+    )
+
+
+def profile_tabular_rows(
+    source_path: str,
+    rows: Sequence[Mapping[str, Any]],
+    fieldnames: Sequence[str],
+) -> CsvDatasetProfile:
+    normalized_fieldnames = [str(field).strip() for field in fieldnames]
+    if not normalized_fieldnames:
+        raise DataIngestionError("Dataset must include at least one column.")
+    if any(not field for field in normalized_fieldnames):
+        raise DataIngestionError("Dataset contains a blank column name.")
+    if len(normalized_fieldnames) != len(set(normalized_fieldnames)):
+        raise DataIngestionError("Dataset contains duplicate column names.")
+
+    normalized_rows = [
+        {
+            field: _normalize_cell(row.get(field))
+            for field in normalized_fieldnames
+        }
+        for row in rows
+    ]
+    columns = [_profile_column(field, normalized_rows) for field in normalized_fieldnames]
     missing_cells = sum(column.missing_count for column in columns)
-    total_cells = len(rows) * len(fieldnames)
-    duplicate_rows = _count_duplicate_rows(rows, fieldnames)
+    total_cells = len(normalized_rows) * len(normalized_fieldnames)
+    duplicate_rows = _count_duplicate_rows(normalized_rows, normalized_fieldnames)
     columns_with_missing = [column.name for column in columns if column.missing_count]
-    empty_columns = [column.name for column in columns if column.missing_count == len(rows)]
+    empty_columns = [
+        column.name for column in columns if column.missing_count == len(normalized_rows)
+    ]
     warnings = _quality_warnings(
-        row_count=len(rows),
+        row_count=len(normalized_rows),
         empty_columns=empty_columns,
         duplicate_row_count=duplicate_rows,
     )
 
     return CsvDatasetProfile(
-        path=str(csv_path),
-        row_count=len(rows),
-        column_count=len(fieldnames),
+        path=source_path,
+        row_count=len(normalized_rows),
+        column_count=len(normalized_fieldnames),
         columns=columns,
         quality_summary={
             "missing_cells": missing_cells,
@@ -117,8 +147,16 @@ def profile_csv_dataset(path: str | Path) -> CsvDatasetProfile:
     )
 
 
-def is_missing_value(value: str) -> bool:
-    return value.strip().lower() in MISSING_MARKERS
+def is_missing_value(value: Any) -> bool:
+    if value is None:
+        return True
+    return str(value).strip().lower() in MISSING_MARKERS
+
+
+def _normalize_cell(value: Any) -> str:
+    if value is None:
+        return ""
+    return str(value).strip()
 
 
 def _profile_column(column_name: str, rows: list[dict[str, str]]) -> CsvColumnProfile:
