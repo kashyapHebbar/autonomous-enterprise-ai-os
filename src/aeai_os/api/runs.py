@@ -8,6 +8,7 @@ from fastapi import APIRouter, Body, File, HTTPException, UploadFile, status
 
 from aeai_os.api.run_schemas import (
     AgentEventResponse,
+    ApprovalDecisionRequest,
     ArtifactLineageResponse,
     ArtifactResponse,
     AttachDatasetReferenceRequest,
@@ -31,14 +32,20 @@ from aeai_os.api.run_schemas import (
     workflow_job_to_response,
 )
 from aeai_os.artifacts import ArtifactLineageService
+from aeai_os.orchestration.service import OrchestrationError, OrchestrationResult
 from aeai_os.runs.repository import (
     ArtifactNotFoundError,
+    GraphNodeNotFoundError,
     InMemoryRunRepository,
     RunNotFoundError,
     WorkflowJobNotFoundError,
 )
 from aeai_os.schemas.enums import ArtifactType
-from aeai_os.workflows import ProcurementWorkflowError, execute_procurement_workflow
+from aeai_os.workflows import (
+    ProcurementWorkflowError,
+    build_procurement_orchestrator,
+    execute_procurement_workflow,
+)
 from aeai_os.workflows.worker import enqueue_procurement_workflow
 
 ALLOWED_UPLOAD_EXTENSIONS = {".csv", ".tsv", ".json", ".parquet"}
@@ -94,14 +101,7 @@ def build_runs_router(repository: InMemoryRunRepository, artifact_root: Path):
             ) from exc
 
         run = repository.get_run(run_id)
-        return run_to_execution_response(
-            run=run,
-            artifacts=repository.list_artifacts(run_id),
-            evaluations=repository.list_evaluations(run_id),
-            completed_node_ids=result.completed_node_ids,
-            failed_node_ids=result.failed_node_ids,
-            waiting_for_approval_node_id=result.waiting_for_approval_node_id,
-        )
+        return _execution_response(repository, run.id, result)
 
     @router.post(
         "/{run_id}/execute/procurement/async",
@@ -176,6 +176,45 @@ def build_runs_router(repository: InMemoryRunRepository, artifact_root: Path):
             artifacts=repository.list_artifacts(run_id),
             evaluations=repository.list_evaluations(run_id),
         )
+
+    @router.post(
+        "/{run_id}/graph-nodes/{node_id}/approval",
+        response_model=RunExecutionResponse,
+    )
+    def decide_graph_node_approval(
+        run_id: str,
+        node_id: str,
+        request: Annotated[ApprovalDecisionRequest, Body(...)],
+    ) -> RunExecutionResponse:
+        _get_run_or_404(repository, run_id)
+        service = build_procurement_orchestrator(repository, artifact_root)
+        try:
+            result = service.approve_node(
+                run_id=run_id,
+                node_id=node_id,
+                approved=request.approved,
+                comment=request.comment,
+            )
+        except GraphNodeNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        except OrchestrationError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        return _execution_response(repository, run_id, result)
+
+    @router.post(
+        "/{run_id}/graph-nodes/{node_id}/retry",
+        response_model=RunExecutionResponse,
+    )
+    def retry_graph_node(run_id: str, node_id: str) -> RunExecutionResponse:
+        _get_run_or_404(repository, run_id)
+        service = build_procurement_orchestrator(repository, artifact_root)
+        try:
+            result = service.retry_failed_node(run_id=run_id, node_id=node_id)
+        except GraphNodeNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        except OrchestrationError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        return _execution_response(repository, run_id, result)
 
     @router.get("/{run_id}/evaluations", response_model=list[EvaluationResponse])
     def list_evaluations(run_id: str) -> list[EvaluationResponse]:
@@ -285,6 +324,22 @@ def _get_artifact_or_404(
         return repository.get_artifact(run_id, artifact_id)
     except ArtifactNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+def _execution_response(
+    repository: InMemoryRunRepository,
+    run_id: str,
+    result: OrchestrationResult,
+) -> RunExecutionResponse:
+    run = repository.get_run(run_id)
+    return run_to_execution_response(
+        run=run,
+        artifacts=repository.list_artifacts(run_id),
+        evaluations=repository.list_evaluations(run_id),
+        completed_node_ids=result.completed_node_ids,
+        failed_node_ids=result.failed_node_ids,
+        waiting_for_approval_node_id=result.waiting_for_approval_node_id,
+    )
 
 
 def _validate_upload_filename(filename: str) -> str:

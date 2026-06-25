@@ -41,8 +41,17 @@ def execute_procurement_workflow(
     except PlannerValidationError as exc:
         raise ProcurementWorkflowError(str(exc)) from exc
 
+    return build_procurement_orchestrator(repository, artifact_root).execute_run(
+        run.id, plan.to_execution_graph()
+    )
+
+
+def build_procurement_orchestrator(
+    repository: InMemoryRunRepository,
+    artifact_root: str | Path,
+) -> OrchestratorService:
     artifact_root = Path(artifact_root)
-    service = OrchestratorService(
+    return OrchestratorService(
         repository=repository,
         registry=build_default_registry(),
         agents={
@@ -53,4 +62,3 @@ def execute_procurement_workflow(
             "evaluation": EvaluationAgent(repository, artifact_root),
         },
     )
-    return service.execute_run(run.id, plan.to_execution_graph())

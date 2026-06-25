@@ -91,6 +91,20 @@ curl -X POST http://localhost:8000/runs/{run_id}/execute/procurement
 The execution response includes run status, trace ID, completed/failed node IDs,
 waiting-for-approval state, artifacts, and evaluations.
 
+Approve or deny a graph node that is waiting on human approval:
+
+```bash
+curl -X POST http://localhost:8000/runs/{run_id}/graph-nodes/{node_id}/approval \
+  -H "Content-Type: application/json" \
+  -d '{"approved":true,"comment":"Approved for local demo."}'
+```
+
+Retry a failed graph node after fixing its input or environment:
+
+```bash
+curl -X POST http://localhost:8000/runs/{run_id}/graph-nodes/{node_id}/retry
+```
+
 ## Procurement Demo
 
 The packaged demo uses `examples/procurement_demo.csv` to run the same planner, orchestrator,

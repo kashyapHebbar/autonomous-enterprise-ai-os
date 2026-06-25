@@ -57,6 +57,19 @@ class AttachDatasetReferenceRequest(BaseModel):
         return normalized
 
 
+class ApprovalDecisionRequest(BaseModel):
+    approved: bool = True
+    comment: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("comment")
+    @classmethod
+    def validate_comment(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+
 class ArtifactResponse(BaseModel):
     id: str
     run_id: str

@@ -2,10 +2,15 @@ import sqlite3
 
 from fastapi.testclient import TestClient
 
+from aeai_os.agents.data_retrieval import DataRetrievalAgent
+from aeai_os.agents.registry import build_default_registry
 from aeai_os.api.app import create_app
+from aeai_os.orchestration.graph import ExecutionGraph, ExecutionNode
+from aeai_os.orchestration.service import OrchestratorService, RetryPolicy
 from aeai_os.runs.models import AgentEventRecord, EvaluationResultRecord, GraphNodeRecord
 from aeai_os.runs.repository import InMemoryRunRepository, utc_now
 from aeai_os.schemas.enums import AgentEventType, ArtifactType, GraphNodeStatus
+from aeai_os.workflows import build_procurement_orchestrator
 
 
 def write_procurement_fixture(path):
@@ -52,6 +57,36 @@ def write_procurement_sqlite_fixture(path):
 def build_client(tmp_path):
     app = create_app(repository=InMemoryRunRepository(), artifact_root=tmp_path / "artifacts")
     return TestClient(app)
+
+
+def seed_waiting_data_profile_run(repository, artifact_root, tmp_path):
+    dataset_path = tmp_path / "procurement.csv"
+    write_procurement_fixture(dataset_path)
+    run = repository.create_run("Profile procurement data with approval.")
+    repository.add_artifact(
+        run_id=run.id,
+        artifact_type=ArtifactType.DATASET,
+        uri=str(dataset_path),
+        metadata={"source": "test", "format": "csv"},
+    )
+    graph = ExecutionGraph(
+        run_id=run.id,
+        nodes=[
+            ExecutionNode(
+                id="data_profile",
+                agent="data_retrieval",
+                task="Profile procurement dataset.",
+                required_tools=["snowflake_query"],
+                expected_artifacts=["schema_profile", "quality_report"],
+                risk="high",
+            )
+        ],
+    )
+    result = build_procurement_orchestrator(repository, artifact_root).execute_run(
+        run.id, graph
+    )
+    assert result.waiting_for_approval_node_id == "data_profile"
+    return run
 
 
 def test_app_can_select_sqlalchemy_run_repository(tmp_path, monkeypatch):
@@ -314,6 +349,116 @@ def test_execute_procurement_workflow_from_sqlite_warehouse_reference(tmp_path):
     )
     assert kpi_artifact["metadata"]["total_spend"] == 1410.0
     assert body["evaluations"][-1]["passed"] is True
+
+
+def test_approve_waiting_graph_node_from_api(tmp_path):
+    repository = InMemoryRunRepository()
+    artifact_root = tmp_path / "artifacts"
+    app = create_app(repository=repository, artifact_root=artifact_root)
+    client = TestClient(app)
+    run = seed_waiting_data_profile_run(repository, artifact_root, tmp_path)
+
+    response = client.post(
+        f"/runs/{run.id}/graph-nodes/data_profile/approval",
+        json={"approved": True, "comment": "Approved local profile step."},
+    )
+
+    body = response.json()
+    artifact_types = {artifact["type"] for artifact in body["artifacts"]}
+    event_types = [event.event_type for event in repository.list_events(run.id)]
+    assert response.status_code == 200
+    assert body["status"] == "completed"
+    assert body["completed_node_ids"] == ["data_profile"]
+    assert body["waiting_for_approval_node_id"] is None
+    assert {"schema_profile", "quality_report"}.issubset(artifact_types)
+    assert AgentEventType.APPROVAL_DECISION in event_types
+
+
+def test_deny_waiting_graph_node_from_api_marks_run_failed(tmp_path):
+    repository = InMemoryRunRepository()
+    artifact_root = tmp_path / "artifacts"
+    app = create_app(repository=repository, artifact_root=artifact_root)
+    client = TestClient(app)
+    run = seed_waiting_data_profile_run(repository, artifact_root, tmp_path)
+
+    response = client.post(
+        f"/runs/{run.id}/graph-nodes/data_profile/approval",
+        json={"approved": False, "comment": "Do not run warehouse query."},
+    )
+
+    body = response.json()
+    assert response.status_code == 200
+    assert body["status"] == "failed"
+    assert body["failed_node_ids"] == ["data_profile"]
+    assert repository.get_checkpoint(run.id).state["approvals"] == {
+        "data_profile": "denied"
+    }
+
+
+def test_approval_endpoint_rejects_node_that_is_not_waiting(tmp_path):
+    repository = InMemoryRunRepository()
+    artifact_root = tmp_path / "artifacts"
+    app = create_app(repository=repository, artifact_root=artifact_root)
+    client = TestClient(app)
+    run = seed_waiting_data_profile_run(repository, artifact_root, tmp_path)
+    build_procurement_orchestrator(repository, artifact_root).approve_node(
+        run.id,
+        "data_profile",
+        approved=True,
+        comment="Approved outside the API.",
+    )
+
+    response = client.post(
+        f"/runs/{run.id}/graph-nodes/data_profile/approval",
+        json={"approved": True},
+    )
+
+    assert response.status_code == 400
+    assert "not waiting for approval" in response.json()["detail"]
+
+
+def test_retry_failed_graph_node_from_api(tmp_path):
+    repository = InMemoryRunRepository()
+    artifact_root = tmp_path / "artifacts"
+    app = create_app(repository=repository, artifact_root=artifact_root)
+    client = TestClient(app)
+    run = repository.create_run("Retry failed data profile.")
+    graph = ExecutionGraph(
+        run_id=run.id,
+        nodes=[
+            ExecutionNode(
+                id="data_profile",
+                agent="data_retrieval",
+                task="Profile procurement dataset.",
+                expected_artifacts=["schema_profile", "quality_report"],
+            )
+        ],
+    )
+    service = OrchestratorService(
+        repository=repository,
+        registry=build_default_registry(),
+        agents={"data_retrieval": DataRetrievalAgent(repository, artifact_root)},
+        retry_policy=RetryPolicy(max_attempts=1),
+    )
+    failed = service.execute_run(run.id, graph)
+    dataset_path = tmp_path / "procurement_retry.csv"
+    write_procurement_fixture(dataset_path)
+    repository.add_artifact(
+        run_id=run.id,
+        artifact_type=ArtifactType.DATASET,
+        uri=str(dataset_path),
+        metadata={"source": "test", "format": "csv"},
+    )
+
+    response = client.post(f"/runs/{run.id}/graph-nodes/data_profile/retry")
+
+    body = response.json()
+    artifact_types = {artifact["type"] for artifact in body["artifacts"]}
+    assert failed.status.value == "failed"
+    assert response.status_code == 200
+    assert body["status"] == "completed"
+    assert body["completed_node_ids"] == ["data_profile"]
+    assert {"schema_profile", "quality_report"}.issubset(artifact_types)
 
 
 def test_enqueue_procurement_workflow_from_api(tmp_path):
