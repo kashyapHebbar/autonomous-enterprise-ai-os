@@ -25,8 +25,8 @@ def create_app(
     from aeai_os.api.runs import build_runs_router
     from aeai_os.observability.tracing import configure_tracing, current_trace_id, start_span
 
-    configure_tracing()
     settings = get_settings()
+    configure_tracing(service_name=settings.service_name)
     run_repository = repository or build_run_repository(settings)
     run_artifact_root = artifact_root or Path(settings.artifact_root)
     static_root = Path(__file__).resolve().parents[1] / "web" / "static"

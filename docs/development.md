@@ -253,6 +253,27 @@ Current observability behavior:
 - Agent events include `trace_id`, and node completion/failure/approval-pause events include status and duration timing.
 - Evaluation results are logged as structured observability events with `backend: opentelemetry`.
 - `GET /metrics` exposes run counts, run status totals, error totals, artifact count, evaluation count and average score, node retry totals, run duration totals, and node status counts by agent.
+- `AEAI_TRACE_EXPORTER` controls span export: `none` for local trace IDs without export, `console` for local debugging, `otlp_http` for an OTLP/HTTP collector, `otlp_grpc` for an OTLP/gRPC collector, or `disabled` to skip tracing setup.
+
+Local console tracing:
+
+```bash
+AEAI_TRACE_EXPORTER=console make dev
+```
+
+Collector-backed tracing:
+
+```bash
+AEAI_TRACE_EXPORTER=otlp_http \
+AEAI_OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318/v1/traces \
+make dev
+```
+
+Install the optional observability dependencies when exporting to OTLP:
+
+```bash
+pip install ".[observability]"
+```
 
 ## Run With Docker Compose
 

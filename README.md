@@ -170,6 +170,13 @@ The regression suite covers:
 - Run repository behavior for in-memory and SQLAlchemy-backed storage
 - Procurement demo completion with dashboard, report, evaluation, trace metadata, and metrics
 
+### Trace Export
+
+Tracing is enabled locally without exporting spans by default. Set `AEAI_TRACE_EXPORTER=console`
+to print spans during development, or use `AEAI_TRACE_EXPORTER=otlp_http` /
+`AEAI_TRACE_EXPORTER=otlp_grpc` with `AEAI_OTEL_EXPORTER_OTLP_ENDPOINT` in deployed environments.
+Install `.[observability]` when exporting to an OTLP collector.
+
 ## Current Limitations
 
 - The platform is an actively developed prototype, not a production workflow control plane.
@@ -178,8 +185,8 @@ The regression suite covers:
 
 ## Direction
 
-The next roadmap is real warehouse connectors, async queues, exporter-backed tracing, LangSmith or
-MLflow integration, deployment approvals, and a UI for inspecting execution graphs and artifacts.
+The next roadmap is LangSmith or MLflow integration, deployment approvals, and a richer UI for
+inspecting execution graphs, artifacts, and approval decisions.
 
 ## Responsible Use
 
