@@ -6,7 +6,7 @@ import pytest
 
 from aeai_os.agents.base import AgentInput
 from aeai_os.agents.data_retrieval import DataRetrievalAgent
-from aeai_os.data import CsvDatasetAdapter, DataIngestionError, SnowflakeQueryAdapter
+from aeai_os.data import CsvDatasetAdapter, DataIngestionError
 from aeai_os.data.profiling import profile_csv_dataset
 from aeai_os.runs.repository import InMemoryRunRepository
 from aeai_os.schemas.enums import ArtifactType
@@ -163,13 +163,25 @@ def test_data_retrieval_agent_fails_for_unsupported_dataset_artifact(tmp_path):
     assert "Unsupported dataset file type" in output.errors[0]
 
 
-def test_snowflake_adapter_is_future_contract_placeholder():
-    adapter = SnowflakeQueryAdapter(
-        account="example",
-        database="analytics",
-        schema="procurement",
-        warehouse="compute_wh",
+def test_data_retrieval_agent_recognizes_warehouse_references(tmp_path):
+    repository = InMemoryRunRepository()
+    run = repository.create_run("Analyze procurement data.")
+    dataset_artifact = repository.add_artifact(
+        run_id=run.id,
+        artifact_type=ArtifactType.DATASET,
+        uri="snowflake://ANALYTICS/PUBLIC/PROCUREMENT",
+        metadata={"source": "warehouse"},
+    )
+    agent = DataRetrievalAgent(repository=repository, artifact_root=tmp_path / "artifacts")
+
+    output = agent.execute(
+        AgentInput(
+            run_id=run.id,
+            node_id="data_profile",
+            task="Profile procurement dataset.",
+            context={"dataset_artifact_id": dataset_artifact.id},
+        )
     )
 
-    with pytest.raises(NotImplementedError):
-        adapter.preview()
+    assert output.status == "failed"
+    assert "Warehouse dataset references are recognized" in output.errors[0]

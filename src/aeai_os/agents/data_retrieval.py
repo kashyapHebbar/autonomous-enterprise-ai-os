@@ -5,7 +5,12 @@ from pathlib import Path
 from typing import Any
 
 from aeai_os.agents.base import AgentInput, AgentOutput
-from aeai_os.data import CsvDatasetAdapter, DataIngestionError, profile_csv_dataset
+from aeai_os.data import (
+    CsvDatasetAdapter,
+    DataIngestionError,
+    dataset_reference_from_metadata,
+    profile_csv_dataset,
+)
 from aeai_os.runs.models import ArtifactRecord
 from aeai_os.runs.repository import InMemoryRunRepository
 from aeai_os.schemas.enums import AgentEventType, ArtifactType
@@ -21,6 +26,12 @@ class DataRetrievalAgent:
     def execute(self, agent_input: AgentInput) -> AgentOutput:
         try:
             dataset = self._resolve_dataset_artifact(agent_input)
+            dataset_reference = dataset_reference_from_metadata(dataset.uri, dataset.metadata)
+            if dataset_reference.kind == "warehouse":
+                raise DataIngestionError(
+                    "Warehouse dataset references are recognized but local profiling currently "
+                    "supports CSV file datasets only."
+                )
             profile = profile_csv_dataset(dataset.uri)
             adapter = CsvDatasetAdapter.from_path(dataset.uri)
             output_dir = self._artifact_root / agent_input.run_id / agent_input.node_id

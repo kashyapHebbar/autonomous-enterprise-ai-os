@@ -15,6 +15,7 @@ The first vertical slice is a procurement analytics workflow:
 
 - Planner-generated execution graphs with typed nodes and dependencies
 - Repository-backed run state, checkpoints, artifacts, events, and evaluations
+- Warehouse dataset references through SQLite and Snowflake connector abstractions
 - Data retrieval, analytics/code, visualization, report, and evaluation agents
 - Security policy gates for required tools and risky actions
 - API-driven workflow execution, approval decisions, failed-node retry, and run inspection
@@ -117,6 +118,17 @@ The generated summary records:
 | `GET /metrics` | Prometheus-compatible run and agent metrics |
 | `GET /health` | Service health |
 | `GET /docs` | Interactive OpenAPI documentation |
+
+## Warehouse Dataset References
+
+The local procurement workflow still uses CSV files, and the data package now includes a warehouse
+connector framework for the next stage of dataset ingestion. `SqliteWarehouseConnector` provides
+offline table/query tests, while `SnowflakeWarehouseConnector` validates `SNOWFLAKE_*` environment
+settings and keeps Snowflake execution behind parameterized connector calls.
+
+Dataset artifacts can be marked as warehouse-backed with URIs such as
+`sqlite:///absolute/path/to/warehouse.db#procurement` or
+`snowflake://ANALYTICS/PUBLIC/PROCUREMENT` plus metadata `{"source": "warehouse"}`.
 
 ## Run With Docker Compose
 

@@ -83,25 +83,3 @@ class CsvDatasetAdapter:
         missing = sorted(set(columns) - set(self._fieldnames))
         if missing:
             raise DataIngestionError(f"Unknown dataset columns: {', '.join(missing)}")
-
-
-class SnowflakeQueryAdapter:
-    """Future adapter boundary; intentionally not connected in the local MVP."""
-
-    def __init__(self, account: str, database: str, schema: str, warehouse: str) -> None:
-        self.account = account
-        self.database = database
-        self.schema = schema
-        self.warehouse = warehouse
-
-    def columns(self) -> list[str]:
-        raise NotImplementedError("Snowflake adapter is a contract placeholder for the MVP.")
-
-    def preview(self, limit: int = 5) -> list[dict[str, str]]:
-        raise NotImplementedError("Snowflake adapter is a contract placeholder for the MVP.")
-
-    def rows(self) -> list[dict[str, str]]:
-        raise NotImplementedError("Snowflake adapter is a contract placeholder for the MVP.")
-
-    def aggregate_sum_by(self, group_column: str, value_column: str) -> dict[str, float]:
-        raise NotImplementedError("Snowflake adapter is a contract placeholder for the MVP.")

@@ -158,7 +158,29 @@ Current data behavior:
 - `profile_csv_dataset` infers column types, missing value counts, duplicate rows, examples, and numeric summary statistics.
 - `DataRetrievalAgent` reads a dataset artifact or local dataset URI, writes schema and quality JSON files, and registers them as run artifacts.
 - `CsvDatasetAdapter` exposes preview, row access, and grouped sum queries for downstream analytics agents.
-- `SnowflakeQueryAdapter` defines the future warehouse adapter boundary without requiring Snowflake credentials in the MVP.
+- `dataset_reference_from_metadata` distinguishes local file datasets from warehouse-backed table or query references.
+- `WarehouseConnectorRegistry` resolves warehouse adapters by source metadata or URI scheme.
+- `SqliteWarehouseConnector` gives tests and offline demos deterministic preview, schema inspection, and grouped aggregate queries.
+- `SnowflakeWarehouseConnector` validates `SNOWFLAKE_*` environment settings and uses parameterized execution calls for Snowflake-backed datasets without requiring real credentials in local tests.
+
+Warehouse dataset artifacts can use URI schemes or metadata:
+
+```json
+{
+  "uri": "sqlite:///absolute/path/to/warehouse.db#procurement",
+  "metadata": {"source": "warehouse"}
+}
+```
+
+```json
+{
+  "uri": "snowflake://ANALYTICS/PUBLIC/PROCUREMENT",
+  "metadata": {"source": "warehouse"}
+}
+```
+
+The current data retrieval agent recognizes warehouse references but still profiles local CSV files
+only; a later workflow ticket can route warehouse references through connector-backed profiling.
 
 ## Procurement Analytics
 
