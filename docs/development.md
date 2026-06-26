@@ -266,6 +266,7 @@ Current observability behavior:
 - API requests, orchestrator execution/resume calls, agent nodes, tool permission decisions, and evaluation logging create OpenTelemetry spans.
 - Agent events include `trace_id`, and node completion/failure/approval-pause events include status and duration timing.
 - Evaluation results are logged as structured observability events with `backend: opentelemetry`.
+- Optional MLflow tracking can mirror evaluation score, pass/fail state, check metrics, run ID, and trace ID when enabled.
 - `GET /metrics` exposes run counts, run status totals, error totals, artifact count, evaluation count and average score, node retry totals, run duration totals, and node status counts by agent.
 - `AEAI_TRACE_EXPORTER` controls span export: `none` for local trace IDs without export, `console` for local debugging, `otlp_http` for an OTLP/HTTP collector, `otlp_grpc` for an OTLP/gRPC collector, or `disabled` to skip tracing setup.
 
@@ -287,6 +288,23 @@ Install the optional observability dependencies when exporting to OTLP:
 
 ```bash
 pip install ".[observability]"
+```
+
+Local file-backed MLflow tracking:
+
+```bash
+AEAI_MLFLOW_TRACKING_ENABLED=true \
+AEAI_MLFLOW_TRACKING_URI=file:./artifacts/mlruns \
+AEAI_MLFLOW_EXPERIMENT_NAME="Autonomous Enterprise AI OS" \
+make demo
+```
+
+Server-backed MLflow tracking uses the same switch with a server URI:
+
+```bash
+AEAI_MLFLOW_TRACKING_ENABLED=true \
+AEAI_MLFLOW_TRACKING_URI=http://localhost:5000 \
+make dev
 ```
 
 ## Run With Docker Compose

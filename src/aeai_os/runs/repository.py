@@ -7,6 +7,7 @@ from threading import RLock
 from typing import Any
 from uuid import uuid4
 
+from aeai_os.observability.mlflow_tracking import log_evaluation_to_mlflow
 from aeai_os.observability.tracing import ensure_trace_id, start_span
 from aeai_os.runs.models import (
     AgentEventRecord,
@@ -336,25 +337,14 @@ class InMemoryRunRepository:
                     "evaluation.target_artifact_id": record.target_artifact_id,
                 },
             ):
+                mlflow_result = log_evaluation_to_mlflow(run=run, evaluation=record)
                 self._evaluations[evaluation.run_id].append(record)
                 self._events[evaluation.run_id].append(
-                    AgentEventRecord(
-                        id=f"event_{uuid4().hex}",
-                        run_id=record.run_id,
-                        node_id="evaluation",
-                        event_type=AgentEventType.EVALUATION,
-                        payload={
-                            "message": "Evaluation result logged.",
-                            "backend": "opentelemetry",
-                            "evaluation_id": record.id,
-                            "target_artifact_id": record.target_artifact_id,
-                            "score": record.score,
-                            "passed": record.passed,
-                            "check_count": len(record.checks),
-                            "trace_id": run.trace_id,
-                            "timestamp": utc_now().isoformat(),
-                        },
-                        created_at=utc_now(),
+                    _evaluation_event(
+                        record=record,
+                        trace_id=run.trace_id,
+                        mlflow_status=mlflow_result.status,
+                        mlflow_message=mlflow_result.message,
                     )
                 )
             return record
@@ -404,3 +394,34 @@ class InMemoryRunRepository:
 
 def utc_now() -> datetime:
     return datetime.now(UTC)
+
+
+def _evaluation_event(
+    *,
+    record: EvaluationResultRecord,
+    trace_id: str | None,
+    mlflow_status: str,
+    mlflow_message: str | None,
+) -> AgentEventRecord:
+    payload = {
+        "message": "Evaluation result logged.",
+        "backend": "opentelemetry",
+        "mlflow_status": mlflow_status,
+        "evaluation_id": record.id,
+        "target_artifact_id": record.target_artifact_id,
+        "score": record.score,
+        "passed": record.passed,
+        "check_count": len(record.checks),
+        "trace_id": trace_id,
+        "timestamp": utc_now().isoformat(),
+    }
+    if mlflow_message:
+        payload["mlflow_message"] = mlflow_message
+    return AgentEventRecord(
+        id=f"event_{uuid4().hex}",
+        run_id=record.run_id,
+        node_id="evaluation",
+        event_type=AgentEventType.EVALUATION,
+        payload=payload,
+        created_at=utc_now(),
+    )

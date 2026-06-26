@@ -9,6 +9,7 @@ from uuid import uuid4
 from sqlalchemy import Engine, create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
+from aeai_os.observability.mlflow_tracking import log_evaluation_to_mlflow
 from aeai_os.observability.tracing import ensure_trace_id, start_span
 from aeai_os.runs.models import (
     AgentEventRecord,
@@ -26,10 +27,10 @@ from aeai_os.runs.repository import (
     RunCheckpointNotFoundError,
     RunNotFoundError,
     WorkflowJobNotFoundError,
+    _evaluation_event,
     utc_now,
 )
 from aeai_os.schemas.enums import (
-    AgentEventType,
     ArtifactType,
     GraphNodeStatus,
     RunStatus,
@@ -360,6 +361,7 @@ class SQLAlchemyRunRepository:
     def add_evaluation(self, evaluation: EvaluationResultRecord) -> EvaluationResultRecord:
         with self._session_factory() as session:
             run = _get_run_model(session, evaluation.run_id)
+            run_record = _run_from_model(run)
             record = evaluation
             if record.created_at is None:
                 record = replace(record, created_at=utc_now())
@@ -367,7 +369,7 @@ class SQLAlchemyRunRepository:
                 "evaluation.result",
                 {
                     "run.id": record.run_id,
-                    "run.trace_id": run.trace_id,
+                    "run.trace_id": run_record.trace_id,
                     "evaluation.id": record.id,
                     "evaluation.score": record.score,
                     "evaluation.passed": record.passed,
@@ -384,23 +386,23 @@ class SQLAlchemyRunRepository:
                     checks=deepcopy(record.checks),
                     created_at=record.created_at,
                 )
+                mlflow_result = log_evaluation_to_mlflow(
+                    run=run_record,
+                    evaluation=record,
+                )
+                event_record = _evaluation_event(
+                    record=record,
+                    trace_id=run_record.trace_id,
+                    mlflow_status=mlflow_result.status,
+                    mlflow_message=mlflow_result.message,
+                )
                 event = AgentEventModel(
-                    id=f"event_{uuid4().hex}",
-                    run_id=record.run_id,
-                    node_id="evaluation",
-                    event_type=AgentEventType.EVALUATION.value,
-                    payload={
-                        "message": "Evaluation result logged.",
-                        "backend": "opentelemetry",
-                        "evaluation_id": record.id,
-                        "target_artifact_id": record.target_artifact_id,
-                        "score": record.score,
-                        "passed": record.passed,
-                        "check_count": len(record.checks),
-                        "trace_id": run.trace_id,
-                        "timestamp": utc_now().isoformat(),
-                    },
-                    created_at=utc_now(),
+                    id=event_record.id,
+                    run_id=event_record.run_id,
+                    node_id=event_record.node_id,
+                    event_type=str(event_record.event_type),
+                    payload=deepcopy(event_record.payload),
+                    created_at=event_record.created_at,
                 )
                 session.add_all([model, event])
                 session.commit()

@@ -175,7 +175,11 @@ The regression suite covers:
 Tracing is enabled locally without exporting spans by default. Set `AEAI_TRACE_EXPORTER=console`
 to print spans during development, or use `AEAI_TRACE_EXPORTER=otlp_http` /
 `AEAI_TRACE_EXPORTER=otlp_grpc` with `AEAI_OTEL_EXPORTER_OTLP_ENDPOINT` in deployed environments.
-Install `.[observability]` when exporting to an OTLP collector.
+Install `.[observability]` when exporting to an OTLP collector or MLflow.
+
+MLflow tracking is disabled by default. Set `AEAI_MLFLOW_TRACKING_ENABLED=true` and
+`AEAI_MLFLOW_TRACKING_URI` to mirror evaluation scores, pass/fail state, check metrics, run IDs, and
+trace IDs into an MLflow experiment.
 
 ## Current Limitations
 
@@ -185,8 +189,8 @@ Install `.[observability]` when exporting to an OTLP collector.
 
 ## Direction
 
-The next roadmap is LangSmith or MLflow integration, deployment approvals, and a richer UI for
-inspecting execution graphs, artifacts, and approval decisions.
+The next roadmap is LangSmith trace review, deployment approvals, and a richer UI for inspecting
+execution graphs, artifacts, approval decisions, MLflow runs, and deployment history.
 
 ## Responsible Use
 
