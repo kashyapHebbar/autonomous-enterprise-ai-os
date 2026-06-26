@@ -1,6 +1,7 @@
 const state = {
   runId: runIdFromLocation(),
   data: null,
+  pendingAction: null,
 };
 
 const els = {
@@ -11,6 +12,7 @@ const els = {
   updatedAt: document.querySelector("#updatedAt"),
   artifactCount: document.querySelector("#artifactCount"),
   taskText: document.querySelector("#taskText"),
+  actionText: document.querySelector("#actionText"),
   errorText: document.querySelector("#errorText"),
   graphNodes: document.querySelector("#graphNodes"),
   workflowJobs: document.querySelector("#workflowJobs"),
@@ -28,13 +30,20 @@ function runIdFromLocation() {
   return new URLSearchParams(window.location.search).get("run_id") || "";
 }
 
-async function fetchJson(path) {
-  const response = await fetch(path);
+async function requestJson(path, options = {}) {
+  const response = await fetch(path, options);
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     throw new Error(body.detail || `Request failed: ${response.status}`);
   }
+  if (response.status === 204) {
+    return null;
+  }
   return response.json();
+}
+
+function fetchJson(path) {
+  return requestJson(path);
 }
 
 function escapeHtml(value) {
@@ -74,6 +83,11 @@ function renderMeta(parts) {
     .join("")}</div>`;
 }
 
+function setActionStatus(message, kind = "idle") {
+  els.actionText.textContent = message;
+  els.actionText.className = `action-text action-${kind}`;
+}
+
 function renderRun() {
   const { run } = state.data;
   document.title = `${run.id} | Run Inspector`;
@@ -86,6 +100,47 @@ function renderRun() {
   els.artifactCount.textContent = String(run.artifacts.length);
   els.taskText.textContent = run.task;
   els.errorText.textContent = run.error_summary || "";
+}
+
+function renderNodeActions(node) {
+  const escapedNodeId = escapeHtml(node.id);
+  const pending =
+    state.pendingAction !== null && state.pendingAction.nodeId === node.id
+      ? state.pendingAction.action
+      : null;
+  const disabled = pending ? " disabled" : "";
+
+  if (node.status === "waiting_for_approval") {
+    return `
+      <div class="node-actions" aria-label="Node actions for ${escapedNodeId}">
+        <button
+          class="node-action action-approve"
+          data-node-action="approve"
+          data-node-id="${escapedNodeId}"
+          type="button"${disabled}
+        >${pending === "approve" ? "Approving" : "Approve"}</button>
+        <button
+          class="node-action action-deny"
+          data-node-action="deny"
+          data-node-id="${escapedNodeId}"
+          type="button"${disabled}
+        >${pending === "deny" ? "Denying" : "Deny"}</button>
+      </div>`;
+  }
+
+  if (node.status === "failed") {
+    return `
+      <div class="node-actions" aria-label="Node actions for ${escapedNodeId}">
+        <button
+          class="node-action action-retry"
+          data-node-action="retry"
+          data-node-id="${escapedNodeId}"
+          type="button"${disabled}
+        >${pending === "retry" ? "Retrying" : "Retry"}</button>
+      </div>`;
+  }
+
+  return "";
 }
 
 function renderNodes() {
@@ -109,6 +164,7 @@ function renderNodes() {
                 `tools: ${node.required_tools.join(", ") || "none"}`,
               ])}
               ${renderMeta([`expects: ${node.expected_artifacts.join(", ") || "none"}`])}
+              ${renderNodeActions(node)}
             </article>`
         )
         .join("")
@@ -236,6 +292,66 @@ function renderAll() {
   renderEvents();
 }
 
+async function submitNodeAction(nodeId, action) {
+  const encodedRunId = encodeURIComponent(state.runId);
+  const encodedNodeId = encodeURIComponent(nodeId);
+  if (action === "approve" || action === "deny") {
+    return requestJson(`/runs/${encodedRunId}/graph-nodes/${encodedNodeId}/approval`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        approved: action === "approve",
+        comment:
+          action === "approve"
+            ? "Approved from run inspector."
+            : "Denied from run inspector.",
+      }),
+    });
+  }
+  if (action === "retry") {
+    return requestJson(`/runs/${encodedRunId}/graph-nodes/${encodedNodeId}/retry`, {
+      method: "POST",
+    });
+  }
+  throw new Error(`Unsupported node action: ${action}`);
+}
+
+function actionSuccessMessage(nodeId, action) {
+  if (action === "approve") {
+    return `Approved ${nodeId}.`;
+  }
+  if (action === "deny") {
+    return `Denied ${nodeId}.`;
+  }
+  return `Retried ${nodeId}.`;
+}
+
+async function handleNodeAction(event) {
+  const button = event.target.closest("[data-node-action]");
+  if (!button) {
+    return;
+  }
+
+  const nodeId = button.dataset.nodeId;
+  const action = button.dataset.nodeAction;
+  state.pendingAction = { nodeId, action };
+  setActionStatus("", "idle");
+  renderNodes();
+
+  try {
+    await submitNodeAction(nodeId, action);
+    setActionStatus(actionSuccessMessage(nodeId, action), "success");
+    await loadRun();
+  } catch (error) {
+    setActionStatus(error.message, "error");
+  } finally {
+    state.pendingAction = null;
+    if (state.data) {
+      renderNodes();
+    }
+  }
+}
+
 async function loadRun() {
   if (!state.runId) {
     els.taskText.textContent = "Run ID missing.";
@@ -260,5 +376,7 @@ async function loadRun() {
     els.taskText.textContent = "Unable to load run inspection data.";
   }
 }
+
+els.graphNodes.addEventListener("click", handleNodeAction);
 
 loadRun();

@@ -132,6 +132,20 @@ def test_run_inspector_page_is_served(tmp_path):
     assert response.status_code == 200
     assert "Run Inspector" in response.text
     assert "/run-inspector/run-inspector.js" in response.text
+    assert 'id="actionText"' in response.text
+
+
+def test_run_inspector_script_exposes_approval_and_retry_controls(tmp_path):
+    client = build_client(tmp_path)
+
+    response = client.get("/run-inspector/run-inspector.js")
+
+    assert response.status_code == 200
+    assert 'data-node-action="approve"' in response.text
+    assert 'data-node-action="deny"' in response.text
+    assert 'data-node-action="retry"' in response.text
+    assert "/graph-nodes/${encodedNodeId}/approval" in response.text
+    assert "/graph-nodes/${encodedNodeId}/retry" in response.text
 
 
 def test_create_run_rejects_blank_task(tmp_path):

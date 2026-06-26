@@ -152,6 +152,24 @@ body {
   font-weight: 700;
 }
 
+.action-text {
+  margin-top: 10px;
+  min-height: 20px;
+  font-weight: 800;
+}
+
+.action-idle {
+  color: var(--muted);
+}
+
+.action-success {
+  color: var(--green);
+}
+
+.action-error {
+  color: var(--red);
+}
+
 .workspace-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.8fr);
@@ -220,6 +238,55 @@ body {
   gap: 8px;
   color: var(--muted);
   font-size: 0.82rem;
+}
+
+.node-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.node-action {
+  min-height: 34px;
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.node-action:hover:not(:disabled),
+.node-action:focus-visible {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(22, 32, 28, 0.1);
+}
+
+.node-action:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+
+.action-approve {
+  border-color: rgba(35, 116, 92, 0.3);
+  background: rgba(35, 116, 92, 0.1);
+  color: var(--green);
+}
+
+.action-deny {
+  border-color: rgba(170, 56, 56, 0.3);
+  background: rgba(170, 56, 56, 0.1);
+  color: var(--red);
+}
+
+.action-retry {
+  border-color: rgba(47, 95, 159, 0.28);
+  background: rgba(47, 95, 159, 0.1);
+  color: var(--blue);
 }
 
 .mono {
