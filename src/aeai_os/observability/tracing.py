@@ -13,7 +13,7 @@ _CONFIGURED = False
 _TRACER_NAME = "aeai_os"
 
 
-def configure_tracing(service_name: str = "model-compass") -> None:
+def configure_tracing(service_name: str = "autonomous-enterprise-ai-os") -> None:
     """Install an SDK tracer provider so local spans get real trace IDs."""
 
     global _CONFIGURED
