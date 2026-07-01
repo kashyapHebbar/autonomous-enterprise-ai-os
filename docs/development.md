@@ -81,8 +81,8 @@ curl http://localhost:8000/runs/{run_id}/timeline
 
 The browser inspector for the same data is available at
 `http://localhost:8000/run-inspector/runs/{run_id}`.
-It shows approve/deny controls for nodes waiting on human approval and a retry
-control for failed nodes.
+It shows approve/deny controls for nodes and deployment jobs waiting on human
+approval, plus a retry control for failed nodes.
 
 Execute the procurement workflow for a run with an attached dataset:
 
@@ -99,6 +99,31 @@ Approve or deny a graph node that is waiting on human approval:
 curl -X POST http://localhost:8000/runs/{run_id}/graph-nodes/{node_id}/approval \
   -H "Content-Type: application/json" \
   -d '{"approved":true,"comment":"Approved for local demo."}'
+```
+
+Request deployment approval for reviewed artifacts:
+
+```bash
+curl -X POST http://localhost:8000/runs/{run_id}/deployments \
+  -H "Content-Type: application/json" \
+  -d '{
+    "artifact_ids":["artifact_dashboard"],
+    "destination":"s3://approved-dashboards/procurement",
+    "requested_by":"analytics-lead",
+    "rationale":"Promote the validated dashboard."
+  }'
+```
+
+Approve or deny a deployment request:
+
+```bash
+curl -X POST http://localhost:8000/runs/{run_id}/deployments/{job_id}/approval \
+  -H "Content-Type: application/json" \
+  -d '{
+    "approved":true,
+    "approver":"release-manager",
+    "rationale":"Evaluation passed and artifacts were reviewed."
+  }'
 ```
 
 Retry a failed graph node after fixing its input or environment:
@@ -143,6 +168,9 @@ Current local behavior:
 - Nodes that return `waiting_for_approval` pause the run until `approve_node` resumes it.
 - `POST /runs/{run_id}/execute/procurement/async` persists a workflow job for background
   processing.
+- `POST /runs/{run_id}/deployments` creates a deployment workflow job in
+  `waiting_for_approval`; approval completes the job and creates a deployment artifact, while
+  denial records a failed deployment outcome.
 - `scripts/run_workflow_worker.py` claims one queued procurement job, executes the workflow, and
   records completion, retry, or failure state.
 - `GET /runs/{run_id}/graph-nodes`, `GET /runs/{run_id}/events`, and

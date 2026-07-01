@@ -122,12 +122,15 @@ class InMemoryRunRepository:
         payload: dict[str, Any] | None = None,
         max_attempts: int = 3,
         job_id: str | None = None,
+        status: WorkflowJobStatus = WorkflowJobStatus.QUEUED,
     ) -> WorkflowJobRecord:
         normalized_workflow = workflow_name.strip()
         if not normalized_workflow:
             raise ValueError("Workflow name is required.")
         if max_attempts < 1:
             raise ValueError("Workflow job max_attempts must be at least 1.")
+        if status == WorkflowJobStatus.RUNNING:
+            raise ValueError("Workflow jobs cannot be enqueued directly as running.")
 
         with self._lock:
             self.get_run(run_id)
@@ -136,7 +139,7 @@ class InMemoryRunRepository:
                 id=job_id or f"job_{uuid4().hex}",
                 run_id=run_id,
                 workflow_name=normalized_workflow,
-                status=WorkflowJobStatus.QUEUED,
+                status=status,
                 payload=deepcopy(payload or {}),
                 attempt_count=0,
                 max_attempts=max_attempts,
@@ -146,6 +149,30 @@ class InMemoryRunRepository:
             self._workflow_jobs[job.id] = job
             self._workflow_job_order.append(job.id)
             return job
+
+    def update_workflow_job_result(
+        self,
+        job_id: str,
+        status: WorkflowJobStatus,
+        payload: dict[str, Any] | None = None,
+        error_summary: str | None = None,
+    ) -> WorkflowJobRecord:
+        if status not in {WorkflowJobStatus.COMPLETED, WorkflowJobStatus.FAILED}:
+            raise ValueError("Workflow job result status must be completed or failed.")
+
+        with self._lock:
+            job = self._get_workflow_job_for_update(job_id)
+            now = utc_now()
+            updated = replace(
+                job,
+                status=status,
+                payload=deepcopy(payload) if payload is not None else deepcopy(job.payload),
+                error_summary=error_summary,
+                updated_at=now,
+                finished_at=now,
+            )
+            self._workflow_jobs[job_id] = updated
+            return deepcopy(updated)
 
     def list_workflow_jobs(
         self,

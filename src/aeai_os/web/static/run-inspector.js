@@ -143,6 +143,35 @@ function renderNodeActions(node) {
   return "";
 }
 
+function renderDeploymentJobActions(job) {
+  if (job.workflow_name !== "deployment" || job.status !== "waiting_for_approval") {
+    return "";
+  }
+
+  const escapedJobId = escapeHtml(job.id);
+  const pending =
+    state.pendingAction !== null && state.pendingAction.jobId === job.id
+      ? state.pendingAction.action
+      : null;
+  const disabled = pending ? " disabled" : "";
+
+  return `
+    <div class="node-actions" aria-label="Deployment actions for ${escapedJobId}">
+      <button
+        class="node-action action-approve"
+        data-deployment-action="approve"
+        data-job-id="${escapedJobId}"
+        type="button"${disabled}
+      >${pending === "approve" ? "Approving" : "Approve"}</button>
+      <button
+        class="node-action action-deny"
+        data-deployment-action="deny"
+        data-job-id="${escapedJobId}"
+        type="button"${disabled}
+      >${pending === "deny" ? "Denying" : "Deny"}</button>
+    </div>`;
+}
+
 function renderNodes() {
   const nodes = state.data.graphNodes;
   els.graphNodes.innerHTML = nodes.length
@@ -188,6 +217,7 @@ function renderJobs() {
                 job.worker_id ? `worker ${job.worker_id}` : null,
               ])}
               ${job.error_summary ? renderMeta([job.error_summary]) : ""}
+              ${renderDeploymentJobActions(job)}
             </article>`
         )
         .join("")
@@ -316,6 +346,23 @@ async function submitNodeAction(nodeId, action) {
   throw new Error(`Unsupported node action: ${action}`);
 }
 
+async function submitDeploymentAction(jobId, action) {
+  const encodedRunId = encodeURIComponent(state.runId);
+  const encodedJobId = encodeURIComponent(jobId);
+  return requestJson(`/runs/${encodedRunId}/deployments/${encodedJobId}/approval`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      approved: action === "approve",
+      approver: "Run Inspector",
+      rationale:
+        action === "approve"
+          ? "Deployment approved from run inspector."
+          : "Deployment denied from run inspector.",
+    }),
+  });
+}
+
 function actionSuccessMessage(nodeId, action) {
   if (action === "approve") {
     return `Approved ${nodeId}.`;
@@ -324,6 +371,12 @@ function actionSuccessMessage(nodeId, action) {
     return `Denied ${nodeId}.`;
   }
   return `Retried ${nodeId}.`;
+}
+
+function deploymentActionSuccessMessage(jobId, action) {
+  return action === "approve"
+    ? `Approved deployment ${jobId}.`
+    : `Denied deployment ${jobId}.`;
 }
 
 async function handleNodeAction(event) {
@@ -348,6 +401,32 @@ async function handleNodeAction(event) {
     state.pendingAction = null;
     if (state.data) {
       renderNodes();
+    }
+  }
+}
+
+async function handleDeploymentAction(event) {
+  const button = event.target.closest("[data-deployment-action]");
+  if (!button) {
+    return;
+  }
+
+  const jobId = button.dataset.jobId;
+  const action = button.dataset.deploymentAction;
+  state.pendingAction = { jobId, action };
+  setActionStatus("", "idle");
+  renderJobs();
+
+  try {
+    await submitDeploymentAction(jobId, action);
+    setActionStatus(deploymentActionSuccessMessage(jobId, action), "success");
+    await loadRun();
+  } catch (error) {
+    setActionStatus(error.message, "error");
+  } finally {
+    state.pendingAction = null;
+    if (state.data) {
+      renderJobs();
     }
   }
 }
@@ -378,5 +457,6 @@ async function loadRun() {
 }
 
 els.graphNodes.addEventListener("click", handleNodeAction);
+els.workflowJobs.addEventListener("click", handleDeploymentAction);
 
 loadRun();

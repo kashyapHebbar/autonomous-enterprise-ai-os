@@ -108,6 +108,8 @@ The generated summary records:
 | `POST /runs/{run_id}/execute/procurement` | Execute the procurement workflow synchronously |
 | `POST /runs/{run_id}/execute/procurement/async` | Queue the procurement workflow |
 | `GET /runs/{run_id}/workflow-jobs` | Inspect queued workflow jobs |
+| `POST /runs/{run_id}/deployments` | Request approval to promote artifacts |
+| `POST /runs/{run_id}/deployments/{job_id}/approval` | Approve or deny a deployment request |
 | `GET /runs/{run_id}/graph-nodes` | Inspect execution graph node state |
 | `GET /runs/{run_id}/events` | Inspect agent event telemetry |
 | `GET /runs/{run_id}/timeline` | Inspect chronological run activity |

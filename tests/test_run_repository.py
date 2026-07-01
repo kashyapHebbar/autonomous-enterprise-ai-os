@@ -206,6 +206,34 @@ def test_repository_persists_and_claims_workflow_jobs(repository):
     assert repository.claim_next_workflow_job(worker_id="worker-test") is None
 
 
+def test_repository_persists_waiting_workflow_job_decision(repository):
+    run = repository.create_run("Deploy validated dashboard.")
+    job = repository.enqueue_workflow_job(
+        run_id=run.id,
+        workflow_name="deployment",
+        payload={"deployment_status": "waiting_for_approval"},
+        max_attempts=1,
+        status=WorkflowJobStatus.WAITING_FOR_APPROVAL,
+    )
+
+    updated = repository.update_workflow_job_result(
+        job.id,
+        status=WorkflowJobStatus.COMPLETED,
+        payload={
+            **job.payload,
+            "deployment_status": "approved",
+            "approval": {"decision": "approved", "approver": "release-manager"},
+        },
+    )
+
+    assert job.status == WorkflowJobStatus.WAITING_FOR_APPROVAL
+    assert repository.claim_next_workflow_job(worker_id="worker-test") is None
+    assert updated.status == WorkflowJobStatus.COMPLETED
+    assert updated.payload["approval"]["approver"] == "release-manager"
+    assert updated.finished_at is not None
+    assert repository.get_workflow_job(job.id) == updated
+
+
 def test_repository_marks_workflow_job_failed_after_attempts_are_exhausted(repository):
     run = repository.create_run("Analyze procurement data.")
     job = repository.enqueue_workflow_job(

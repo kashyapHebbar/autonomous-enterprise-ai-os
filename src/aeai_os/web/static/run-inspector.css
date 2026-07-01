@@ -90,7 +90,8 @@ body {
 
 .status-running,
 .status-queued,
-.status-pending {
+.status-pending,
+.status-waiting-for-approval {
   border-color: rgba(47, 95, 159, 0.28);
   background: rgba(47, 95, 159, 0.1);
   color: var(--blue);
