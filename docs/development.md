@@ -82,7 +82,8 @@ curl http://localhost:8000/runs/{run_id}/timeline
 The browser inspector for the same data is available at
 `http://localhost:8000/run-inspector/runs/{run_id}`.
 It shows approve/deny controls for nodes and deployment jobs waiting on human
-approval, plus a retry control for failed nodes.
+approval, a retry control for failed nodes, inline artifact lineage, approval history,
+evaluation/MLflow status, and deployment history.
 
 Execute the procurement workflow for a run with an attached dataset:
 

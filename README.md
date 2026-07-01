@@ -153,7 +153,8 @@ curl "http://127.0.0.1:8000/runs/${RUN_ID}"
 ```
 
 Open `http://127.0.0.1:8000/run-inspector/runs/${RUN_ID}` to inspect graph nodes,
-events, artifacts, evaluations, and approve/deny or retry actionable nodes.
+events, artifact lineage, approval history, evaluation/MLflow status, deployment history, and
+approve/deny or retry actionable nodes.
 
 ## Documentation
 
