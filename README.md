@@ -121,14 +121,37 @@ The generated summary records:
 
 ## Warehouse Dataset References
 
-The procurement workflow supports local CSV files and SQLite-backed warehouse references for offline
-tests and demos. `SqliteWarehouseConnector` provides table/query execution through the same adapter
-contract used by analytics agents, while `SnowflakeWarehouseConnector` validates `SNOWFLAKE_*`
-environment settings and keeps Snowflake execution behind parameterized connector calls.
+The procurement workflow supports local CSV files, SQLite-backed warehouse references for offline
+tests and demos, and Snowflake-backed references when the optional warehouse dependency is installed
+and `SNOWFLAKE_*` settings are configured. `SqliteWarehouseConnector` and
+`SnowflakeWarehouseConnector` provide table/query execution through the same adapter contract used by
+analytics agents.
 
 Dataset artifacts can be marked as warehouse-backed with URIs such as
 `sqlite:///absolute/path/to/warehouse.db#procurement` or
-`snowflake://ANALYTICS/PUBLIC/PROCUREMENT` plus metadata `{"source": "warehouse"}`.
+`snowflake://ANALYTICS/PUBLIC/PROCUREMENT` plus metadata `{"source": "warehouse"}`. Query references
+can pass bind values through metadata `query_parameters` so previews and full extraction paths remain
+parameterized.
+
+Install Snowflake support with:
+
+```bash
+pip install ".[warehouse]"
+```
+
+Required Snowflake environment variables:
+
+- `SNOWFLAKE_ACCOUNT`
+- `SNOWFLAKE_USER`
+- `SNOWFLAKE_PASSWORD`
+- `SNOWFLAKE_WAREHOUSE`
+- `SNOWFLAKE_DATABASE`
+- `SNOWFLAKE_SCHEMA`
+
+Optional controls include `SNOWFLAKE_ROLE`, `SNOWFLAKE_CONNECT_TIMEOUT_SECONDS`,
+`SNOWFLAKE_QUERY_TIMEOUT_SECONDS`, `SNOWFLAKE_ROW_LIMIT`, and `SNOWFLAKE_APPLICATION`.
+The connector validates unquoted identifiers, blocks unsafe statements, applies query timeouts and a
+maximum row limit, and local tests use a mocked connection factory so no real credentials are needed.
 
 ## Run With Docker Compose
 

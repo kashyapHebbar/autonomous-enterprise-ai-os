@@ -22,7 +22,7 @@ The first production-shaped vertical slice is:
 
 - Full Kubernetes production deployment.
 - Kafka-based distributed event streaming.
-- Real Snowflake production credentials or warehouse execution.
+- Provisioning and managing real Snowflake production credentials.
 - Multi-cloud deployment automation across AWS and Azure.
 - Enterprise SSO, RBAC, tenant isolation, and billing.
 - Fine-grained workflow builder UI.
