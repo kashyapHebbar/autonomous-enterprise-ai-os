@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -10,14 +9,20 @@ from aeai_os.evaluation import evaluate_procurement_outputs, extract_embedded_ch
 from aeai_os.runs.models import ArtifactRecord, EvaluationResultRecord
 from aeai_os.runs.repository import ArtifactNotFoundError, InMemoryRunRepository
 from aeai_os.schemas.enums import AgentEventType, ArtifactType
+from aeai_os.storage import ArtifactStorageError, ArtifactStore, LocalArtifactStore
 
 
 class EvaluationAgent:
     agent_type = "evaluation"
 
-    def __init__(self, repository: InMemoryRunRepository, artifact_root: str | Path) -> None:
+    def __init__(
+        self,
+        repository: InMemoryRunRepository,
+        artifact_root: str | Path,
+        artifact_store: ArtifactStore | None = None,
+    ) -> None:
         self._repository = repository
-        self._artifact_root = Path(artifact_root)
+        self._artifact_store = artifact_store or LocalArtifactStore(artifact_root)
 
     def execute(self, agent_input: AgentInput) -> AgentOutput:
         try:
@@ -27,9 +32,9 @@ class EvaluationAgent:
             chart_artifacts = [
                 artifact for artifact in artifacts if artifact.type == ArtifactType.CHART
             ]
-            analysis = _read_json_artifact(kpi_artifact)
-            report_markdown = Path(report_artifact.uri).read_text(encoding="utf-8")
-            chart_payloads = _read_chart_payloads(chart_artifacts)
+            analysis = _read_json_artifact(kpi_artifact, self._artifact_store)
+            report_markdown = self._artifact_store.read_text(report_artifact.uri)
+            chart_payloads = _read_chart_payloads(chart_artifacts, self._artifact_store)
 
             outcome = evaluate_procurement_outputs(
                 analysis=analysis,
@@ -39,19 +44,20 @@ class EvaluationAgent:
                 target_artifact_id=report_artifact.id,
             )
 
-            output_dir = self._artifact_root / agent_input.run_id / agent_input.node_id
-            output_dir.mkdir(parents=True, exist_ok=True)
-            evaluation_path = output_dir / "evaluation_result.json"
+            evaluation_artifact_id = self._repository.next_artifact_id()
             evaluation_payload = outcome.to_dict()
-            evaluation_path.write_text(
-                json.dumps(evaluation_payload, indent=2, sort_keys=True),
-                encoding="utf-8",
+            stored_evaluation = self._artifact_store.write_json(
+                run_id=agent_input.run_id,
+                node_id=agent_input.node_id,
+                filename="evaluation_result.json",
+                payload=evaluation_payload,
             )
             source_artifact_ids = _evaluation_source_ids(artifacts)
             evaluation_artifact = self._repository.add_artifact(
                 run_id=agent_input.run_id,
                 artifact_type=ArtifactType.EVALUATION,
-                uri=str(evaluation_path),
+                artifact_id=evaluation_artifact_id,
+                uri=stored_evaluation.uri,
                 metadata={
                     "source": "evaluation_agent",
                     "format": "json",
@@ -59,6 +65,7 @@ class EvaluationAgent:
                     "passed": outcome.passed,
                     "target_artifact_id": report_artifact.id,
                     "check_count": len(outcome.checks),
+                    **stored_evaluation.metadata,
                 },
                 source_artifact_ids=source_artifact_ids,
                 producer_node_id=agent_input.node_id,
@@ -73,7 +80,7 @@ class EvaluationAgent:
                     checks=outcome.checks,
                 )
             )
-        except (ArtifactNotFoundError, KeyError, OSError, json.JSONDecodeError, ValueError) as exc:
+        except (ArtifactNotFoundError, ArtifactStorageError, KeyError, OSError, ValueError) as exc:
             return AgentOutput(
                 status="failed",
                 summary="Evaluation agent failed to score the run outputs.",
@@ -141,17 +148,20 @@ class EvaluationAgent:
         raise ValueError(f"No {artifact_type.value} artifact is available for evaluation.")
 
 
-def _read_json_artifact(artifact: ArtifactRecord) -> dict[str, Any]:
-    payload = json.loads(Path(artifact.uri).read_text(encoding="utf-8"))
-    if not isinstance(payload, dict):
-        raise ValueError(f"Artifact JSON payload must be an object: {artifact.id}")
-    return payload
+def _read_json_artifact(artifact: ArtifactRecord, artifact_store: ArtifactStore) -> dict[str, Any]:
+    try:
+        return artifact_store.read_json(artifact.uri)
+    except ArtifactStorageError as exc:
+        raise ValueError(f"Artifact JSON payload must be readable: {artifact.id}") from exc
 
 
-def _read_chart_payloads(chart_artifacts: list[ArtifactRecord]) -> list[dict[str, Any]]:
+def _read_chart_payloads(
+    chart_artifacts: list[ArtifactRecord],
+    artifact_store: ArtifactStore,
+) -> list[dict[str, Any]]:
     payloads: list[dict[str, Any]] = []
     for artifact in chart_artifacts:
-        payload = extract_embedded_chart_payload(Path(artifact.uri).read_text(encoding="utf-8"))
+        payload = extract_embedded_chart_payload(artifact_store.read_text(artifact.uri))
         if payload is not None:
             payloads.append(payload)
     return payloads

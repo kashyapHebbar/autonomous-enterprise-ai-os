@@ -10,6 +10,13 @@ class AppSettings:
     environment: str = "local"
     api_port: int = 8000
     artifact_root: str = "artifacts"
+    artifact_storage_backend: str = "local"
+    artifact_s3_bucket: str = ""
+    artifact_s3_prefix: str = "aeai-artifacts"
+    artifact_s3_endpoint_url: str = ""
+    artifact_s3_region: str = ""
+    artifact_s3_access_key_id: str = ""
+    artifact_s3_secret_access_key: str = ""
     run_repository_backend: str = "memory"
     database_url: str = "postgresql+psycopg://aeai:aeai_password@postgres:5432/aeai_os"
 
@@ -20,6 +27,25 @@ def get_settings() -> AppSettings:
         environment=os.getenv("AEAI_ENV", "local"),
         api_port=int(os.getenv("AEAI_API_PORT", "8000")),
         artifact_root=os.getenv("AEAI_ARTIFACT_ROOT", "artifacts"),
+        artifact_storage_backend=os.getenv("AEAI_ARTIFACT_STORAGE_BACKEND", "local"),
+        artifact_s3_bucket=os.getenv(
+            "AEAI_ARTIFACT_S3_BUCKET",
+            os.getenv("MINIO_BUCKET", ""),
+        ),
+        artifact_s3_prefix=os.getenv("AEAI_ARTIFACT_S3_PREFIX", "aeai-artifacts"),
+        artifact_s3_endpoint_url=os.getenv(
+            "AEAI_ARTIFACT_S3_ENDPOINT_URL",
+            os.getenv("MINIO_ENDPOINT", ""),
+        ),
+        artifact_s3_region=os.getenv("AEAI_ARTIFACT_S3_REGION", ""),
+        artifact_s3_access_key_id=os.getenv(
+            "AEAI_ARTIFACT_S3_ACCESS_KEY_ID",
+            os.getenv("MINIO_ACCESS_KEY", ""),
+        ),
+        artifact_s3_secret_access_key=os.getenv(
+            "AEAI_ARTIFACT_S3_SECRET_ACCESS_KEY",
+            os.getenv("MINIO_SECRET_KEY", ""),
+        ),
         run_repository_backend=os.getenv("AEAI_RUN_REPOSITORY_BACKEND", "memory"),
         database_url=os.getenv(
             "AEAI_DATABASE_URL",

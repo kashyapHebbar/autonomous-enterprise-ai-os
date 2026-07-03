@@ -154,6 +154,38 @@ repository against Postgres or SQLite-compatible test databases. The SQLAlchemy 
 runs, workflow jobs, graph nodes, artifacts, agent events, evaluations, and checkpoints behind the
 same repository contract.
 
+## Artifact Storage
+
+Artifact metadata and artifact payloads are deliberately separate. The run repository stores
+`ArtifactRecord` metadata, lineage, type, producer, stable URI, and storage metadata. The
+`ArtifactStore` writes and reads the payload bytes used by agents.
+
+Local filesystem storage is the default:
+
+```bash
+AEAI_ARTIFACT_STORAGE_BACKEND=local
+AEAI_ARTIFACT_ROOT=artifacts
+```
+
+Use the S3-compatible backend for AWS S3 or MinIO:
+
+```bash
+AEAI_ARTIFACT_STORAGE_BACKEND=s3
+AEAI_ARTIFACT_S3_BUCKET=aeai-artifacts
+AEAI_ARTIFACT_S3_PREFIX=aeai-artifacts
+AEAI_ARTIFACT_S3_ENDPOINT_URL=http://localhost:9000
+AEAI_ARTIFACT_S3_ACCESS_KEY_ID=aeai_minio
+AEAI_ARTIFACT_S3_SECRET_ACCESS_KEY=aeai_minio_password
+```
+
+Install the optional client dependency with `pip install ".[storage]"`. The bucket must already
+exist. With Docker Compose, MinIO is available on `http://localhost:9000` and its console is on
+`http://localhost:9001`.
+
+Agents read and write generated artifacts through the store, so local paths and `s3://bucket/key`
+URIs can both move through the same workflow. Local tests use a fake S3 client, so no cloud account
+or MinIO service is required for the regression suite.
+
 ## Planner Contract
 
 The SCRUM-10 planner defines a structured execution graph contract that can be produced by a deterministic MVP planner now and by structured LLM output later.
@@ -348,7 +380,7 @@ src/aeai_os/
   reports/          Markdown report rendering helpers
   schemas/          Shared enums and lightweight DTOs
   security/         Tool permission and approval policy
-  storage/          Artifact path helpers
+  storage/          Artifact storage backends and path helpers
   visualization/    Static dashboard and chart rendering helpers
 tests/              Unit tests for scaffold contracts
 scripts/            Local maintenance and smoke scripts
