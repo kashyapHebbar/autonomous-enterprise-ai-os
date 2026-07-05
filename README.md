@@ -99,6 +99,12 @@ The generated summary records:
 
 ## API Routes
 
+Authentication is disabled by default for local demos. When `AEAI_AUTH_ENABLED=true`, `/runs`
+endpoints expect `X-AEAI-User-Id`, optional `X-AEAI-User-Name`, and `X-AEAI-Roles` headers.
+Supported roles are `viewer` for read-only inspection, `operator` for run and artifact mutations,
+`approver` for approval decisions, and `admin` for all current capabilities. Mutating API actions
+write `audit` events with actor identity under `/runs/{run_id}/events`.
+
 | Route | Purpose |
 | --- | --- |
 | `POST /runs` | Create an agent workflow run |
@@ -152,6 +158,16 @@ curl "http://127.0.0.1:8000/runs/${RUN_ID}"
 
 Open `http://127.0.0.1:8000/run-inspector/runs/${RUN_ID}` to inspect graph nodes,
 events, artifacts, evaluations, and approve/deny or retry actionable nodes.
+
+With RBAC enabled, include an actor and role header:
+
+```bash
+curl -X POST http://127.0.0.1:8000/runs \
+  -H "Content-Type: application/json" \
+  -H "X-AEAI-User-Id: operator-1" \
+  -H "X-AEAI-Roles: operator" \
+  -d '{"task":"Analyze this procurement dataset and create a dashboard report."}'
+```
 
 ## Documentation
 

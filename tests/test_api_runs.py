@@ -12,6 +12,22 @@ from aeai_os.runs.repository import InMemoryRunRepository, utc_now
 from aeai_os.schemas.enums import AgentEventType, ArtifactType, GraphNodeStatus
 from aeai_os.workflows import build_procurement_orchestrator
 
+VIEWER_HEADERS = {
+    "X-AEAI-User-Id": "viewer-1",
+    "X-AEAI-User-Name": "Viewer One",
+    "X-AEAI-Roles": "viewer",
+}
+OPERATOR_HEADERS = {
+    "X-AEAI-User-Id": "operator-1",
+    "X-AEAI-User-Name": "Operator One",
+    "X-AEAI-Roles": "operator",
+}
+APPROVER_HEADERS = {
+    "X-AEAI-User-Id": "approver-1",
+    "X-AEAI-User-Name": "Approver One",
+    "X-AEAI-Roles": "approver",
+}
+
 
 def write_procurement_fixture(path):
     path.write_text(
@@ -87,6 +103,74 @@ def seed_waiting_data_profile_run(repository, artifact_root, tmp_path):
     )
     assert result.waiting_for_approval_node_id == "data_profile"
     return run
+
+
+def test_auth_disabled_allows_local_run_creation_and_records_local_actor(tmp_path):
+    repository = InMemoryRunRepository()
+    app = create_app(repository=repository, artifact_root=tmp_path / "artifacts")
+    client = TestClient(app)
+
+    response = client.post("/runs", json={"task": "Analyze procurement spend."})
+
+    body = response.json()
+    audit_event = next(
+        event for event in repository.list_events(body["id"])
+        if event.event_type == AgentEventType.AUDIT.value
+    )
+    assert response.status_code == 201
+    assert audit_event.payload["action"] == "run.create"
+    assert audit_event.payload["actor"] == {
+        "id": "local-dev",
+        "name": "Local Developer",
+        "roles": ["admin"],
+    }
+
+
+def test_auth_enabled_requires_authenticated_headers(tmp_path, monkeypatch):
+    monkeypatch.setenv("AEAI_AUTH_ENABLED", "true")
+    client = build_client(tmp_path)
+
+    response = client.get("/runs")
+
+    assert response.status_code == 401
+    assert "Missing X-AEAI-User-Id" in response.json()["detail"]
+
+
+def test_role_permissions_constrain_read_write_and_approval_actions(tmp_path, monkeypatch):
+    monkeypatch.setenv("AEAI_AUTH_ENABLED", "true")
+    repository = InMemoryRunRepository()
+    app = create_app(repository=repository, artifact_root=tmp_path / "artifacts")
+    client = TestClient(app)
+    repository.create_run("Seed readable run.")
+
+    viewer_read = client.get("/runs", headers=VIEWER_HEADERS)
+    viewer_write = client.post(
+        "/runs",
+        headers=VIEWER_HEADERS,
+        json={"task": "Viewer should not create runs."},
+    )
+    approver_write = client.post(
+        "/runs",
+        headers=APPROVER_HEADERS,
+        json={"task": "Approver should not create runs."},
+    )
+    operator_write = client.post(
+        "/runs",
+        headers=OPERATOR_HEADERS,
+        json={"task": "Operator can create runs."},
+    )
+
+    body = operator_write.json()
+    audit_event = next(
+        event for event in repository.list_events(body["id"])
+        if event.event_type == AgentEventType.AUDIT.value
+    )
+    assert viewer_read.status_code == 200
+    assert viewer_write.status_code == 403
+    assert approver_write.status_code == 403
+    assert operator_write.status_code == 201
+    assert audit_event.payload["actor"]["id"] == "operator-1"
+    assert audit_event.payload["actor"]["roles"] == ["operator"]
 
 
 def test_app_can_select_sqlalchemy_run_repository(tmp_path, monkeypatch):
@@ -429,6 +513,36 @@ def test_approval_endpoint_rejects_node_that_is_not_waiting(tmp_path):
 
     assert response.status_code == 400
     assert "not waiting for approval" in response.json()["detail"]
+
+
+def test_approval_requires_approver_role_and_audits_actor(tmp_path, monkeypatch):
+    monkeypatch.setenv("AEAI_AUTH_ENABLED", "true")
+    repository = InMemoryRunRepository()
+    artifact_root = tmp_path / "artifacts"
+    app = create_app(repository=repository, artifact_root=artifact_root)
+    client = TestClient(app)
+    run = seed_waiting_data_profile_run(repository, artifact_root, tmp_path)
+
+    operator_response = client.post(
+        f"/runs/{run.id}/graph-nodes/data_profile/approval",
+        headers=OPERATOR_HEADERS,
+        json={"approved": True, "comment": "Operator should not approve."},
+    )
+    approver_response = client.post(
+        f"/runs/{run.id}/graph-nodes/data_profile/approval",
+        headers=APPROVER_HEADERS,
+        json={"approved": True, "comment": "Approver can approve."},
+    )
+
+    audit_events = [
+        event for event in repository.list_events(run.id)
+        if event.event_type == AgentEventType.AUDIT.value
+        and event.payload["action"] == "graph_node.approval"
+    ]
+    assert operator_response.status_code == 403
+    assert approver_response.status_code == 200
+    assert audit_events[-1].payload["actor"]["id"] == "approver-1"
+    assert audit_events[-1].payload["details"]["approved"] is True
 
 
 def test_retry_failed_graph_node_from_api(tmp_path):

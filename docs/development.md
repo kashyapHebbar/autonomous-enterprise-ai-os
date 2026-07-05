@@ -44,6 +44,40 @@ Then open:
 - API metrics: `http://localhost:8000/metrics`
 - API docs: `http://localhost:8000/docs`
 
+## Local Authentication And RBAC
+
+Local development runs without enforced authentication by default. In that mode, mutating run API
+calls are audited as the configured local user:
+
+```bash
+AEAI_AUTH_LOCAL_USER_ID=local-dev
+AEAI_AUTH_LOCAL_USER_NAME="Local Developer"
+AEAI_AUTH_LOCAL_ROLES=admin
+```
+
+To enforce access controls, set `AEAI_AUTH_ENABLED=true` and send identity headers on `/runs`
+requests:
+
+```bash
+curl http://localhost:8000/runs \
+  -H "X-AEAI-User-Id: viewer-1" \
+  -H "X-AEAI-User-Name: Viewer One" \
+  -H "X-AEAI-Roles: viewer"
+```
+
+Roles map to capabilities as follows:
+
+| Role | Capabilities |
+| --- | --- |
+| `viewer` | Read runs, jobs, graph nodes, events, timelines, evaluations, artifacts, and lineage |
+| `operator` | Viewer access plus create runs, attach/upload datasets, execute workflows, enqueue jobs, and retry failed nodes |
+| `approver` | Viewer access plus approve or deny waiting graph nodes |
+| `admin` | All current run, mutation, approval, and administrative capabilities |
+
+Every authorized mutating run API request that reaches a handler records an `audit` event containing
+the actor id, name, roles, action, target, and timestamp. Inspect those entries with
+`GET /runs/{run_id}/events`.
+
 ## Run Lifecycle API
 
 Create a run:

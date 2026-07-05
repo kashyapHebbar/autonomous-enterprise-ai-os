@@ -40,6 +40,7 @@ class ArtifactType(StrEnum):
 
 
 class AgentEventType(StrEnum):
+    AUDIT = "audit"
     TOOL_CALL = "tool_call"
     LOG = "log"
     EVALUATION = "evaluation"
