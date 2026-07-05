@@ -1,11 +1,17 @@
 from dataclasses import replace
+from datetime import timedelta
 
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
 
 from aeai_os.runs.models import AgentEventRecord, EvaluationResultRecord, GraphNodeRecord
-from aeai_os.runs.repository import InMemoryRunRepository, RunNotFoundError, utc_now
+from aeai_os.runs.repository import (
+    InMemoryRunRepository,
+    RunNotFoundError,
+    WorkflowJobOwnershipError,
+    utc_now,
+)
 from aeai_os.runs.sqlalchemy_repository import SQLAlchemyRunRepository
 from aeai_os.schemas.enums import (
     AgentEventType,
@@ -187,7 +193,7 @@ def test_repository_persists_and_claims_workflow_jobs(repository):
         worker_id="worker-test",
         workflow_name="procurement",
     )
-    completed = repository.complete_workflow_job(claimed_again.id)
+    completed = repository.complete_workflow_job(claimed_again.id, worker_id="worker-test")
 
     assert job.status == WorkflowJobStatus.QUEUED
     assert job.payload == {"priority": "normal"}
@@ -195,6 +201,7 @@ def test_repository_persists_and_claims_workflow_jobs(repository):
     assert claimed.status == WorkflowJobStatus.RUNNING
     assert claimed.attempt_count == 1
     assert claimed.worker_id == "worker-test"
+    assert claimed.heartbeat_at is not None
     assert requeued.status == WorkflowJobStatus.QUEUED
     assert requeued.error_summary == "Temporary warehouse timeout."
     assert claimed_again.attempt_count == 2
@@ -222,6 +229,66 @@ def test_repository_marks_workflow_job_failed_after_attempts_are_exhausted(repos
     )
 
     assert failed.id == job.id
-    assert failed.status == WorkflowJobStatus.FAILED
+    assert failed.status == WorkflowJobStatus.DEAD_LETTER
     assert failed.error_summary == "Dataset artifact is missing."
     assert failed.finished_at is not None
+
+
+def test_repository_rejects_workflow_job_updates_from_non_owner(repository):
+    run = repository.create_run("Analyze procurement data.")
+    job = repository.enqueue_workflow_job(run.id, "procurement")
+    claimed = repository.claim_next_workflow_job("worker-owner")
+
+    with pytest.raises(WorkflowJobOwnershipError):
+        repository.complete_workflow_job(job.id, worker_id="worker-other")
+
+    with pytest.raises(WorkflowJobOwnershipError):
+        repository.fail_workflow_job(
+            job.id,
+            "Other worker should not fail this job.",
+            worker_id="worker-other",
+        )
+
+    completed = repository.complete_workflow_job(claimed.id, worker_id="worker-owner")
+
+    assert completed.status == WorkflowJobStatus.COMPLETED
+
+
+def test_repository_heartbeats_and_recovers_timed_out_workflow_jobs(repository):
+    run = repository.create_run("Analyze procurement data.")
+    job = repository.enqueue_workflow_job(run.id, "procurement", max_attempts=2)
+    claimed = repository.claim_next_workflow_job("worker-one")
+
+    heartbeat = repository.heartbeat_workflow_job(claimed.id, worker_id="worker-one")
+    recovered = repository.recover_timed_out_workflow_jobs(
+        timeout_seconds=300,
+        now=heartbeat.heartbeat_at + timedelta(seconds=301),
+    )
+    reclaimed = repository.claim_next_workflow_job("worker-two")
+
+    assert claimed.id == job.id
+    assert heartbeat.heartbeat_at >= claimed.heartbeat_at
+    assert recovered[0].id == job.id
+    assert recovered[0].status == WorkflowJobStatus.QUEUED
+    assert recovered[0].worker_id is None
+    assert "heartbeat timed out" in recovered[0].error_summary
+    assert reclaimed.id == job.id
+    assert reclaimed.worker_id == "worker-two"
+    assert reclaimed.attempt_count == 2
+
+
+def test_repository_dead_letters_timed_out_job_after_attempts_exhausted(repository):
+    run = repository.create_run("Analyze procurement data.")
+    job = repository.enqueue_workflow_job(run.id, "procurement", max_attempts=1)
+    claimed = repository.claim_next_workflow_job("worker-one")
+
+    recovered = repository.recover_timed_out_workflow_jobs(
+        timeout_seconds=300,
+        now=claimed.heartbeat_at + timedelta(seconds=301),
+    )
+
+    assert recovered[0].id == job.id
+    assert recovered[0].status == WorkflowJobStatus.DEAD_LETTER
+    assert recovered[0].worker_id == "worker-one"
+    assert recovered[0].finished_at is not None
+    assert repository.claim_next_workflow_job("worker-two") is None

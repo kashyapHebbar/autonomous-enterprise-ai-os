@@ -68,7 +68,7 @@ def test_workflow_worker_retries_then_records_final_failure(tmp_path):
     assert requeued.status == WorkflowJobStatus.QUEUED
     assert requeued.attempt_count == 1
     assert "dataset artifact must be attached" in requeued.error_summary
-    assert failed.status == WorkflowJobStatus.FAILED
+    assert failed.status == WorkflowJobStatus.DEAD_LETTER
     assert failed.attempt_count == 2
     assert failed.finished_at is not None
     assert repository.get_run(run.id).status == RunStatus.FAILED

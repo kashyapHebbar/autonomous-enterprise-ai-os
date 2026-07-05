@@ -161,6 +161,7 @@ class WorkflowJobResponse(BaseModel):
     error_summary: str | None
     started_at: datetime | None
     finished_at: datetime | None
+    heartbeat_at: datetime | None
     created_at: datetime
     updated_at: datetime
 
@@ -307,6 +308,7 @@ def workflow_job_to_response(job: WorkflowJobRecord) -> WorkflowJobResponse:
         error_summary=job.error_summary,
         started_at=job.started_at,
         finished_at=job.finished_at,
+        heartbeat_at=job.heartbeat_at,
         created_at=job.created_at,
         updated_at=job.updated_at,
     )
@@ -346,6 +348,7 @@ def build_run_timeline(
                     "attempt_count": job.attempt_count,
                     "max_attempts": job.max_attempts,
                     "worker_id": job.worker_id,
+                    "heartbeat_at": job.heartbeat_at.isoformat() if job.heartbeat_at else None,
                 },
             )
         )

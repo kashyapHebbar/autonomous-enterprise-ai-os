@@ -17,6 +17,8 @@ from aeai_os.runs.repository import (
     RunCheckpointNotFoundError,
     RunNotFoundError,
     WorkflowJobNotFoundError,
+    WorkflowJobOwnershipError,
+    WorkflowJobStateError,
 )
 from aeai_os.runs.sqlalchemy_repository import SQLAlchemyRunRepository
 
@@ -35,5 +37,7 @@ __all__ = [
     "RunRecord",
     "SQLAlchemyRunRepository",
     "WorkflowJobNotFoundError",
+    "WorkflowJobOwnershipError",
     "WorkflowJobRecord",
+    "WorkflowJobStateError",
 ]

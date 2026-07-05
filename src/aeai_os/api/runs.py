@@ -46,12 +46,17 @@ from aeai_os.workflows import (
     build_procurement_orchestrator,
     execute_procurement_workflow,
 )
+from aeai_os.workflows.queue import WorkflowQueueBackend
 from aeai_os.workflows.worker import enqueue_procurement_workflow
 
 ALLOWED_UPLOAD_EXTENSIONS = {".csv", ".tsv", ".json", ".parquet"}
 
 
-def build_runs_router(repository: InMemoryRunRepository, artifact_root: Path):
+def build_runs_router(
+    repository: InMemoryRunRepository,
+    artifact_root: Path,
+    workflow_queue: WorkflowQueueBackend | None = None,
+):
     router = APIRouter(prefix="/runs", tags=["runs"])
     lineage_service = ArtifactLineageService(repository)
 
@@ -118,7 +123,11 @@ def build_runs_router(repository: InMemoryRunRepository, artifact_root: Path):
                     "the procurement workflow."
                 ),
             )
-        job = enqueue_procurement_workflow(repository=repository, run_id=run_id)
+        job = enqueue_procurement_workflow(
+            repository=repository,
+            run_id=run_id,
+            queue=workflow_queue,
+        )
         return workflow_job_to_response(job)
 
     @router.get("/{run_id}/workflow-jobs", response_model=list[WorkflowJobResponse])

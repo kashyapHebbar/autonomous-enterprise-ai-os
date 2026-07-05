@@ -16,6 +16,7 @@ class WorkflowJobStatus(StrEnum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    DEAD_LETTER = "dead_letter"
 
 
 class GraphNodeStatus(StrEnum):

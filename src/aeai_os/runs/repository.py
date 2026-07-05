@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from threading import RLock
 from typing import Any
 from uuid import uuid4
@@ -42,6 +42,14 @@ class EvaluationResultNotFoundError(KeyError):
 
 
 class WorkflowJobNotFoundError(KeyError):
+    pass
+
+
+class WorkflowJobOwnershipError(PermissionError):
+    pass
+
+
+class WorkflowJobStateError(RuntimeError):
     pass
 
 
@@ -173,9 +181,15 @@ class InMemoryRunRepository:
         self,
         worker_id: str,
         workflow_name: str | None = None,
+        stale_after_seconds: int | None = None,
     ) -> WorkflowJobRecord | None:
         normalized_workflow = workflow_name.strip() if workflow_name else None
         with self._lock:
+            if stale_after_seconds is not None:
+                self.recover_timed_out_workflow_jobs(
+                    timeout_seconds=stale_after_seconds,
+                    workflow_name=normalized_workflow,
+                )
             for job_id in self._workflow_job_order:
                 job = self._workflow_jobs[job_id]
                 if job.status != WorkflowJobStatus.QUEUED:
@@ -189,15 +203,62 @@ class InMemoryRunRepository:
                     worker_id=worker_id,
                     attempt_count=job.attempt_count + 1,
                     started_at=job.started_at or now,
+                    heartbeat_at=now,
                     updated_at=now,
                 )
                 self._workflow_jobs[job_id] = claimed
                 return deepcopy(claimed)
         return None
 
-    def complete_workflow_job(self, job_id: str) -> WorkflowJobRecord:
+    def claim_workflow_job(
+        self,
+        job_id: str,
+        worker_id: str,
+        stale_after_seconds: int | None = None,
+    ) -> WorkflowJobRecord | None:
+        with self._lock:
+            if stale_after_seconds is not None:
+                self.recover_timed_out_workflow_jobs(timeout_seconds=stale_after_seconds)
+            job = self._get_workflow_job_for_update(job_id)
+            if job.status != WorkflowJobStatus.QUEUED:
+                return None
+            now = utc_now()
+            claimed = replace(
+                job,
+                status=WorkflowJobStatus.RUNNING,
+                worker_id=worker_id,
+                attempt_count=job.attempt_count + 1,
+                started_at=job.started_at or now,
+                heartbeat_at=now,
+                updated_at=now,
+            )
+            self._workflow_jobs[job_id] = claimed
+            return deepcopy(claimed)
+
+    def heartbeat_workflow_job(
+        self,
+        job_id: str,
+        worker_id: str,
+    ) -> WorkflowJobRecord:
         with self._lock:
             job = self._get_workflow_job_for_update(job_id)
+            _ensure_job_owned_by_worker(job, worker_id)
+            now = utc_now()
+            updated = replace(job, heartbeat_at=now, updated_at=now)
+            self._workflow_jobs[job_id] = updated
+            return deepcopy(updated)
+
+    def complete_workflow_job(
+        self,
+        job_id: str,
+        worker_id: str | None = None,
+    ) -> WorkflowJobRecord:
+        with self._lock:
+            job = self._get_workflow_job_for_update(job_id)
+            if job.status == WorkflowJobStatus.COMPLETED:
+                return deepcopy(job)
+            if worker_id is not None:
+                _ensure_job_owned_by_worker(job, worker_id)
             now = utc_now()
             completed = replace(
                 job,
@@ -213,9 +274,12 @@ class InMemoryRunRepository:
         job_id: str,
         error_summary: str,
         retry: bool = True,
+        worker_id: str | None = None,
     ) -> WorkflowJobRecord:
         with self._lock:
             job = self._get_workflow_job_for_update(job_id)
+            if worker_id is not None:
+                _ensure_job_owned_by_worker(job, worker_id)
             now = utc_now()
             should_retry = retry and job.attempt_count < job.max_attempts
             failed = replace(
@@ -223,15 +287,61 @@ class InMemoryRunRepository:
                 status=(
                     WorkflowJobStatus.QUEUED
                     if should_retry
-                    else WorkflowJobStatus.FAILED
+                    else WorkflowJobStatus.DEAD_LETTER
                 ),
                 worker_id=None if should_retry else job.worker_id,
                 error_summary=error_summary,
                 updated_at=now,
+                heartbeat_at=None if should_retry else job.heartbeat_at,
                 finished_at=None if should_retry else now,
             )
             self._workflow_jobs[job_id] = failed
             return deepcopy(failed)
+
+    def recover_timed_out_workflow_jobs(
+        self,
+        timeout_seconds: int,
+        workflow_name: str | None = None,
+        now: datetime | None = None,
+    ) -> list[WorkflowJobRecord]:
+        if timeout_seconds < 1:
+            raise ValueError("Workflow job timeout must be at least 1 second.")
+
+        normalized_workflow = workflow_name.strip() if workflow_name else None
+        reference_time = now or utc_now()
+        cutoff = reference_time - timedelta(seconds=timeout_seconds)
+        recovered: list[WorkflowJobRecord] = []
+        with self._lock:
+            for job_id in self._workflow_job_order:
+                job = self._workflow_jobs[job_id]
+                if job.status != WorkflowJobStatus.RUNNING:
+                    continue
+                if normalized_workflow is not None and job.workflow_name != normalized_workflow:
+                    continue
+                heartbeat_at = job.heartbeat_at or job.updated_at
+                if heartbeat_at > cutoff:
+                    continue
+
+                error_summary = (
+                    f"Workflow job heartbeat timed out after {timeout_seconds} seconds."
+                )
+                should_retry = job.attempt_count < job.max_attempts
+                recovered_job = replace(
+                    job,
+                    status=(
+                        WorkflowJobStatus.QUEUED
+                        if should_retry
+                        else WorkflowJobStatus.DEAD_LETTER
+                    ),
+                    worker_id=None if should_retry else job.worker_id,
+                    error_summary=error_summary,
+                    heartbeat_at=None if should_retry else job.heartbeat_at,
+                    finished_at=None if should_retry else reference_time,
+                    updated_at=reference_time,
+                )
+                self._workflow_jobs[job_id] = recovered_job
+                recovered.append(deepcopy(recovered_job))
+        return recovered
 
     def next_artifact_id(self) -> str:
         return f"artifact_{uuid4().hex}"
@@ -394,6 +504,17 @@ class InMemoryRunRepository:
 
 def utc_now() -> datetime:
     return datetime.now(UTC)
+
+
+def _ensure_job_owned_by_worker(job: WorkflowJobRecord, worker_id: str) -> None:
+    if job.status != WorkflowJobStatus.RUNNING:
+        raise WorkflowJobStateError(
+            f"Workflow job {job.id} is {job.status.value}, not running."
+        )
+    if job.worker_id != worker_id:
+        raise WorkflowJobOwnershipError(
+            f"Workflow job {job.id} is owned by {job.worker_id}, not {worker_id}."
+        )
 
 
 def _evaluation_event(

@@ -7,6 +7,7 @@ from aeai_os.runs.models import WorkflowJobRecord
 from aeai_os.runs.repository import InMemoryRunRepository
 from aeai_os.schemas.enums import RunStatus, WorkflowJobStatus
 from aeai_os.workflows.procurement import execute_procurement_workflow
+from aeai_os.workflows.queue import RepositoryWorkflowQueue, WorkflowQueueBackend
 
 PROCUREMENT_WORKFLOW_NAME = "procurement"
 
@@ -15,8 +16,10 @@ def enqueue_procurement_workflow(
     repository: InMemoryRunRepository,
     run_id: str,
     max_attempts: int = 3,
+    queue: WorkflowQueueBackend | None = None,
 ) -> WorkflowJobRecord:
-    return repository.enqueue_workflow_job(
+    workflow_queue = queue or RepositoryWorkflowQueue(repository)
+    return workflow_queue.enqueue(
         run_id=run_id,
         workflow_name=PROCUREMENT_WORKFLOW_NAME,
         payload={"workflow": PROCUREMENT_WORKFLOW_NAME},
@@ -32,21 +35,30 @@ class WorkflowWorker:
         repository: InMemoryRunRepository,
         artifact_root: str | Path,
         worker_id: str | None = None,
+        queue: WorkflowQueueBackend | None = None,
+        claim_timeout_seconds: int | None = 300,
     ) -> None:
         self._repository = repository
+        self._queue = queue or RepositoryWorkflowQueue(repository)
         self._artifact_root = Path(artifact_root)
         self.worker_id = worker_id or f"worker_{uuid4().hex}"
+        self._claim_timeout_seconds = claim_timeout_seconds
 
     def process_next_job(self) -> WorkflowJobRecord | None:
-        job = self._repository.claim_next_workflow_job(
+        job = self._queue.claim_next(
             worker_id=self.worker_id,
             workflow_name=PROCUREMENT_WORKFLOW_NAME,
+            stale_after_seconds=self._claim_timeout_seconds,
         )
         if job is None:
             return None
         return self._process_claimed_job(job)
 
+    def heartbeat_job(self, job_id: str) -> WorkflowJobRecord:
+        return self._queue.heartbeat(job_id=job_id, worker_id=self.worker_id)
+
     def _process_claimed_job(self, job: WorkflowJobRecord) -> WorkflowJobRecord:
+        self.heartbeat_job(job.id)
         if job.workflow_name != PROCUREMENT_WORKFLOW_NAME:
             return self._final_fail(job, f"Unsupported workflow: {job.workflow_name}")
 
@@ -65,15 +77,16 @@ class WorkflowWorker:
                 or "Workflow execution failed."
             )
             return self._final_fail(job, message)
-        return self._repository.complete_workflow_job(job.id)
+        return self._queue.complete(job_id=job.id, worker_id=self.worker_id)
 
     def _retry_or_fail(self, job: WorkflowJobRecord, error_summary: str) -> WorkflowJobRecord:
-        updated = self._repository.fail_workflow_job(
+        updated = self._queue.fail(
             job_id=job.id,
+            worker_id=self.worker_id,
             error_summary=error_summary,
             retry=True,
         )
-        if updated.status == WorkflowJobStatus.FAILED:
+        if updated.status in {WorkflowJobStatus.FAILED, WorkflowJobStatus.DEAD_LETTER}:
             self._repository.update_status(
                 job.run_id,
                 RunStatus.FAILED,
@@ -82,8 +95,9 @@ class WorkflowWorker:
         return updated
 
     def _final_fail(self, job: WorkflowJobRecord, error_summary: str) -> WorkflowJobRecord:
-        updated = self._repository.fail_workflow_job(
+        updated = self._queue.fail(
             job_id=job.id,
+            worker_id=self.worker_id,
             error_summary=error_summary,
             retry=False,
         )

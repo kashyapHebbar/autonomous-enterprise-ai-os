@@ -24,11 +24,13 @@ def create_app(
     from aeai_os.api.metrics import build_metrics_router
     from aeai_os.api.runs import build_runs_router
     from aeai_os.observability.tracing import configure_tracing, current_trace_id, start_span
+    from aeai_os.workflows.queue import build_workflow_queue
 
     settings = get_settings()
     configure_tracing(service_name=settings.service_name)
     run_repository = repository or build_run_repository(settings)
     run_artifact_root = artifact_root or Path(settings.artifact_root)
+    workflow_queue = build_workflow_queue(settings, run_repository)
     static_root = Path(__file__).resolve().parents[1] / "web" / "static"
 
     app = FastAPI(
@@ -38,6 +40,7 @@ def create_app(
     )
     app.state.run_repository = run_repository
     app.state.artifact_root = run_artifact_root
+    app.state.workflow_queue = workflow_queue
 
     @app.middleware("http")
     async def trace_requests(request, call_next):
@@ -77,7 +80,7 @@ def create_app(
     def health() -> dict:
         return build_health_payload()
 
-    app.include_router(build_runs_router(run_repository, run_artifact_root))
+    app.include_router(build_runs_router(run_repository, run_artifact_root, workflow_queue))
     app.include_router(build_metrics_router(run_repository))
 
     @app.get("/run-inspector/runs/{run_id}", include_in_schema=False)

@@ -4,6 +4,11 @@ services:
     command: uvicorn aeai_os.api.app:create_app --factory --host 0.0.0.0 --port 8000 --reload
     env_file:
       - .env.example
+    environment:
+      AEAI_RUN_REPOSITORY_BACKEND: sqlalchemy
+      AEAI_DATABASE_URL: postgresql+psycopg://aeai:aeai_password@postgres:5432/aeai_os
+      AEAI_WORKFLOW_QUEUE_BACKEND: redis
+      AEAI_REDIS_URL: redis://redis:6379/0
     ports:
       - "8000:8000"
     volumes:
@@ -24,6 +29,26 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
+
+  workflow-worker:
+    build: .
+    command: python scripts/run_workflow_worker.py --loop --worker-id compose-worker
+    env_file:
+      - .env.example
+    environment:
+      AEAI_RUN_REPOSITORY_BACKEND: sqlalchemy
+      AEAI_DATABASE_URL: postgresql+psycopg://aeai:aeai_password@postgres:5432/aeai_os
+      AEAI_WORKFLOW_QUEUE_BACKEND: redis
+      AEAI_REDIS_URL: redis://redis:6379/0
+    volumes:
+      - .:/app
+    depends_on:
+      api:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      postgres:
+        condition: service_healthy
 
   postgres:
     image: postgres:16-alpine
