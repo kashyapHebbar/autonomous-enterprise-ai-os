@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,6 +17,23 @@ def main() -> int:
 
     parser = argparse.ArgumentParser(description="Process one queued workflow job.")
     parser.add_argument("--worker-id", default=None)
+    parser.add_argument(
+        "--loop",
+        action="store_true",
+        help="Continuously poll for queued workflow jobs.",
+    )
+    parser.add_argument(
+        "--poll-interval",
+        type=float,
+        default=5.0,
+        help="Seconds to wait between empty queue polls when --loop is enabled.",
+    )
+    parser.add_argument(
+        "--max-jobs",
+        type=int,
+        default=None,
+        help="Optional maximum jobs to process before exiting.",
+    )
     args = parser.parse_args()
 
     settings = get_settings()
@@ -25,11 +43,28 @@ def main() -> int:
         artifact_root=settings.artifact_root,
         worker_id=args.worker_id,
     )
+    if args.loop:
+        processed_count = 0
+        while True:
+            job = worker.process_next_job()
+            if job is None:
+                time.sleep(max(args.poll_interval, 0.1))
+                continue
+            _print_job(job)
+            processed_count += 1
+            if args.max_jobs is not None and processed_count >= args.max_jobs:
+                return 0
+
     job = worker.process_next_job()
     if job is None:
         print("No queued workflow jobs.")
         return 0
 
+    _print_job(job)
+    return 0
+
+
+def _print_job(job) -> None:
     print(
         "Processed workflow job "
         f"{job.id}: run_id={job.run_id} workflow={job.workflow_name} "
@@ -37,7 +72,6 @@ def main() -> int:
     )
     if job.error_summary:
         print(f"Last error: {job.error_summary}")
-    return 0
 
 
 if __name__ == "__main__":

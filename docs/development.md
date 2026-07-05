@@ -26,6 +26,7 @@ make smoke
 make test
 make lint
 make demo
+make k8s-validate
 ```
 
 `make smoke` only uses the Python standard library and verifies the scaffold shape plus the health payload.
@@ -130,6 +131,20 @@ PYTHONPATH=src .venv/bin/python scripts/run_procurement_demo.py \
   --dataset /path/to/procurement.csv \
   --artifact-root artifacts/procurement_demo
 ```
+
+## Kubernetes Baseline
+
+The Kubernetes baseline lives in `deploy/kubernetes/` and is applied as a kustomization:
+
+```bash
+make k8s-validate
+kubectl apply -k deploy/kubernetes
+```
+
+It includes API and workflow worker deployments, local Postgres/Redis/MinIO dependencies, shared
+config, a local-development secret template, ClusterIP services, health probes, and observability
+environment variables. See `deploy/kubernetes/README.md` for kind/minikube image loading,
+rollout checks, port-forwarding, and teardown commands.
 
 ## Orchestrator Kernel
 
