@@ -6,6 +6,7 @@ from uuid import uuid4
 from aeai_os.runs.models import WorkflowJobRecord
 from aeai_os.runs.repository import InMemoryRunRepository
 from aeai_os.schemas.enums import RunStatus, WorkflowJobStatus
+from aeai_os.storage import ArtifactStore
 from aeai_os.workflows.procurement import execute_procurement_workflow
 
 PROCUREMENT_WORKFLOW_NAME = "procurement"
@@ -32,9 +33,11 @@ class WorkflowWorker:
         repository: InMemoryRunRepository,
         artifact_root: str | Path,
         worker_id: str | None = None,
+        artifact_store: ArtifactStore | None = None,
     ) -> None:
         self._repository = repository
         self._artifact_root = Path(artifact_root)
+        self._artifact_store = artifact_store
         self.worker_id = worker_id or f"worker_{uuid4().hex}"
 
     def process_next_job(self) -> WorkflowJobRecord | None:
@@ -55,6 +58,7 @@ class WorkflowWorker:
                 repository=self._repository,
                 artifact_root=self._artifact_root,
                 run_id=job.run_id,
+                artifact_store=self._artifact_store,
             )
         except Exception as exc:
             return self._retry_or_fail(job, str(exc))

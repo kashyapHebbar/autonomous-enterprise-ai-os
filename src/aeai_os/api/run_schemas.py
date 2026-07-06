@@ -70,6 +70,66 @@ class ApprovalDecisionRequest(BaseModel):
         return normalized or None
 
 
+class CreateDeploymentRequest(BaseModel):
+    artifact_ids: list[str] = Field(..., min_length=1, max_length=50)
+    destination: str = Field(..., max_length=512)
+    requested_by: str | None = Field(default=None, max_length=200)
+    rationale: str | None = Field(default=None, max_length=1000)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("artifact_ids")
+    @classmethod
+    def validate_artifact_ids(cls, value: list[str]) -> list[str]:
+        normalized_ids: list[str] = []
+        seen: set[str] = set()
+        for artifact_id in value:
+            normalized = artifact_id.strip()
+            if normalized and normalized not in seen:
+                normalized_ids.append(normalized)
+                seen.add(normalized)
+        if not normalized_ids:
+            raise ValueError("At least one artifact ID is required.")
+        return normalized_ids
+
+    @field_validator("destination")
+    @classmethod
+    def validate_destination(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Deployment destination is required.")
+        return normalized
+
+    @field_validator("requested_by", "rationale")
+    @classmethod
+    def validate_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+
+class DeploymentApprovalDecisionRequest(BaseModel):
+    approved: bool = True
+    approver: str = Field(..., max_length=200)
+    rationale: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("approver")
+    @classmethod
+    def validate_approver(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Deployment approver is required.")
+        return normalized
+
+    @field_validator("rationale")
+    @classmethod
+    def validate_rationale(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+
 class ArtifactResponse(BaseModel):
     id: str
     run_id: str
@@ -346,6 +406,7 @@ def build_run_timeline(
                     "attempt_count": job.attempt_count,
                     "max_attempts": job.max_attempts,
                     "worker_id": job.worker_id,
+                    "job_payload": job.payload,
                 },
             )
         )

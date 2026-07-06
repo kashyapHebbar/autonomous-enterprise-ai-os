@@ -12,6 +12,8 @@ from urllib.parse import parse_qs, unquote, urlparse
 from aeai_os.data.profiling import DataIngestionError
 
 ParameterSet = Sequence[Any] | Mapping[str, Any] | None
+SnowflakeConnectionFactory = Callable[..., Any]
+_INTERNAL_LIMIT_PARAMETER = "_aeai_limit"
 
 
 class WarehouseConnectorError(DataIngestionError):
@@ -45,12 +47,15 @@ class WarehouseDatasetReference:
     database_path: str | None = None
     uri: str | None = None
     metadata: Mapping[str, Any] = field(default_factory=dict)
+    parameters: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if bool(self.table) == bool(self.query):
             raise WarehouseConnectorError(
                 "Warehouse dataset reference must include exactly one of table or query."
             )
+        if not isinstance(self.parameters, Mapping):
+            raise WarehouseConnectorError("Warehouse query parameters must be a mapping.")
 
     @property
     def normalized_source(self) -> str:
@@ -79,6 +84,10 @@ class WarehouseConnector(Protocol):
 
     def preview_rows(
         self, reference: WarehouseDatasetReference, limit: int = 10
+    ) -> list[dict[str, Any]]: ...
+
+    def fetch_rows(
+        self, reference: WarehouseDatasetReference, limit: int | None = None
     ) -> list[dict[str, Any]]: ...
 
     def describe(self, reference: WarehouseDatasetReference) -> list[WarehouseColumn]: ...
@@ -117,8 +126,22 @@ class SqliteWarehouseConnector:
     def preview_rows(
         self, reference: WarehouseDatasetReference, limit: int = 10
     ) -> list[dict[str, Any]]:
-        query = f"SELECT * FROM {self._source_sql(reference)} LIMIT :limit"
-        return self.execute_query(query, {"limit": max(limit, 0)}).rows
+        return self.fetch_rows(reference, limit=max(limit, 0))
+
+    def fetch_rows(
+        self, reference: WarehouseDatasetReference, limit: int | None = None
+    ) -> list[dict[str, Any]]:
+        limit_clause = f" LIMIT :{_INTERNAL_LIMIT_PARAMETER}" if limit is not None else ""
+        parameters = (
+            _merge_parameters(reference.parameters, {_INTERNAL_LIMIT_PARAMETER: max(limit or 0, 0)})
+            if limit is not None
+            else dict(reference.parameters)
+        )
+        if limit is None:
+            query = f"SELECT * FROM {self._source_sql(reference)}"
+        else:
+            query = f"SELECT * FROM {self._source_sql(reference)}{limit_clause}"
+        return self.execute_query(query, parameters or None).rows
 
     def describe(self, reference: WarehouseDatasetReference) -> list[WarehouseColumn]:
         if reference.table and _is_simple_identifier(reference.table):
@@ -133,7 +156,10 @@ class SqliteWarehouseConnector:
                 for row in rows
             ]
 
-        result = self.execute_query(f"SELECT * FROM {self._source_sql(reference)} LIMIT 0")
+        result = self.execute_query(
+            f"SELECT * FROM {self._source_sql(reference)} LIMIT 0",
+            dict(reference.parameters) or None,
+        )
         return result.columns
 
     def aggregate_sum_by(
@@ -145,8 +171,12 @@ class SqliteWarehouseConnector:
     ) -> dict[str, float]:
         group_sql = _sql_identifier(group_column, allow_dotted=False)
         value_sql = _sql_identifier(value_column, allow_dotted=False)
-        limit_clause = " LIMIT :limit" if limit is not None else ""
-        parameters = {"limit": max(limit or 0, 0)} if limit is not None else None
+        limit_clause = f" LIMIT :{_INTERNAL_LIMIT_PARAMETER}" if limit is not None else ""
+        parameters = (
+            _merge_parameters(reference.parameters, {_INTERNAL_LIMIT_PARAMETER: max(limit or 0, 0)})
+            if limit is not None
+            else dict(reference.parameters)
+        )
         query = (
             "SELECT "
             f"COALESCE(CAST({group_sql} AS TEXT), '<missing>') AS group_key, "
@@ -157,7 +187,7 @@ class SqliteWarehouseConnector:
             "ORDER BY group_key"
             f"{limit_clause}"
         )
-        rows = self.execute_query(query, parameters).rows
+        rows = self.execute_query(query, parameters or None).rows
         return {str(row["group_key"]): float(row["total"] or 0.0) for row in rows}
 
     def execute_query(self, query: str, parameters: ParameterSet = None) -> WarehouseQueryResult:
@@ -187,11 +217,15 @@ class SqliteWarehouseConnector:
 class SnowflakeSettings:
     account: str
     user: str
-    password: str
+    password: str = field(repr=False)
     warehouse: str
     database: str
     schema: str
     role: str | None = None
+    connect_timeout_seconds: int = 15
+    query_timeout_seconds: int = 60
+    row_limit: int = 10_000
+    application: str = "aeai-os"
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> SnowflakeSettings:
@@ -209,32 +243,66 @@ class SnowflakeSettings:
             raise WarehouseConfigurationError(
                 "Missing Snowflake connector configuration: " + ", ".join(missing)
             )
+        role = values.get("SNOWFLAKE_ROLE", "").strip() or None
         return cls(
             account=required["SNOWFLAKE_ACCOUNT"],
             user=required["SNOWFLAKE_USER"],
             password=required["SNOWFLAKE_PASSWORD"],
-            warehouse=required["SNOWFLAKE_WAREHOUSE"],
-            database=required["SNOWFLAKE_DATABASE"],
-            schema=required["SNOWFLAKE_SCHEMA"],
-            role=values.get("SNOWFLAKE_ROLE") or None,
+            warehouse=_snowflake_identifier(
+                required["SNOWFLAKE_WAREHOUSE"], "SNOWFLAKE_WAREHOUSE"
+            ),
+            database=_snowflake_identifier(
+                required["SNOWFLAKE_DATABASE"], "SNOWFLAKE_DATABASE"
+            ),
+            schema=_snowflake_identifier(required["SNOWFLAKE_SCHEMA"], "SNOWFLAKE_SCHEMA"),
+            role=_snowflake_identifier(role, "SNOWFLAKE_ROLE") if role else None,
+            connect_timeout_seconds=_parse_positive_int(
+                values, "SNOWFLAKE_CONNECT_TIMEOUT_SECONDS", 15
+            ),
+            query_timeout_seconds=_parse_positive_int(
+                values, "SNOWFLAKE_QUERY_TIMEOUT_SECONDS", 60
+            ),
+            row_limit=_parse_positive_int(values, "SNOWFLAKE_ROW_LIMIT", 10_000),
+            application=values.get("SNOWFLAKE_APPLICATION", "").strip() or "aeai-os",
         )
 
 
 class SnowflakeWarehouseConnector:
     source = "snowflake"
 
-    def __init__(self, settings: SnowflakeSettings) -> None:
+    def __init__(
+        self,
+        settings: SnowflakeSettings,
+        connection_factory: SnowflakeConnectionFactory | None = None,
+    ) -> None:
         self.settings = settings
+        self._connection_factory = connection_factory
 
     @classmethod
-    def from_env(cls, env: Mapping[str, str] | None = None) -> SnowflakeWarehouseConnector:
-        return cls(SnowflakeSettings.from_env(env))
+    def from_env(
+        cls,
+        env: Mapping[str, str] | None = None,
+        connection_factory: SnowflakeConnectionFactory | None = None,
+    ) -> SnowflakeWarehouseConnector:
+        return cls(SnowflakeSettings.from_env(env), connection_factory=connection_factory)
 
     def preview_rows(
         self, reference: WarehouseDatasetReference, limit: int = 10
     ) -> list[dict[str, Any]]:
-        query = f"SELECT * FROM {self._source_sql(reference)} LIMIT %(limit)s"
-        return self.execute_query(query, {"limit": max(limit, 0)}).rows
+        return self.fetch_rows(reference, limit=max(limit, 0))
+
+    def fetch_rows(
+        self, reference: WarehouseDatasetReference, limit: int | None = None
+    ) -> list[dict[str, Any]]:
+        effective_limit = self._bounded_limit(limit)
+        parameters = _merge_parameters(
+            reference.parameters, {_INTERNAL_LIMIT_PARAMETER: effective_limit}
+        )
+        query = (
+            f"SELECT * FROM {self._source_sql(reference)} "
+            f"LIMIT %({_INTERNAL_LIMIT_PARAMETER})s"
+        )
+        return self.execute_query(query, parameters or None).rows
 
     def describe(self, reference: WarehouseDatasetReference) -> list[WarehouseColumn]:
         if reference.table:
@@ -250,8 +318,8 @@ class SnowflakeWarehouseConnector:
             ]
 
         result = self.execute_query(
-            f"SELECT * FROM {self._source_sql(reference)} LIMIT %(limit)s",
-            {"limit": 0},
+            f"SELECT * FROM {self._source_sql(reference)} LIMIT %({_INTERNAL_LIMIT_PARAMETER})s",
+            _merge_parameters(reference.parameters, {_INTERNAL_LIMIT_PARAMETER: 0}),
         )
         return result.columns
 
@@ -264,8 +332,14 @@ class SnowflakeWarehouseConnector:
     ) -> dict[str, float]:
         group_sql = _sql_identifier(group_column, allow_dotted=False)
         value_sql = _sql_identifier(value_column, allow_dotted=False)
-        limit_clause = " LIMIT %(limit)s" if limit is not None else ""
-        parameters = {"limit": max(limit or 0, 0)} if limit is not None else None
+        limit_clause = f" LIMIT %({_INTERNAL_LIMIT_PARAMETER})s" if limit is not None else ""
+        parameters = (
+            _merge_parameters(
+                reference.parameters, {_INTERNAL_LIMIT_PARAMETER: self._bounded_limit(limit)}
+            )
+            if limit is not None
+            else dict(reference.parameters)
+        )
         query = (
             "SELECT "
             f"COALESCE(CAST({group_sql} AS VARCHAR), '<missing>') AS group_key, "
@@ -276,49 +350,81 @@ class SnowflakeWarehouseConnector:
             "ORDER BY group_key"
             f"{limit_clause}"
         )
-        rows = self.execute_query(query, parameters).rows
+        rows = self.execute_query(query, parameters or None).rows
         return {
             str(row["GROUP_KEY"] if "GROUP_KEY" in row else row["group_key"]): _row_total(row)
             for row in rows
         }
 
     def execute_query(self, query: str, parameters: ParameterSet = None) -> WarehouseQueryResult:
+        statement = _snowflake_statement(query)
+        connection = None
+        cursor = None
         try:
-            import snowflake.connector
-            from snowflake.connector import DictCursor
-        except ImportError as exc:
-            raise WarehouseConfigurationError(
-                "Snowflake connector package is not installed. Install snowflake-connector-python "
-                "before executing Snowflake-backed datasets."
-            ) from exc
+            if self._connection_factory:
+                connection = self._connection_factory(**self._connection_kwargs())
+                cursor = connection.cursor()
+            else:
+                try:
+                    import snowflake.connector
+                    from snowflake.connector import DictCursor
+                except ImportError as exc:
+                    raise WarehouseConfigurationError(
+                        "Snowflake connector package is not installed. Install "
+                        "snowflake-connector-python before executing Snowflake-backed datasets."
+                    ) from exc
 
-        connection = snowflake.connector.connect(
-            account=self.settings.account,
-            user=self.settings.user,
-            password=self.settings.password,
-            warehouse=self.settings.warehouse,
-            database=self.settings.database,
-            schema=self.settings.schema,
-            role=self.settings.role,
-        )
-        cursor = connection.cursor(DictCursor)
-        try:
-            cursor.execute(query, parameters or None)
+                connection = snowflake.connector.connect(**self._connection_kwargs())
+                cursor = connection.cursor(DictCursor)
+
+            cursor.execute(
+                statement,
+                parameters or None,
+                timeout=self.settings.query_timeout_seconds,
+            )
             rows = [dict(row) for row in cursor.fetchall()]
             columns = [
                 WarehouseColumn(name=str(column[0]), data_type=str(column[1]), nullable=None)
                 for column in (cursor.description or [])
             ]
             return WarehouseQueryResult(rows=rows, columns=columns)
+        except WarehouseConnectorError:
+            raise
+        except Exception as exc:
+            raise WarehouseConnectorError(f"Snowflake query execution failed: {exc}") from exc
         finally:
-            cursor.close()
-            connection.close()
+            _close_resource(cursor)
+            _close_resource(connection)
 
     def _source_sql(self, reference: WarehouseDatasetReference) -> str:
         _assert_source(reference, self.source)
         if reference.table:
             return _sql_identifier(reference.qualified_table)
         return f"({_select_query(reference.query)}) AS warehouse_source"
+
+    def _bounded_limit(self, limit: int | None) -> int:
+        requested = self.settings.row_limit if limit is None else max(limit, 0)
+        return min(requested, self.settings.row_limit)
+
+    def _connection_kwargs(self) -> dict[str, Any]:
+        kwargs: dict[str, Any] = {
+            "account": self.settings.account,
+            "user": self.settings.user,
+            "password": self.settings.password,
+            "warehouse": self.settings.warehouse,
+            "database": self.settings.database,
+            "schema": self.settings.schema,
+            "login_timeout": self.settings.connect_timeout_seconds,
+            "network_timeout": self.settings.connect_timeout_seconds,
+            "application": self.settings.application,
+            "session_parameters": {
+                "QUERY_TAG": self.settings.application,
+                "STATEMENT_TIMEOUT_IN_SECONDS": self.settings.query_timeout_seconds,
+            },
+        }
+        if self.settings.role:
+            kwargs["role"] = self.settings.role
+        return kwargs
 
 
 class WarehouseDatasetAdapter:
@@ -352,7 +458,8 @@ class WarehouseDatasetAdapter:
 
     def rows(self) -> list[dict[str, str]]:
         if self._rows is None:
-            self._rows = self.preview(limit=max(self.row_limit, 0))
+            rows = self.connector.fetch_rows(self.reference, limit=max(self.row_limit, 0))
+            self._rows = [_stringify_row(row) for row in rows]
         return [dict(row) for row in self._rows]
 
     def aggregate_sum_by(self, group_column: str, value_column: str) -> dict[str, float]:
@@ -462,6 +569,7 @@ def warehouse_reference_from_metadata(
         database_path=database_path,
         uri=uri,
         metadata=metadata,
+        parameters=_metadata_parameters(metadata),
     )
 
 
@@ -501,6 +609,17 @@ def _metadata_value(metadata: Mapping[str, Any], *keys: str) -> str | None:
     return None
 
 
+def _metadata_parameters(metadata: Mapping[str, Any]) -> dict[str, Any]:
+    for key in ("parameters", "query_parameters", "warehouse_parameters"):
+        value = metadata.get(key)
+        if value is None:
+            continue
+        if not isinstance(value, Mapping):
+            raise WarehouseConnectorError(f"Warehouse metadata {key} must be a mapping.")
+        return dict(value)
+    return {}
+
+
 def _normalize_source(source: str) -> str:
     return source.strip().lower().replace("-", "_")
 
@@ -518,13 +637,46 @@ def _stringify_row(row: Mapping[str, Any]) -> dict[str, str]:
     return {str(key): "" if value is None else str(value).strip() for key, value in row.items()}
 
 
+def _merge_parameters(
+    base_parameters: Mapping[str, Any], extra_parameters: Mapping[str, Any]
+) -> dict[str, Any]:
+    merged = dict(base_parameters)
+    collisions = sorted(set(merged).intersection(extra_parameters))
+    if collisions:
+        raise WarehouseConnectorError(
+            "Warehouse query parameter cannot be reused: " + ", ".join(collisions)
+        )
+    merged.update(extra_parameters)
+    return merged
+
+
 def _select_query(query: str | None) -> str:
     if not query or not query.strip():
         raise WarehouseConnectorError("Warehouse dataset query cannot be empty.")
     normalized = query.strip().lower()
-    if not normalized.startswith("select") or ";" in normalized:
-        raise WarehouseConnectorError("Warehouse dataset query must be a single SELECT statement.")
+    if not _starts_with_sql_keyword(normalized, "select", "with") or ";" in normalized:
+        raise WarehouseConnectorError(
+            "Warehouse dataset query must be a single SELECT or WITH statement."
+        )
     return query.strip()
+
+
+def _snowflake_statement(query: str) -> str:
+    if not query or not query.strip():
+        raise WarehouseConnectorError("Snowflake query cannot be empty.")
+    statement = query.strip()
+    normalized = statement.lower()
+    if ";" in normalized or not _starts_with_sql_keyword(
+        normalized, "select", "with", "show", "describe", "desc"
+    ):
+        raise WarehouseConnectorError(
+            "Snowflake query must be a single SELECT, WITH, SHOW, or DESCRIBE statement."
+        )
+    return statement
+
+
+def _starts_with_sql_keyword(normalized: str, *keywords: str) -> bool:
+    return any(re.match(rf"^{re.escape(keyword)}($|\s)", normalized) for keyword in keywords)
 
 
 def _snowflake_nullable(row: Mapping[str, Any]) -> bool | None:
@@ -552,8 +704,36 @@ def _sqlite_path_from_uri(parsed: Any) -> str | None:
     return unquote(parsed.path)
 
 
+def _parse_positive_int(values: Mapping[str, str], key: str, default: int) -> int:
+    raw_value = values.get(key, "")
+    if not str(raw_value).strip():
+        return default
+    try:
+        parsed = int(str(raw_value).strip())
+    except ValueError as exc:
+        raise WarehouseConfigurationError(f"{key} must be a positive integer.") from exc
+    if parsed <= 0:
+        raise WarehouseConfigurationError(f"{key} must be a positive integer.")
+    return parsed
+
+
+def _snowflake_identifier(value: str, env_key: str) -> str:
+    try:
+        return _sql_identifier(value, allow_dotted=False)
+    except WarehouseConnectorError as exc:
+        raise WarehouseConfigurationError(
+            f"{env_key} must be a safe unquoted Snowflake identifier."
+        ) from exc
+
+
 def _sql_identifier(identifier: str, *, allow_dotted: bool = True) -> str:
     parts = identifier.split(".") if allow_dotted else [identifier]
     if not parts or any(not _IDENTIFIER_RE.fullmatch(part) for part in parts):
         raise WarehouseConnectorError(f"Unsafe SQL identifier: {identifier}")
     return ".".join(parts)
+
+
+def _close_resource(resource: Any) -> None:
+    close = getattr(resource, "close", None)
+    if callable(close):
+        close()

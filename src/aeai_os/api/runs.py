@@ -14,7 +14,9 @@ from aeai_os.api.run_schemas import (
     ArtifactLineageResponse,
     ArtifactResponse,
     AttachDatasetReferenceRequest,
+    CreateDeploymentRequest,
     CreateRunRequest,
+    DeploymentApprovalDecisionRequest,
     EvaluationResponse,
     GraphNodeResponse,
     RunDetailResponse,
@@ -34,6 +36,11 @@ from aeai_os.api.run_schemas import (
     workflow_job_to_response,
 )
 from aeai_os.artifacts import ArtifactLineageService
+from aeai_os.deployments import (
+    DeploymentApprovalError,
+    decide_deployment_approval,
+    request_deployment_approval,
+)
 from aeai_os.orchestration.service import OrchestrationError, OrchestrationResult
 from aeai_os.runs.models import AgentEventRecord
 from aeai_os.runs.repository import (
@@ -46,6 +53,7 @@ from aeai_os.runs.repository import (
 )
 from aeai_os.schemas.enums import AgentEventType, ArtifactType
 from aeai_os.security.auth import AuthenticatedUser
+from aeai_os.storage import ArtifactStore
 from aeai_os.workflows import (
     ProcurementWorkflowError,
     build_procurement_orchestrator,
@@ -56,7 +64,11 @@ from aeai_os.workflows.worker import enqueue_procurement_workflow
 ALLOWED_UPLOAD_EXTENSIONS = {".csv", ".tsv", ".json", ".parquet"}
 
 
-def build_runs_router(repository: InMemoryRunRepository, artifact_root: Path):
+def build_runs_router(
+    repository: InMemoryRunRepository,
+    artifact_root: Path,
+    artifact_store: ArtifactStore,
+):
     router = APIRouter(prefix="/runs", tags=["runs"])
     lineage_service = ArtifactLineageService(repository)
 
@@ -117,6 +129,7 @@ def build_runs_router(repository: InMemoryRunRepository, artifact_root: Path):
                 repository=repository,
                 artifact_root=artifact_root,
                 run_id=run_id,
+                artifact_store=artifact_store,
             )
         except ProcurementWorkflowError as exc:
             raise HTTPException(
@@ -180,6 +193,85 @@ def build_runs_router(repository: InMemoryRunRepository, artifact_root: Path):
             )
         return workflow_job_to_response(job)
 
+    @router.post(
+        "/{run_id}/deployments",
+        response_model=WorkflowJobResponse,
+        status_code=status.HTTP_202_ACCEPTED,
+    )
+    def create_deployment_request(
+        run_id: str,
+        request: Annotated[CreateDeploymentRequest, Body(...)],
+        actor: RunWriter,
+    ) -> WorkflowJobResponse:
+        _get_run_or_404(repository, run_id)
+        try:
+            job = request_deployment_approval(
+                repository,
+                run_id=run_id,
+                artifact_ids=request.artifact_ids,
+                destination=request.destination,
+                requested_by=request.requested_by,
+                rationale=request.rationale,
+                metadata=request.metadata,
+            )
+        except ArtifactNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        except DeploymentApprovalError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        _record_audit_event(
+            repository,
+            run_id,
+            actor,
+            action="deployment.request",
+            target={"run_id": run_id, "workflow_job_id": job.id},
+            details={
+                "artifact_ids": request.artifact_ids,
+                "destination": request.destination,
+                "requested_by": request.requested_by,
+            },
+        )
+        return workflow_job_to_response(job)
+
+    @router.post(
+        "/{run_id}/deployments/{job_id}/approval",
+        response_model=WorkflowJobResponse,
+    )
+    def decide_deployment_request(
+        run_id: str,
+        job_id: str,
+        request: Annotated[DeploymentApprovalDecisionRequest, Body(...)],
+        actor: RunApprover,
+    ) -> WorkflowJobResponse:
+        _get_run_or_404(repository, run_id)
+        try:
+            result = decide_deployment_approval(
+                repository,
+                run_id=run_id,
+                job_id=job_id,
+                approved=request.approved,
+                approver=request.approver,
+                rationale=request.rationale,
+            )
+        except WorkflowJobNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        except ArtifactNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        except DeploymentApprovalError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        _record_audit_event(
+            repository,
+            run_id,
+            actor,
+            action="deployment.approval",
+            target={"run_id": run_id, "workflow_job_id": job_id},
+            details={
+                "approved": request.approved,
+                "approver": request.approver,
+                "rationale": request.rationale,
+            },
+        )
+        return workflow_job_to_response(result.job)
+
     @router.get("/{run_id}/graph-nodes", response_model=list[GraphNodeResponse])
     def list_graph_nodes(run_id: str, user: RunReader) -> list[GraphNodeResponse]:
         _get_run_or_404(repository, run_id)
@@ -227,7 +319,11 @@ def build_runs_router(repository: InMemoryRunRepository, artifact_root: Path):
             target={"run_id": run_id, "node_id": node_id},
             details={"approved": request.approved, "comment": request.comment},
         )
-        service = build_procurement_orchestrator(repository, artifact_root)
+        service = build_procurement_orchestrator(
+            repository,
+            artifact_root,
+            artifact_store=artifact_store,
+        )
         try:
             result = service.approve_node(
                 run_id=run_id,
@@ -254,7 +350,11 @@ def build_runs_router(repository: InMemoryRunRepository, artifact_root: Path):
             action="graph_node.retry",
             target={"run_id": run_id, "node_id": node_id},
         )
-        service = build_procurement_orchestrator(repository, artifact_root)
+        service = build_procurement_orchestrator(
+            repository,
+            artifact_root,
+            artifact_store=artifact_store,
+        )
         try:
             result = service.retry_failed_node(run_id=run_id, node_id=node_id)
         except GraphNodeNotFoundError as exc:
@@ -349,22 +449,27 @@ def build_runs_router(repository: InMemoryRunRepository, artifact_root: Path):
 
         extension = Path(filename).suffix.lower()
         artifact_id = repository.next_artifact_id()
-        run_dir = artifact_root / run_id
-        run_dir.mkdir(parents=True, exist_ok=True)
-        local_path = run_dir / f"{artifact_id}{extension}"
-        local_path.write_bytes(payload)
+        stored_dataset = artifact_store.write_bytes(
+            run_id=run_id,
+            node_id="datasets",
+            filename=f"{artifact_id}{extension}",
+            payload=payload,
+            content_type=file.content_type,
+            metadata={"source": "upload", "filename": filename},
+        )
 
         artifact = repository.add_artifact(
             run_id=run_id,
             artifact_type=ArtifactType.DATASET,
             artifact_id=artifact_id,
-            uri=str(local_path),
+            uri=stored_dataset.uri,
             metadata={
                 "source": "upload",
                 "filename": filename,
                 "content_type": file.content_type,
                 "size_bytes": len(payload),
                 "format": extension.lstrip("."),
+                **stored_dataset.metadata,
             },
         )
         _record_audit_event(

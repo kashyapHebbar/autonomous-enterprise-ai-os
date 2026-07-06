@@ -26,6 +26,7 @@ make smoke
 make test
 make lint
 make demo
+make k8s-validate
 ```
 
 `make smoke` only uses the Python standard library and verifies the scaffold shape plus the health payload.
@@ -115,8 +116,9 @@ curl http://localhost:8000/runs/{run_id}/timeline
 
 The browser inspector for the same data is available at
 `http://localhost:8000/run-inspector/runs/{run_id}`.
-It shows approve/deny controls for nodes waiting on human approval and a retry
-control for failed nodes.
+It shows approve/deny controls for nodes and deployment jobs waiting on human
+approval, a retry control for failed nodes, inline artifact lineage, approval history,
+evaluation/MLflow status, and deployment history.
 
 Execute the procurement workflow for a run with an attached dataset:
 
@@ -133,6 +135,31 @@ Approve or deny a graph node that is waiting on human approval:
 curl -X POST http://localhost:8000/runs/{run_id}/graph-nodes/{node_id}/approval \
   -H "Content-Type: application/json" \
   -d '{"approved":true,"comment":"Approved for local demo."}'
+```
+
+Request deployment approval for reviewed artifacts:
+
+```bash
+curl -X POST http://localhost:8000/runs/{run_id}/deployments \
+  -H "Content-Type: application/json" \
+  -d '{
+    "artifact_ids":["artifact_dashboard"],
+    "destination":"s3://approved-dashboards/procurement",
+    "requested_by":"analytics-lead",
+    "rationale":"Promote the validated dashboard."
+  }'
+```
+
+Approve or deny a deployment request:
+
+```bash
+curl -X POST http://localhost:8000/runs/{run_id}/deployments/{job_id}/approval \
+  -H "Content-Type: application/json" \
+  -d '{
+    "approved":true,
+    "approver":"release-manager",
+    "rationale":"Evaluation passed and artifacts were reviewed."
+  }'
 ```
 
 Retry a failed graph node after fixing its input or environment:
@@ -165,6 +192,20 @@ PYTHONPATH=src .venv/bin/python scripts/run_procurement_demo.py \
   --artifact-root artifacts/procurement_demo
 ```
 
+## Kubernetes Baseline
+
+The Kubernetes baseline lives in `deploy/kubernetes/` and is applied as a kustomization:
+
+```bash
+make k8s-validate
+kubectl apply -k deploy/kubernetes
+```
+
+It includes API and workflow worker deployments, local Postgres/Redis/MinIO dependencies, shared
+config, a local-development secret template, ClusterIP services, health probes, and observability
+environment variables. See `deploy/kubernetes/README.md` for kind/minikube image loading,
+rollout checks, port-forwarding, and teardown commands.
+
 ## Orchestrator Kernel
 
 The SCRUM-9 orchestration kernel runs validated execution graphs against registered agents and stores each state transition in the run repository.
@@ -177,6 +218,9 @@ Current local behavior:
 - Nodes that return `waiting_for_approval` pause the run until `approve_node` resumes it.
 - `POST /runs/{run_id}/execute/procurement/async` persists a workflow job for background
   processing.
+- `POST /runs/{run_id}/deployments` creates a deployment workflow job in
+  `waiting_for_approval`; approval completes the job and creates a deployment artifact, while
+  denial records a failed deployment outcome.
 - `scripts/run_workflow_worker.py` claims one queued procurement job, executes the workflow, and
   records completion, retry, or failure state.
 - `GET /runs/{run_id}/graph-nodes`, `GET /runs/{run_id}/events`, and
@@ -187,6 +231,38 @@ The in-memory repository remains the default local checkpoint backend. Set
 repository against Postgres or SQLite-compatible test databases. The SQLAlchemy backend persists
 runs, workflow jobs, graph nodes, artifacts, agent events, evaluations, and checkpoints behind the
 same repository contract.
+
+## Artifact Storage
+
+Artifact metadata and artifact payloads are deliberately separate. The run repository stores
+`ArtifactRecord` metadata, lineage, type, producer, stable URI, and storage metadata. The
+`ArtifactStore` writes and reads the payload bytes used by agents.
+
+Local filesystem storage is the default:
+
+```bash
+AEAI_ARTIFACT_STORAGE_BACKEND=local
+AEAI_ARTIFACT_ROOT=artifacts
+```
+
+Use the S3-compatible backend for AWS S3 or MinIO:
+
+```bash
+AEAI_ARTIFACT_STORAGE_BACKEND=s3
+AEAI_ARTIFACT_S3_BUCKET=aeai-artifacts
+AEAI_ARTIFACT_S3_PREFIX=aeai-artifacts
+AEAI_ARTIFACT_S3_ENDPOINT_URL=http://localhost:9000
+AEAI_ARTIFACT_S3_ACCESS_KEY_ID=aeai_minio
+AEAI_ARTIFACT_S3_SECRET_ACCESS_KEY=aeai_minio_password
+```
+
+Install the optional client dependency with `pip install ".[storage]"`. The bucket must already
+exist. With Docker Compose, MinIO is available on `http://localhost:9000` and its console is on
+`http://localhost:9001`.
+
+Agents read and write generated artifacts through the store, so local paths and `s3://bucket/key`
+URIs can both move through the same workflow. Local tests use a fake S3 client, so no cloud account
+or MinIO service is required for the regression suite.
 
 ## Planner Contract
 
@@ -212,7 +288,7 @@ Current data behavior:
 - `dataset_reference_from_metadata` distinguishes local file datasets from warehouse-backed table or query references.
 - `WarehouseConnectorRegistry` resolves warehouse adapters by source metadata or URI scheme.
 - `SqliteWarehouseConnector` gives tests and offline demos deterministic preview, schema inspection, grouped aggregate queries, and connector-backed procurement workflow execution.
-- `SnowflakeWarehouseConnector` validates `SNOWFLAKE_*` environment settings and uses parameterized execution calls for Snowflake-backed datasets without requiring real credentials in local tests.
+- `SnowflakeWarehouseConnector` validates `SNOWFLAKE_*` environment settings, applies timeout and row-limit controls, and executes parameterized Snowflake-backed table/query references when the optional warehouse dependency is installed.
 
 Warehouse dataset artifacts can use URI schemes or metadata:
 
@@ -230,9 +306,17 @@ Warehouse dataset artifacts can use URI schemes or metadata:
 }
 ```
 
-SQLite warehouse references can run through data profiling and procurement analytics locally. Snowflake
-references remain behind the connector boundary and fail clearly until `SNOWFLAKE_*` settings and the
-Snowflake connector package are available.
+SQLite warehouse references can run through data profiling and procurement analytics locally.
+Snowflake references use the same adapter contract when `snowflake-connector-python` is installed via
+`pip install ".[warehouse]"` and the required `SNOWFLAKE_*` settings are present. Required settings are
+`SNOWFLAKE_ACCOUNT`, `SNOWFLAKE_USER`, `SNOWFLAKE_PASSWORD`, `SNOWFLAKE_WAREHOUSE`,
+`SNOWFLAKE_DATABASE`, and `SNOWFLAKE_SCHEMA`. Optional settings include `SNOWFLAKE_ROLE`,
+`SNOWFLAKE_CONNECT_TIMEOUT_SECONDS`, `SNOWFLAKE_QUERY_TIMEOUT_SECONDS`, `SNOWFLAKE_ROW_LIMIT`, and
+`SNOWFLAKE_APPLICATION`.
+
+Snowflake table identifiers are validated as safe unquoted identifiers. Query references must be a
+single `SELECT` or `WITH` statement, previews and full row extraction use bind parameters for limits,
+and local tests verify execution through a mocked Snowflake connection instead of real credentials.
 
 ## Procurement Analytics
 
@@ -303,6 +387,7 @@ Current observability behavior:
 - Agent events include `trace_id`, and node completion/failure/approval-pause events include status and duration timing.
 - Evaluation results are logged as structured observability events with `backend: opentelemetry`.
 - Optional MLflow tracking can mirror evaluation score, pass/fail state, check metrics, run ID, and trace ID when enabled.
+- Optional LangSmith trace review can mirror agent events and evaluation results with run ID, trace ID, graph node ID, agent name, and artifact ID metadata when enabled.
 - `GET /metrics` exposes run counts, run status totals, error totals, artifact count, evaluation count and average score, node retry totals, run duration totals, and node status counts by agent.
 - `AEAI_TRACE_EXPORTER` controls span export: `none` for local trace IDs without export, `console` for local debugging, `otlp_http` for an OTLP/HTTP collector, `otlp_grpc` for an OTLP/gRPC collector, or `disabled` to skip tracing setup.
 
@@ -320,7 +405,7 @@ AEAI_OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318/v1/traces \
 make dev
 ```
 
-Install the optional observability dependencies when exporting to OTLP:
+Install the optional observability dependencies when exporting to OTLP, MLflow, or LangSmith:
 
 ```bash
 pip install ".[observability]"
@@ -342,6 +427,17 @@ AEAI_MLFLOW_TRACKING_ENABLED=true \
 AEAI_MLFLOW_TRACKING_URI=http://localhost:5000 \
 make dev
 ```
+
+LangSmith trace review is disabled locally by default. Enable it by providing an API key and project:
+
+```bash
+AEAI_LANGSMITH_TRACING_ENABLED=true \
+AEAI_LANGSMITH_API_KEY=lsv2_... \
+AEAI_LANGSMITH_PROJECT="Autonomous Enterprise AI OS" \
+make demo
+```
+
+The LangSmith adapter records agent events and evaluation results as reviewable runs. Metadata includes `aeai.run_id`, `aeai.trace_id`, `aeai.graph_node_id`, `aeai.agent_name`, and `aeai.artifact_ids` so a workflow can be traced from planner/orchestrator behavior through generated artifacts and evaluation checks.
 
 ## Run With Docker Compose
 
@@ -382,7 +478,7 @@ src/aeai_os/
   reports/          Markdown report rendering helpers
   schemas/          Shared enums and lightweight DTOs
   security/         Tool permission and approval policy
-  storage/          Artifact path helpers
+  storage/          Artifact storage backends and path helpers
   visualization/    Static dashboard and chart rendering helpers
 tests/              Unit tests for scaffold contracts
 scripts/            Local maintenance and smoke scripts
