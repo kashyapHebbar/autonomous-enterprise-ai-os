@@ -21,7 +21,7 @@ The first vertical slice is a procurement analytics workflow:
 - API-driven workflow execution, approval decisions, failed-node retry, and run inspection
 - OpenTelemetry trace IDs, Prometheus-compatible metrics, and optional MLflow/LangSmith tracking
 - Docker Compose for API, Postgres, Redis, and MinIO
-- Kubernetes starter manifests in `deploy/kubernetes/`
+- Kubernetes baseline manifests for API, worker, local dependencies, probes, and observability
 
 ## Architecture
 
@@ -204,6 +204,19 @@ Open `http://127.0.0.1:8000/run-inspector/runs/${RUN_ID}` to inspect graph nodes
 events, artifact lineage, approval history, evaluation/MLflow status, deployment history, and
 approve/deny or retry actionable nodes.
 
+## Kubernetes Baseline
+
+Validate the Kubernetes manifests locally:
+
+```bash
+make k8s-validate
+```
+
+The baseline in `deploy/kubernetes/` includes the API, workflow worker, Postgres, Redis, MinIO,
+config, secrets, services, health probes, and observability environment variables. See
+[deploy/kubernetes/README.md](deploy/kubernetes/README.md) for kind/minikube deployment and teardown
+steps.
+
 ## Documentation
 
 - Architecture: [docs/architecture.md](docs/architecture.md)
@@ -216,6 +229,7 @@ approve/deny or retry actionable nodes.
 make test
 make smoke
 make demo
+make k8s-validate
 ```
 
 The regression suite covers:
