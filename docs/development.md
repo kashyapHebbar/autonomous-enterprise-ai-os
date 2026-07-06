@@ -207,7 +207,7 @@ Current data behavior:
 - `dataset_reference_from_metadata` distinguishes local file datasets from warehouse-backed table or query references.
 - `WarehouseConnectorRegistry` resolves warehouse adapters by source metadata or URI scheme.
 - `SqliteWarehouseConnector` gives tests and offline demos deterministic preview, schema inspection, grouped aggregate queries, and connector-backed procurement workflow execution.
-- `SnowflakeWarehouseConnector` validates `SNOWFLAKE_*` environment settings and uses parameterized execution calls for Snowflake-backed datasets without requiring real credentials in local tests.
+- `SnowflakeWarehouseConnector` validates `SNOWFLAKE_*` environment settings, applies timeout and row-limit controls, and executes parameterized Snowflake-backed table/query references when the optional warehouse dependency is installed.
 
 Warehouse dataset artifacts can use URI schemes or metadata:
 
@@ -225,9 +225,17 @@ Warehouse dataset artifacts can use URI schemes or metadata:
 }
 ```
 
-SQLite warehouse references can run through data profiling and procurement analytics locally. Snowflake
-references remain behind the connector boundary and fail clearly until `SNOWFLAKE_*` settings and the
-Snowflake connector package are available.
+SQLite warehouse references can run through data profiling and procurement analytics locally.
+Snowflake references use the same adapter contract when `snowflake-connector-python` is installed via
+`pip install ".[warehouse]"` and the required `SNOWFLAKE_*` settings are present. Required settings are
+`SNOWFLAKE_ACCOUNT`, `SNOWFLAKE_USER`, `SNOWFLAKE_PASSWORD`, `SNOWFLAKE_WAREHOUSE`,
+`SNOWFLAKE_DATABASE`, and `SNOWFLAKE_SCHEMA`. Optional settings include `SNOWFLAKE_ROLE`,
+`SNOWFLAKE_CONNECT_TIMEOUT_SECONDS`, `SNOWFLAKE_QUERY_TIMEOUT_SECONDS`, `SNOWFLAKE_ROW_LIMIT`, and
+`SNOWFLAKE_APPLICATION`.
+
+Snowflake table identifiers are validated as safe unquoted identifiers. Query references must be a
+single `SELECT` or `WITH` statement, previews and full row extraction use bind parameters for limits,
+and local tests verify execution through a mocked Snowflake connection instead of real credentials.
 
 ## Procurement Analytics
 
