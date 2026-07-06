@@ -13,7 +13,7 @@ permissions:
 jobs:
   validation:
     name: Lint, test, smoke, demo, and manifests
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, macOS, ARM64, aeai-os]
     timeout-minutes: 20
 
     steps:
