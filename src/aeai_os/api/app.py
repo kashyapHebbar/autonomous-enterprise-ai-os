@@ -20,7 +20,6 @@ def create_app(
     """
     from fastapi import FastAPI
     from fastapi.responses import FileResponse
-    from fastapi.staticfiles import StaticFiles
 
     from aeai_os.api.metrics import build_metrics_router
     from aeai_os.api.runs import build_runs_router
@@ -97,10 +96,16 @@ def create_app(
     def run_inspector_page(run_id: str) -> FileResponse:
         return FileResponse(static_root / "run-inspector.html")
 
-    app.mount(
-        "/run-inspector",
-        StaticFiles(directory=static_root, html=True),
-        name="run-inspector",
-    )
+    @app.get("/run-inspector/{asset_name}", include_in_schema=False)
+    def run_inspector_asset(asset_name: str) -> FileResponse:
+        allowed_assets = {
+            "run-inspector.css",
+            "run-inspector.js",
+        }
+        if asset_name not in allowed_assets:
+            from fastapi import HTTPException, status
+
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+        return FileResponse(static_root / asset_name)
 
     return app
