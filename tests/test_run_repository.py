@@ -76,6 +76,33 @@ def test_repository_updates_run_status(repository):
     assert repository.get_run(run.id) == updated
 
 
+def test_sqlalchemy_repository_survives_recreation(tmp_path):
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'persistent-runs.db'}"
+    first_repository = SQLAlchemyRunRepository.from_url(database_url, create_schema=True)
+    run = first_repository.create_run(
+        "Analyze procurement data.",
+        metadata={"source": "restart-test"},
+        trace_id="trace_restart_check",
+    )
+
+    first_repository.update_status(
+        run_id=run.id,
+        status=RunStatus.FAILED,
+        error_summary="Dataset quality gate failed.",
+    )
+
+    second_repository = SQLAlchemyRunRepository.from_url(database_url, create_schema=False)
+    restored = second_repository.get_run(run.id)
+
+    assert restored.id == run.id
+    assert restored.task == "Analyze procurement data."
+    assert restored.metadata == {"source": "restart-test"}
+    assert restored.trace_id == "trace_restart_check"
+    assert restored.status == RunStatus.FAILED
+    assert restored.error_summary == "Dataset quality gate failed."
+    assert second_repository.list_runs() == [restored]
+
+
 def test_repository_persists_graph_events_evaluations_and_checkpoints(repository):
     run = repository.create_run("Analyze procurement data.")
     created_at = utc_now()

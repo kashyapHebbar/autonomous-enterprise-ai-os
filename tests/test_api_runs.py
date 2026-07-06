@@ -193,6 +193,34 @@ def test_app_can_select_sqlalchemy_run_repository(tmp_path, monkeypatch):
     assert response.json()["status"] == "pending"
 
 
+def test_api_created_sqlalchemy_run_survives_app_recreation(tmp_path, monkeypatch):
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'persistent-runs.db'}"
+    monkeypatch.setenv("AEAI_RUN_REPOSITORY_BACKEND", "sqlalchemy")
+    monkeypatch.setenv("AEAI_RUN_REPOSITORY_CREATE_SCHEMA", "true")
+    monkeypatch.setenv("AEAI_DATABASE_URL", database_url)
+
+    first_client = TestClient(create_app(artifact_root=tmp_path / "artifacts"))
+    create_response = first_client.post(
+        "/runs",
+        json={
+            "task": "Analyze procurement spend.",
+            "metadata": {"source": "restart-test"},
+        },
+    )
+    run_id = create_response.json()["id"]
+
+    second_client = TestClient(create_app(artifact_root=tmp_path / "artifacts"))
+    lookup_response = second_client.get(f"/runs/{run_id}")
+    list_response = second_client.get("/runs")
+
+    assert create_response.status_code == 201
+    assert lookup_response.status_code == 200
+    assert lookup_response.json()["id"] == run_id
+    assert lookup_response.json()["task"] == "Analyze procurement spend."
+    assert lookup_response.json()["metadata"] == {"source": "restart-test"}
+    assert any(run["id"] == run_id for run in list_response.json())
+
+
 def test_create_run_and_fetch_status(tmp_path):
     client = build_client(tmp_path)
 

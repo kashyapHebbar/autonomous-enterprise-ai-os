@@ -234,7 +234,9 @@ The in-memory repository remains the default local checkpoint backend. Set
 `AEAI_RUN_REPOSITORY_BACKEND=sqlalchemy` and `AEAI_DATABASE_URL` to use the durable SQLAlchemy
 repository against Postgres or SQLite-compatible test databases. The SQLAlchemy backend persists
 runs, workflow jobs, graph nodes, artifacts, agent events, evaluations, and checkpoints behind the
-same repository contract.
+same repository contract. `AEAI_RUN_REPOSITORY_CREATE_SCHEMA=true` lets the API and worker create
+the repository tables automatically for local, Compose, and demo environments; set it to `false`
+when a production database is managed by explicit migrations.
 
 ## Distributed Workflow Queue
 
@@ -495,10 +497,11 @@ Services:
 - MinIO API: `http://localhost:9000`
 - MinIO console: `http://localhost:9001`
 
-The API uses the in-memory run repository unless configured otherwise. To persist run state in the
-Compose Postgres service, set `AEAI_RUN_REPOSITORY_BACKEND=sqlalchemy` and
-`AEAI_DATABASE_URL=postgresql+psycopg://aeai:aeai_password@postgres:5432/aeai_os` in the service
-environment before starting the API.
+Docker Compose configures the API and workflow worker with `AEAI_RUN_REPOSITORY_BACKEND=sqlalchemy`,
+`AEAI_RUN_REPOSITORY_CREATE_SCHEMA=true`, and
+`AEAI_DATABASE_URL=postgresql+psycopg://aeai:aeai_password@postgres:5432/aeai_os`, so API-created
+runs survive API and worker restarts while the `postgres_data` volume exists. Use
+`docker compose down -v` only when you intentionally want to delete that local run state.
 
 Stop services:
 

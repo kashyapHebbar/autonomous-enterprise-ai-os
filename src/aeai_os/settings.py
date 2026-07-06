@@ -27,6 +27,7 @@ class AppSettings:
     auth_local_user_id: str = "local-dev"
     auth_local_user_name: str = "Local Developer"
     auth_local_roles: str = "admin"
+    run_repository_create_schema: bool = True
 
 
 def get_settings() -> AppSettings:
@@ -55,6 +56,10 @@ def get_settings() -> AppSettings:
             os.getenv("MINIO_SECRET_KEY", ""),
         ),
         run_repository_backend=os.getenv("AEAI_RUN_REPOSITORY_BACKEND", "memory"),
+        run_repository_create_schema=_parse_bool(
+            os.getenv("AEAI_RUN_REPOSITORY_CREATE_SCHEMA"),
+            default=True,
+        ),
         database_url=os.getenv(
             "AEAI_DATABASE_URL",
             "postgresql+psycopg://aeai:aeai_password@postgres:5432/aeai_os",

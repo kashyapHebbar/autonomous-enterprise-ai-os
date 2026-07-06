@@ -19,5 +19,11 @@ def build_health_payload(settings: AppSettings | None = None) -> dict:
                 "status": "ok",
                 "backend": settings.artifact_storage_backend,
             },
+            {
+                "name": "run_repository",
+                "status": "ok",
+                "backend": settings.run_repository_backend,
+                "create_schema": settings.run_repository_create_schema,
+            },
         ],
     }

@@ -9,4 +9,18 @@ def test_health_payload_has_expected_shape():
     assert payload["status"] == "ok"
 
     component_names = {component["name"] for component in payload["components"]}
-    assert {"api", "orchestrator", "agent_registry", "artifact_store"} <= component_names
+    assert {
+        "api",
+        "orchestrator",
+        "agent_registry",
+        "artifact_store",
+        "run_repository",
+    } <= component_names
+
+    run_repository = next(
+        component
+        for component in payload["components"]
+        if component["name"] == "run_repository"
+    )
+    assert run_repository["backend"] == "memory"
+    assert run_repository["create_schema"] is True
