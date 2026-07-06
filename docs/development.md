@@ -22,9 +22,9 @@ make install
 ## Run Checks
 
 ```bash
-make smoke
-make test
 make lint
+make test
+make smoke
 make demo
 make k8s-validate
 ```
@@ -32,6 +32,10 @@ make k8s-validate
 `make smoke` only uses the Python standard library and verifies the scaffold shape plus the health payload.
 `make demo` runs the end-to-end procurement agent workflow and writes generated artifacts under
 `artifacts/procurement_demo/<run_id>/`.
+
+GitHub Actions runs the same validation sequence on every pull request and push to `main`.
+The CI workflow installs the development dependencies with `make install` and runs the five checks
+above.
 
 ## Run The API Locally
 
