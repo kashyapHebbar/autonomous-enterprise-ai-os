@@ -15,27 +15,17 @@ jobs:
     name: Lint, test, smoke, demo, and manifests
     runs-on: [self-hosted, macOS, ARM64, aeai-os]
     timeout-minutes: 20
-    env:
-      AGENT_TOOLSDIRECTORY: /Users/kashyaphebbar/actions-runner-aeai-os/_tool
-      RUNNER_TOOL_CACHE: /Users/kashyaphebbar/actions-runner-aeai-os/_tool
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Prepare runner tool cache
-        run: mkdir -p "$AGENT_TOOLSDIRECTORY"
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: pip
-          cache-dependency-path: pyproject.toml
+      - name: Verify Python
+        run: python3.11 --version
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
+          python3.11 -m pip install --upgrade pip
           make install
 
       - name: Lint
