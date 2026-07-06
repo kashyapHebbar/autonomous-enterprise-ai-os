@@ -25,3 +25,6 @@ dist/
 
 # Local Docker volumes and compose overrides
 docker-compose.override.yml
+
+# Local GitHub Actions self-hosted runner
+/actions-runner/
