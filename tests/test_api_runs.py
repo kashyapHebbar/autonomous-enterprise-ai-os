@@ -139,9 +139,11 @@ def test_run_inspector_page_is_served(tmp_path):
     assert "Run Inspector" in response.text
     assert "/run-inspector/run-inspector.js" in response.text
     assert 'id="actionText"' in response.text
+    assert 'id="approvalHistory"' in response.text
+    assert 'id="deploymentHistory"' in response.text
 
 
-def test_run_inspector_script_exposes_approval_and_retry_controls(tmp_path):
+def test_run_inspector_script_exposes_detail_approval_and_retry_controls(tmp_path):
     client = build_client(tmp_path)
 
     response = client.get("/run-inspector/run-inspector.js")
@@ -155,6 +157,11 @@ def test_run_inspector_script_exposes_approval_and_retry_controls(tmp_path):
     assert "/graph-nodes/${encodedNodeId}/approval" in response.text
     assert "/graph-nodes/${encodedNodeId}/retry" in response.text
     assert "/deployments/${encodedJobId}/approval" in response.text
+    assert "/artifacts/${encodeURIComponent(artifact.id)}/lineage" in response.text
+    assert "renderApprovalHistory" in response.text
+    assert "renderDeploymentHistory" in response.text
+    assert "mlflow_status" in response.text
+    assert "Source artifacts" in response.text
 
 
 def test_create_run_rejects_blank_task(tmp_path):
