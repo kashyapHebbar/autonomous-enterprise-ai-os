@@ -12,7 +12,9 @@ from aeai_os.api.run_schemas import (
     ArtifactLineageResponse,
     ArtifactResponse,
     AttachDatasetReferenceRequest,
+    CreateDeploymentRequest,
     CreateRunRequest,
+    DeploymentApprovalDecisionRequest,
     EvaluationResponse,
     GraphNodeResponse,
     RunDetailResponse,
@@ -32,6 +34,11 @@ from aeai_os.api.run_schemas import (
     workflow_job_to_response,
 )
 from aeai_os.artifacts import ArtifactLineageService
+from aeai_os.deployments import (
+    DeploymentApprovalError,
+    decide_deployment_approval,
+    request_deployment_approval,
+)
 from aeai_os.orchestration.service import OrchestrationError, OrchestrationResult
 from aeai_os.runs.repository import (
     ArtifactNotFoundError,
@@ -154,6 +161,59 @@ def build_runs_router(
                 detail=f"Workflow job not found for run: {job_id}",
             )
         return workflow_job_to_response(job)
+
+    @router.post(
+        "/{run_id}/deployments",
+        response_model=WorkflowJobResponse,
+        status_code=status.HTTP_202_ACCEPTED,
+    )
+    def create_deployment_request(
+        run_id: str,
+        request: Annotated[CreateDeploymentRequest, Body(...)],
+    ) -> WorkflowJobResponse:
+        _get_run_or_404(repository, run_id)
+        try:
+            job = request_deployment_approval(
+                repository,
+                run_id=run_id,
+                artifact_ids=request.artifact_ids,
+                destination=request.destination,
+                requested_by=request.requested_by,
+                rationale=request.rationale,
+                metadata=request.metadata,
+            )
+        except ArtifactNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        except DeploymentApprovalError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        return workflow_job_to_response(job)
+
+    @router.post(
+        "/{run_id}/deployments/{job_id}/approval",
+        response_model=WorkflowJobResponse,
+    )
+    def decide_deployment_request(
+        run_id: str,
+        job_id: str,
+        request: Annotated[DeploymentApprovalDecisionRequest, Body(...)],
+    ) -> WorkflowJobResponse:
+        _get_run_or_404(repository, run_id)
+        try:
+            result = decide_deployment_approval(
+                repository,
+                run_id=run_id,
+                job_id=job_id,
+                approved=request.approved,
+                approver=request.approver,
+                rationale=request.rationale,
+            )
+        except WorkflowJobNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        except ArtifactNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        except DeploymentApprovalError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        return workflow_job_to_response(result.job)
 
     @router.get("/{run_id}/graph-nodes", response_model=list[GraphNodeResponse])
     def list_graph_nodes(run_id: str) -> list[GraphNodeResponse]:

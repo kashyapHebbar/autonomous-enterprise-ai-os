@@ -459,6 +459,7 @@ class OrchestratorService:
                 "message": "Node execution completed.",
                 "summary": output.summary,
                 "status": GraphNodeStatus.COMPLETED.value,
+                "artifacts": list(output.artifacts),
                 "duration_ms": _node_duration_ms(node),
                 "timestamp": utc_now().isoformat(),
             },

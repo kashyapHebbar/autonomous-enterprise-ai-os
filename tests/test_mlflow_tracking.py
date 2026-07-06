@@ -145,6 +145,7 @@ def test_repository_evaluation_event_records_disabled_mlflow_status():
     )
     assert evaluation_event.payload["backend"] == "opentelemetry"
     assert evaluation_event.payload["mlflow_status"] == "disabled"
+    assert evaluation_event.payload["langsmith_status"] == "disabled"
 
 
 def test_repository_evaluation_logs_to_mlflow_when_enabled(monkeypatch):
@@ -173,6 +174,7 @@ def test_repository_evaluation_logs_to_mlflow_when_enabled(monkeypatch):
         if event.event_type == AgentEventType.EVALUATION
     )
     assert evaluation_event.payload["mlflow_status"] == "logged"
+    assert evaluation_event.payload["langsmith_status"] == "disabled"
     assert fake_mlflow.tracking_uri == "file:./artifacts/mlruns"
     assert fake_mlflow.experiment_name == "AEAI Repository Tests"
     assert fake_mlflow.params["aeai.run_id"] == run.id

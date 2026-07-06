@@ -9,6 +9,10 @@ from uuid import uuid4
 from sqlalchemy import Engine, create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
+from aeai_os.observability.langsmith_tracking import (
+    log_agent_event_to_langsmith,
+    log_evaluation_to_langsmith,
+)
 from aeai_os.observability.mlflow_tracking import log_evaluation_to_mlflow
 from aeai_os.observability.tracing import ensure_trace_id, start_span
 from aeai_os.runs.models import (
@@ -129,12 +133,15 @@ class SQLAlchemyRunRepository:
         payload: dict[str, Any] | None = None,
         max_attempts: int = 3,
         job_id: str | None = None,
+        status: WorkflowJobStatus = WorkflowJobStatus.QUEUED,
     ) -> WorkflowJobRecord:
         normalized_workflow = workflow_name.strip()
         if not normalized_workflow:
             raise ValueError("Workflow name is required.")
         if max_attempts < 1:
             raise ValueError("Workflow job max_attempts must be at least 1.")
+        if status == WorkflowJobStatus.RUNNING:
+            raise ValueError("Workflow jobs cannot be enqueued directly as running.")
 
         with self._session_factory() as session:
             _get_run_model(session, run_id)
@@ -143,7 +150,7 @@ class SQLAlchemyRunRepository:
                 id=job_id or f"job_{uuid4().hex}",
                 run_id=run_id,
                 workflow_name=normalized_workflow,
-                status=WorkflowJobStatus.QUEUED.value,
+                status=status.value,
                 payload=deepcopy(payload or {}),
                 attempt_count=0,
                 max_attempts=max_attempts,
@@ -151,6 +158,28 @@ class SQLAlchemyRunRepository:
                 updated_at=now,
             )
             session.add(model)
+            session.commit()
+            return _workflow_job_from_model(model)
+
+    def update_workflow_job_result(
+        self,
+        job_id: str,
+        status: WorkflowJobStatus,
+        payload: dict[str, Any] | None = None,
+        error_summary: str | None = None,
+    ) -> WorkflowJobRecord:
+        if status not in {WorkflowJobStatus.COMPLETED, WorkflowJobStatus.FAILED}:
+            raise ValueError("Workflow job result status must be completed or failed.")
+
+        with self._session_factory() as session:
+            model = _get_workflow_job_model(session, job_id)
+            now = utc_now()
+            model.status = status.value
+            if payload is not None:
+                model.payload = deepcopy(payload)
+            model.error_summary = error_summary
+            model.updated_at = now
+            model.finished_at = now
             session.commit()
             return _workflow_job_from_model(model)
 
@@ -335,7 +364,8 @@ class SQLAlchemyRunRepository:
 
     def add_event(self, event: AgentEventRecord) -> AgentEventRecord:
         with self._session_factory() as session:
-            _get_run_model(session, event.run_id)
+            run = _run_from_model(_get_run_model(session, event.run_id))
+            log_agent_event_to_langsmith(run=run, event=event)
             model = AgentEventModel(
                 id=event.id,
                 run_id=event.run_id,
@@ -390,11 +420,17 @@ class SQLAlchemyRunRepository:
                     run=run_record,
                     evaluation=record,
                 )
+                langsmith_result = log_evaluation_to_langsmith(
+                    run=run_record,
+                    evaluation=record,
+                )
                 event_record = _evaluation_event(
                     record=record,
                     trace_id=run_record.trace_id,
                     mlflow_status=mlflow_result.status,
                     mlflow_message=mlflow_result.message,
+                    langsmith_status=langsmith_result.status,
+                    langsmith_message=langsmith_result.message,
                 )
                 event = AgentEventModel(
                     id=event_record.id,
