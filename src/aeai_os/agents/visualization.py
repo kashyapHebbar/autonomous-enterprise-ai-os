@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from aeai_os.agents.base import AgentInput, AgentOutput
 from aeai_os.runs.models import ArtifactRecord
 from aeai_os.runs.repository import ArtifactNotFoundError, InMemoryRunRepository
 from aeai_os.schemas.enums import AgentEventType, ArtifactType
+from aeai_os.storage import ArtifactStorageError, ArtifactStore, LocalArtifactStore
 from aeai_os.visualization import (
     VisualizationError,
     build_procurement_chart_specs,
@@ -18,33 +18,39 @@ from aeai_os.visualization import (
 class VisualizationAgent:
     agent_type = "visualization"
 
-    def __init__(self, repository: InMemoryRunRepository, artifact_root: str | Path) -> None:
+    def __init__(
+        self,
+        repository: InMemoryRunRepository,
+        artifact_root: str | Path,
+        artifact_store: ArtifactStore | None = None,
+    ) -> None:
         self._repository = repository
-        self._artifact_root = Path(artifact_root)
+        self._artifact_store = artifact_store or LocalArtifactStore(artifact_root)
 
     def execute(self, agent_input: AgentInput) -> AgentOutput:
         try:
             kpi_artifact = self._resolve_kpi_artifact(agent_input)
-            analysis = json.loads(Path(kpi_artifact.uri).read_text(encoding="utf-8"))
+            analysis = self._artifact_store.read_json(kpi_artifact.uri)
             charts = build_procurement_chart_specs(analysis)
             if len(charts) < 4:
                 raise VisualizationError("Dashboard requires at least four chart specs.")
 
-            output_dir = self._artifact_root / agent_input.run_id / agent_input.node_id
-            output_dir.mkdir(parents=True, exist_ok=True)
-
             chart_artifacts: list[ArtifactRecord] = []
             for chart in charts:
-                chart_path = output_dir / f"{chart.slug}.html"
-                chart_path.write_text(
-                    render_chart_document(chart, source_artifact_id=kpi_artifact.id),
-                    encoding="utf-8",
+                chart_artifact_id = self._repository.next_artifact_id()
+                chart_payload = self._artifact_store.write_text(
+                    run_id=agent_input.run_id,
+                    node_id=agent_input.node_id,
+                    filename=f"{chart.slug}.html",
+                    payload=render_chart_document(chart, source_artifact_id=kpi_artifact.id),
+                    content_type="text/html; charset=utf-8",
                 )
                 chart_artifacts.append(
                     self._repository.add_artifact(
                         run_id=agent_input.run_id,
                         artifact_type=ArtifactType.CHART,
-                        uri=str(chart_path),
+                        artifact_id=chart_artifact_id,
+                        uri=chart_payload.uri,
                         metadata={
                             "source": "visualization_agent",
                             "format": "html",
@@ -52,31 +58,37 @@ class VisualizationAgent:
                             "chart_type": chart.chart_type,
                             "title": chart.title,
                             "data_points": len(chart.data),
+                            **chart_payload.metadata,
                         },
                         source_artifact_ids=[kpi_artifact.id],
                         producer_node_id=agent_input.node_id,
                     )
                 )
 
-            dashboard_path = output_dir / "procurement_dashboard.html"
-            dashboard_path.write_text(
-                render_dashboard_document(
+            dashboard_artifact_id = self._repository.next_artifact_id()
+            dashboard_payload = self._artifact_store.write_text(
+                run_id=agent_input.run_id,
+                node_id=agent_input.node_id,
+                filename="procurement_dashboard.html",
+                payload=render_dashboard_document(
                     analysis=analysis,
                     charts=charts,
                     source_artifact_id=kpi_artifact.id,
                     chart_artifact_ids=[artifact.id for artifact in chart_artifacts],
                 ),
-                encoding="utf-8",
+                content_type="text/html; charset=utf-8",
             )
             dashboard_artifact = self._repository.add_artifact(
                 run_id=agent_input.run_id,
                 artifact_type=ArtifactType.DASHBOARD,
-                uri=str(dashboard_path),
+                artifact_id=dashboard_artifact_id,
+                uri=dashboard_payload.uri,
                 metadata={
                     "source": "visualization_agent",
                     "format": "html",
                     "chart_count": len(chart_artifacts),
                     "title": "Procurement Dashboard",
+                    **dashboard_payload.metadata,
                 },
                 source_artifact_ids=[
                     kpi_artifact.id,
@@ -87,9 +99,10 @@ class VisualizationAgent:
         except (
             VisualizationError,
             ArtifactNotFoundError,
+            ArtifactStorageError,
             KeyError,
             OSError,
-            json.JSONDecodeError,
+            ValueError,
         ) as exc:
             return AgentOutput(
                 status="failed",

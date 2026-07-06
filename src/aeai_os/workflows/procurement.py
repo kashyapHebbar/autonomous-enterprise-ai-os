@@ -11,6 +11,7 @@ from aeai_os.agents.report import ReportAgent
 from aeai_os.agents.visualization import VisualizationAgent
 from aeai_os.orchestration.service import OrchestrationResult, OrchestratorService
 from aeai_os.runs.repository import InMemoryRunRepository, RunNotFoundError
+from aeai_os.storage import ArtifactStore, LocalArtifactStore
 
 
 class ProcurementWorkflowError(RuntimeError):
@@ -21,6 +22,7 @@ def execute_procurement_workflow(
     repository: InMemoryRunRepository,
     artifact_root: str | Path,
     run_id: str,
+    artifact_store: ArtifactStore | None = None,
 ) -> OrchestrationResult:
     try:
         run = repository.get_run(run_id)
@@ -41,24 +43,48 @@ def execute_procurement_workflow(
     except PlannerValidationError as exc:
         raise ProcurementWorkflowError(str(exc)) from exc
 
-    return build_procurement_orchestrator(repository, artifact_root).execute_run(
-        run.id, plan.to_execution_graph()
-    )
+    return build_procurement_orchestrator(
+        repository,
+        artifact_root,
+        artifact_store=artifact_store,
+    ).execute_run(run.id, plan.to_execution_graph())
 
 
 def build_procurement_orchestrator(
     repository: InMemoryRunRepository,
     artifact_root: str | Path,
+    artifact_store: ArtifactStore | None = None,
 ) -> OrchestratorService:
     artifact_root = Path(artifact_root)
+    artifact_store = artifact_store or LocalArtifactStore(artifact_root)
     return OrchestratorService(
         repository=repository,
         registry=build_default_registry(),
         agents={
-            "data_retrieval": DataRetrievalAgent(repository, artifact_root),
-            "analytics_code": AnalyticsCodeAgent(repository, artifact_root),
-            "visualization": VisualizationAgent(repository, artifact_root),
-            "report": ReportAgent(repository, artifact_root),
-            "evaluation": EvaluationAgent(repository, artifact_root),
+            "data_retrieval": DataRetrievalAgent(
+                repository,
+                artifact_root,
+                artifact_store=artifact_store,
+            ),
+            "analytics_code": AnalyticsCodeAgent(
+                repository,
+                artifact_root,
+                artifact_store=artifact_store,
+            ),
+            "visualization": VisualizationAgent(
+                repository,
+                artifact_root,
+                artifact_store=artifact_store,
+            ),
+            "report": ReportAgent(
+                repository,
+                artifact_root,
+                artifact_store=artifact_store,
+            ),
+            "evaluation": EvaluationAgent(
+                repository,
+                artifact_root,
+                artifact_store=artifact_store,
+            ),
         },
     )

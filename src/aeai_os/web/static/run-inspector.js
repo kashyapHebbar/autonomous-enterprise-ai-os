@@ -18,7 +18,9 @@ const els = {
   workflowJobs: document.querySelector("#workflowJobs"),
   timeline: document.querySelector("#timeline"),
   artifacts: document.querySelector("#artifacts"),
+  approvalHistory: document.querySelector("#approvalHistory"),
   evaluations: document.querySelector("#evaluations"),
+  deploymentHistory: document.querySelector("#deploymentHistory"),
   events: document.querySelector("#events"),
 };
 
@@ -69,7 +71,10 @@ function formatDate(value) {
 }
 
 function pillClass(status) {
-  return `mini-pill status-${String(status || "").replaceAll("_", "-")}`;
+  return `mini-pill status-${String(status || "")
+    .toLowerCase()
+    .replaceAll("_", "-")
+    .replaceAll(" ", "-")}`;
 }
 
 function renderEmpty(label) {
@@ -81,6 +86,74 @@ function renderMeta(parts) {
     .filter((part) => part !== null && part !== undefined && part !== "")
     .map((part) => `<span>${escapeHtml(part)}</span>`)
     .join("")}</div>`;
+}
+
+function renderKeyValues(value, emptyLabel = "No metadata recorded.") {
+  const entries = Object.entries(value || {}).filter(([, item]) => item !== null && item !== "");
+  if (!entries.length) {
+    return `<p class="detail-empty">${escapeHtml(emptyLabel)}</p>`;
+  }
+  return `<dl class="detail-grid">${entries
+    .map(
+      ([key, item]) => `
+        <div>
+          <dt>${escapeHtml(key)}</dt>
+          <dd>${escapeHtml(formatDetailValue(item))}</dd>
+        </div>`
+    )
+    .join("")}</dl>`;
+}
+
+function renderIdChips(ids, emptyLabel = "none", linkArtifacts = false) {
+  if (!ids || !ids.length) {
+    return `<span>${escapeHtml(emptyLabel)}</span>`;
+  }
+  return `<span class="chip-row">${ids
+    .map((id) =>
+      linkArtifacts
+        ? `<a class="id-chip" href="#${artifactElementId(id)}">${escapeHtml(id)}</a>`
+        : `<code class="id-chip">${escapeHtml(id)}</code>`
+    )
+    .join("")}</span>`;
+}
+
+function formatDetailValue(value) {
+  if (Array.isArray(value)) {
+    return value.join(", ");
+  }
+  if (typeof value === "object" && value !== null) {
+    return JSON.stringify(value);
+  }
+  return value;
+}
+
+function artifactLineage(artifactId) {
+  return state.data.lineageByArtifactId[artifactId] || null;
+}
+
+function artifactElementId(artifactId) {
+  return `artifact-${String(artifactId).replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+}
+
+function approvalEvents() {
+  return state.data.events.filter((event) =>
+    ["approval_request", "approval_decision"].includes(event.event_type)
+  );
+}
+
+function evaluationEventById(evaluationId) {
+  return state.data.events.find(
+    (event) =>
+      event.event_type === "evaluation" && event.payload.evaluation_id === evaluationId
+  );
+}
+
+function deploymentJobs() {
+  return state.data.jobs.filter((job) => job.workflow_name === "deployment");
+}
+
+function deploymentArtifacts() {
+  return state.data.run.artifacts.filter((artifact) => artifact.type === "deployment");
 }
 
 function setActionStatus(message, kind = "idle") {
@@ -143,6 +216,35 @@ function renderNodeActions(node) {
   return "";
 }
 
+function renderDeploymentJobActions(job) {
+  if (job.workflow_name !== "deployment" || job.status !== "waiting_for_approval") {
+    return "";
+  }
+
+  const escapedJobId = escapeHtml(job.id);
+  const pending =
+    state.pendingAction !== null && state.pendingAction.jobId === job.id
+      ? state.pendingAction.action
+      : null;
+  const disabled = pending ? " disabled" : "";
+
+  return `
+    <div class="node-actions" aria-label="Deployment actions for ${escapedJobId}">
+      <button
+        class="node-action action-approve"
+        data-deployment-action="approve"
+        data-job-id="${escapedJobId}"
+        type="button"${disabled}
+      >${pending === "approve" ? "Approving" : "Approve"}</button>
+      <button
+        class="node-action action-deny"
+        data-deployment-action="deny"
+        data-job-id="${escapedJobId}"
+        type="button"${disabled}
+      >${pending === "deny" ? "Denying" : "Deny"}</button>
+    </div>`;
+}
+
 function renderNodes() {
   const nodes = state.data.graphNodes;
   els.graphNodes.innerHTML = nodes.length
@@ -188,6 +290,7 @@ function renderJobs() {
                 job.worker_id ? `worker ${job.worker_id}` : null,
               ])}
               ${job.error_summary ? renderMeta([job.error_summary]) : ""}
+              ${renderDeploymentJobActions(job)}
             </article>`
         )
         .join("")
@@ -224,17 +327,67 @@ function renderArtifacts() {
   els.artifacts.innerHTML = artifacts.length
     ? artifacts
         .map(
-          (artifact) => `
-            <article class="compact-item">
+          (artifact) => {
+            const lineage = artifactLineage(artifact.id);
+            const upstream = lineage ? lineage.upstream_artifacts.map((item) => item.id) : [];
+            return `
+            <article class="compact-item" id="${artifactElementId(artifact.id)}">
               <div class="compact-main">
                 <strong>${escapeHtml(artifact.type)}</strong>
                 <span class="mini-pill">${escapeHtml(artifact.producer_node_id || "input")}</span>
               </div>
-              ${renderMeta([artifact.id, artifact.uri])}
-            </article>`
+              ${renderMeta([
+                artifact.id,
+                artifact.uri,
+                `created ${formatDate(artifact.created_at)}`,
+              ])}
+              <div class="detail-block">
+                <strong>Source artifacts</strong>
+                ${renderIdChips(artifact.source_artifact_ids, "none", true)}
+              </div>
+              <div class="detail-block">
+                <strong>Lineage</strong>
+                ${renderIdChips(upstream, "none", true)}
+              </div>
+              <details>
+                <summary>Metadata</summary>
+                ${renderKeyValues(artifact.metadata)}
+              </details>
+            </article>`;
+          }
         )
         .join("")
     : renderEmpty("No artifacts recorded.");
+}
+
+function renderApprovalHistory() {
+  const approvals = approvalEvents();
+  els.approvalHistory.innerHTML = approvals.length
+    ? approvals
+        .slice()
+        .reverse()
+        .map((event) => {
+          const decision = event.payload.decision || (event.event_type === "approval_request" ? "pending" : "");
+          const actor = event.payload.approver || event.payload.requested_by || "system";
+          return `
+            <article class="compact-item">
+              <div class="compact-main">
+                <strong>${escapeHtml(event.payload.message || event.event_type)}</strong>
+                <span class="${pillClass(decision || event.event_type)}">
+                  ${escapeHtml(decision || event.event_type)}
+                </span>
+              </div>
+              ${renderMeta([
+                `actor ${actor}`,
+                event.node_id ? `node ${event.node_id}` : null,
+                event.payload.workflow_job_id ? `job ${event.payload.workflow_job_id}` : null,
+                formatDate(event.created_at),
+              ])}
+              ${event.payload.rationale ? renderMeta([event.payload.rationale]) : ""}
+            </article>`;
+        })
+        .join("")
+    : renderEmpty("No approvals recorded.");
 }
 
 function renderEvaluations() {
@@ -242,7 +395,11 @@ function renderEvaluations() {
   els.evaluations.innerHTML = evaluations.length
     ? evaluations
         .map(
-          (evaluation) => `
+          (evaluation) => {
+            const event = evaluationEventById(evaluation.id);
+            const mlflowStatus = event?.payload?.mlflow_status || "not recorded";
+            const langsmithStatus = event?.payload?.langsmith_status || null;
+            return `
             <article class="compact-item">
               <div class="compact-main">
                 <strong>${escapeHtml(evaluation.id)}</strong>
@@ -255,10 +412,80 @@ function renderEvaluations() {
                 evaluation.target_artifact_id ? `artifact ${evaluation.target_artifact_id}` : null,
                 `${evaluation.checks.length} checks`,
               ])}
-            </article>`
+              ${renderMeta([
+                `MLflow ${mlflowStatus}`,
+                langsmithStatus ? `LangSmith ${langsmithStatus}` : null,
+              ])}
+              <details>
+                <summary>Checks</summary>
+                ${renderKeyValues(
+                  Object.fromEntries(
+                    evaluation.checks.map((check, index) => [
+                      check.name || `check_${index + 1}`,
+                      `${check.passed ? "passed" : "failed"} (${check.score ?? "n/a"})`,
+                    ])
+                  ),
+                  "No evaluation checks recorded."
+                )}
+              </details>
+            </article>`;
+          }
         )
         .join("")
     : renderEmpty("No evaluations recorded.");
+}
+
+function renderDeploymentHistory() {
+  const jobs = deploymentJobs();
+  const artifacts = deploymentArtifacts();
+  const items = [
+    ...jobs.map((job) => ({ kind: "job", item: job })),
+    ...artifacts.map((artifact) => ({ kind: "artifact", item: artifact })),
+  ];
+  els.deploymentHistory.innerHTML = items.length
+    ? items
+        .map(({ kind, item }) => {
+          if (kind === "artifact") {
+            return `
+              <article class="compact-item">
+                <div class="compact-main">
+                  <strong>${escapeHtml(item.id)}</strong>
+                  <span class="${pillClass(item.metadata.deployment_status || "completed")}">
+                    ${escapeHtml(item.metadata.deployment_status || "completed")}
+                  </span>
+                </div>
+                ${renderMeta([
+                  item.metadata.destination,
+                  item.metadata.approved_by ? `approved by ${item.metadata.approved_by}` : null,
+                  `created ${formatDate(item.created_at)}`,
+                ])}
+                <div class="detail-block">
+                  <strong>Promoted artifacts</strong>
+                  ${renderIdChips(item.source_artifact_ids, "none", true)}
+                </div>
+              </article>`;
+          }
+          const approval = item.payload.approval || {};
+          return `
+            <article class="compact-item">
+              <div class="compact-main">
+                <strong>${escapeHtml(item.id)}</strong>
+                <span class="${pillClass(item.status)}">${escapeHtml(item.status)}</span>
+              </div>
+              ${renderMeta([
+                item.payload.destination,
+                item.payload.requested_by ? `requested by ${item.payload.requested_by}` : null,
+                approval.approver ? `decided by ${approval.approver}` : null,
+              ])}
+              <div class="detail-block">
+                <strong>Artifacts</strong>
+                ${renderIdChips(item.payload.artifact_ids || [], "none", true)}
+              </div>
+              ${approval.rationale ? renderMeta([approval.rationale]) : ""}
+            </article>`;
+        })
+        .join("")
+    : renderEmpty("No deployment history recorded.");
 }
 
 function renderEvents() {
@@ -288,7 +515,9 @@ function renderAll() {
   renderJobs();
   renderTimeline();
   renderArtifacts();
+  renderApprovalHistory();
   renderEvaluations();
+  renderDeploymentHistory();
   renderEvents();
 }
 
@@ -316,6 +545,23 @@ async function submitNodeAction(nodeId, action) {
   throw new Error(`Unsupported node action: ${action}`);
 }
 
+async function submitDeploymentAction(jobId, action) {
+  const encodedRunId = encodeURIComponent(state.runId);
+  const encodedJobId = encodeURIComponent(jobId);
+  return requestJson(`/runs/${encodedRunId}/deployments/${encodedJobId}/approval`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      approved: action === "approve",
+      approver: "Run Inspector",
+      rationale:
+        action === "approve"
+          ? "Deployment approved from run inspector."
+          : "Deployment denied from run inspector.",
+    }),
+  });
+}
+
 function actionSuccessMessage(nodeId, action) {
   if (action === "approve") {
     return `Approved ${nodeId}.`;
@@ -324,6 +570,12 @@ function actionSuccessMessage(nodeId, action) {
     return `Denied ${nodeId}.`;
   }
   return `Retried ${nodeId}.`;
+}
+
+function deploymentActionSuccessMessage(jobId, action) {
+  return action === "approve"
+    ? `Approved deployment ${jobId}.`
+    : `Denied deployment ${jobId}.`;
 }
 
 async function handleNodeAction(event) {
@@ -352,6 +604,32 @@ async function handleNodeAction(event) {
   }
 }
 
+async function handleDeploymentAction(event) {
+  const button = event.target.closest("[data-deployment-action]");
+  if (!button) {
+    return;
+  }
+
+  const jobId = button.dataset.jobId;
+  const action = button.dataset.deploymentAction;
+  state.pendingAction = { jobId, action };
+  setActionStatus("", "idle");
+  renderJobs();
+
+  try {
+    await submitDeploymentAction(jobId, action);
+    setActionStatus(deploymentActionSuccessMessage(jobId, action), "success");
+    await loadRun();
+  } catch (error) {
+    setActionStatus(error.message, "error");
+  } finally {
+    state.pendingAction = null;
+    if (state.data) {
+      renderJobs();
+    }
+  }
+}
+
 async function loadRun() {
   if (!state.runId) {
     els.taskText.textContent = "Run ID missing.";
@@ -366,7 +644,8 @@ async function loadRun() {
       fetchJson(`/runs/${encodeURIComponent(state.runId)}/events`),
       fetchJson(`/runs/${encodeURIComponent(state.runId)}/timeline`),
     ]);
-    state.data = { run, jobs, graphNodes, events, timeline };
+    const lineageByArtifactId = await loadArtifactLineage(run);
+    state.data = { run, jobs, graphNodes, events, timeline, lineageByArtifactId };
     renderAll();
   } catch (error) {
     els.runTitle.textContent = state.runId;
@@ -377,6 +656,24 @@ async function loadRun() {
   }
 }
 
+async function loadArtifactLineage(run) {
+  const encodedRunId = encodeURIComponent(state.runId);
+  const entries = await Promise.all(
+    run.artifacts.map(async (artifact) => {
+      try {
+        const lineage = await fetchJson(
+          `/runs/${encodedRunId}/artifacts/${encodeURIComponent(artifact.id)}/lineage`
+        );
+        return [artifact.id, lineage];
+      } catch {
+        return [artifact.id, null];
+      }
+    })
+  );
+  return Object.fromEntries(entries);
+}
+
 els.graphNodes.addEventListener("click", handleNodeAction);
+els.workflowJobs.addEventListener("click", handleDeploymentAction);
 
 loadRun();

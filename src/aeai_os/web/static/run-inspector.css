@@ -82,7 +82,9 @@ body {
 }
 
 .status-completed,
-.status-passed {
+.status-passed,
+.status-approved,
+.status-logged {
   border-color: rgba(35, 116, 92, 0.28);
   background: rgba(35, 116, 92, 0.1);
   color: var(--green);
@@ -90,13 +92,17 @@ body {
 
 .status-running,
 .status-queued,
-.status-pending {
+.status-pending,
+.status-waiting-for-approval,
+.status-disabled,
+.status-not-recorded {
   border-color: rgba(47, 95, 159, 0.28);
   background: rgba(47, 95, 159, 0.1);
   color: var(--blue);
 }
 
-.status-failed {
+.status-failed,
+.status-denied {
   border-color: rgba(170, 56, 56, 0.3);
   background: rgba(170, 56, 56, 0.1);
   color: var(--red);
@@ -238,6 +244,84 @@ body {
   gap: 8px;
   color: var(--muted);
   font-size: 0.82rem;
+}
+
+.detail-block,
+details {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.detail-block strong,
+summary {
+  color: var(--ink);
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+summary {
+  cursor: pointer;
+}
+
+.detail-grid {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.detail-grid div {
+  display: grid;
+  grid-template-columns: minmax(90px, 0.35fr) minmax(0, 1fr);
+  gap: 8px;
+}
+
+.detail-grid dt {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.detail-grid dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-size: 0.8rem;
+}
+
+.detail-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.id-chip {
+  display: inline-flex;
+  max-width: 100%;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface-strong);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+a.id-chip {
+  text-decoration: none;
+}
+
+a.id-chip:hover,
+a.id-chip:focus-visible {
+  border-color: rgba(47, 95, 159, 0.35);
+  color: var(--blue);
 }
 
 .node-actions {

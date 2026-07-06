@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +9,7 @@ from aeai_os.reports import render_procurement_markdown_report
 from aeai_os.runs.models import ArtifactRecord
 from aeai_os.runs.repository import ArtifactNotFoundError, InMemoryRunRepository
 from aeai_os.schemas.enums import AgentEventType, ArtifactType
+from aeai_os.storage import ArtifactStorageError, ArtifactStore, LocalArtifactStore
 
 
 class ReportAgent:
@@ -20,15 +20,16 @@ class ReportAgent:
         repository: InMemoryRunRepository,
         artifact_root: str | Path,
         lineage_service: ArtifactLineageService | None = None,
+        artifact_store: ArtifactStore | None = None,
     ) -> None:
         self._repository = repository
-        self._artifact_root = Path(artifact_root)
+        self._artifact_store = artifact_store or LocalArtifactStore(artifact_root)
         self._lineage_service = lineage_service or ArtifactLineageService(repository)
 
     def execute(self, agent_input: AgentInput) -> AgentOutput:
         try:
             kpi_artifact = self._resolve_latest_artifact(agent_input, ArtifactType.KPI_TABLE)
-            analysis = _read_json_artifact(kpi_artifact)
+            analysis = _read_json_artifact(kpi_artifact, self._artifact_store)
             schema_artifact = self._resolve_latest_artifact(
                 agent_input, ArtifactType.SCHEMA_PROFILE, required=False
             )
@@ -63,21 +64,30 @@ class ReportAgent:
                 analysis=analysis,
                 artifacts=lineage_artifacts,
                 schema_profile=(
-                    _read_json_artifact(schema_artifact) if schema_artifact is not None else None
+                    _read_json_artifact(schema_artifact, self._artifact_store)
+                    if schema_artifact is not None
+                    else None
                 ),
                 quality_report=(
-                    _read_json_artifact(quality_artifact) if quality_artifact is not None else None
+                    _read_json_artifact(quality_artifact, self._artifact_store)
+                    if quality_artifact is not None
+                    else None
                 ),
             )
 
-            output_dir = self._artifact_root / agent_input.run_id / agent_input.node_id
-            output_dir.mkdir(parents=True, exist_ok=True)
-            report_path = output_dir / "procurement_report.md"
-            report_path.write_text(report_markdown, encoding="utf-8")
+            report_artifact_id = self._repository.next_artifact_id()
+            report_payload = self._artifact_store.write_text(
+                run_id=agent_input.run_id,
+                node_id=agent_input.node_id,
+                filename="procurement_report.md",
+                payload=report_markdown,
+                content_type="text/markdown; charset=utf-8",
+            )
             report_artifact = self._repository.add_artifact(
                 run_id=agent_input.run_id,
                 artifact_type=ArtifactType.REPORT,
-                uri=str(report_path),
+                artifact_id=report_artifact_id,
+                uri=report_payload.uri,
                 metadata={
                     "source": "report_agent",
                     "format": "markdown",
@@ -94,11 +104,12 @@ class ReportAgent:
                         "assumptions",
                         "limitations",
                     ],
+                    **report_payload.metadata,
                 },
                 source_artifact_ids=source_artifact_ids,
                 producer_node_id=agent_input.node_id,
             )
-        except (ArtifactNotFoundError, KeyError, OSError, json.JSONDecodeError, ValueError) as exc:
+        except (ArtifactNotFoundError, ArtifactStorageError, KeyError, OSError, ValueError) as exc:
             return AgentOutput(
                 status="failed",
                 summary="Report agent failed to generate the procurement report.",
@@ -167,8 +178,8 @@ class ReportAgent:
         return list(artifacts_by_id.values())
 
 
-def _read_json_artifact(artifact: ArtifactRecord) -> dict[str, Any]:
-    payload = json.loads(Path(artifact.uri).read_text(encoding="utf-8"))
-    if not isinstance(payload, dict):
-        raise ValueError(f"Artifact JSON payload must be an object: {artifact.id}")
-    return payload
+def _read_json_artifact(artifact: ArtifactRecord, artifact_store: ArtifactStore) -> dict[str, Any]:
+    try:
+        return artifact_store.read_json(artifact.uri)
+    except ArtifactStorageError as exc:
+        raise ValueError(f"Artifact JSON payload must be readable: {artifact.id}") from exc

@@ -1,4 +1,5 @@
 import sqlite3
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
@@ -9,7 +10,13 @@ from aeai_os.orchestration.graph import ExecutionGraph, ExecutionNode
 from aeai_os.orchestration.service import OrchestratorService, RetryPolicy
 from aeai_os.runs.models import AgentEventRecord, EvaluationResultRecord, GraphNodeRecord
 from aeai_os.runs.repository import InMemoryRunRepository, utc_now
-from aeai_os.schemas.enums import AgentEventType, ArtifactType, GraphNodeStatus
+from aeai_os.schemas.enums import (
+    AgentEventType,
+    ArtifactType,
+    GraphNodeStatus,
+    RunStatus,
+    WorkflowJobStatus,
+)
 from aeai_os.workflows import build_procurement_orchestrator
 
 
@@ -133,9 +140,11 @@ def test_run_inspector_page_is_served(tmp_path):
     assert "Run Inspector" in response.text
     assert "/run-inspector/run-inspector.js" in response.text
     assert 'id="actionText"' in response.text
+    assert 'id="approvalHistory"' in response.text
+    assert 'id="deploymentHistory"' in response.text
 
 
-def test_run_inspector_script_exposes_approval_and_retry_controls(tmp_path):
+def test_run_inspector_script_exposes_detail_approval_and_retry_controls(tmp_path):
     client = build_client(tmp_path)
 
     response = client.get("/run-inspector/run-inspector.js")
@@ -144,8 +153,16 @@ def test_run_inspector_script_exposes_approval_and_retry_controls(tmp_path):
     assert 'data-node-action="approve"' in response.text
     assert 'data-node-action="deny"' in response.text
     assert 'data-node-action="retry"' in response.text
+    assert 'data-deployment-action="approve"' in response.text
+    assert 'data-deployment-action="deny"' in response.text
     assert "/graph-nodes/${encodedNodeId}/approval" in response.text
     assert "/graph-nodes/${encodedNodeId}/retry" in response.text
+    assert "/deployments/${encodedJobId}/approval" in response.text
+    assert "/artifacts/${encodeURIComponent(artifact.id)}/lineage" in response.text
+    assert "renderApprovalHistory" in response.text
+    assert "renderDeploymentHistory" in response.text
+    assert "mlflow_status" in response.text
+    assert "Source artifacts" in response.text
 
 
 def test_create_run_rejects_blank_task(tmp_path):
@@ -475,6 +492,173 @@ def test_retry_failed_graph_node_from_api(tmp_path):
     assert {"schema_profile", "quality_report"}.issubset(artifact_types)
 
 
+def test_create_deployment_request_waits_for_approval_and_records_audit_event(tmp_path):
+    repository = InMemoryRunRepository()
+    app = create_app(repository=repository, artifact_root=tmp_path / "artifacts")
+    client = TestClient(app)
+    run = repository.create_run("Deploy validated dashboard.")
+    report = repository.add_artifact(
+        run_id=run.id,
+        artifact_type=ArtifactType.REPORT,
+        uri=str(tmp_path / "report.md"),
+        metadata={"source": "test", "format": "markdown"},
+    )
+
+    response = client.post(
+        f"/runs/{run.id}/deployments",
+        json={
+            "artifact_ids": [report.id],
+            "destination": "s3://approved-dashboards/procurement",
+            "requested_by": "analytics-lead",
+            "rationale": "Promote the validated procurement dashboard.",
+        },
+    )
+
+    body = response.json()
+    approval_events = [
+        event
+        for event in repository.list_events(run.id)
+        if event.event_type == AgentEventType.APPROVAL_REQUEST
+    ]
+    timeline_response = client.get(f"/runs/{run.id}/timeline")
+    assert response.status_code == 202
+    assert body["workflow_name"] == "deployment"
+    assert body["status"] == WorkflowJobStatus.WAITING_FOR_APPROVAL
+    assert body["payload"]["artifact_ids"] == [report.id]
+    assert body["payload"]["deployment_status"] == "waiting_for_approval"
+    assert repository.get_run(run.id).status == RunStatus.WAITING_FOR_APPROVAL
+    assert approval_events[0].payload["decision"] == "pending"
+    assert approval_events[0].payload["requested_by"] == "analytics-lead"
+    assert any(
+        item["workflow_job_id"] == body["id"]
+        and item["status"] == WorkflowJobStatus.WAITING_FOR_APPROVAL
+        for item in timeline_response.json()
+    )
+
+
+def test_approve_deployment_request_creates_deployment_artifact(tmp_path):
+    repository = InMemoryRunRepository()
+    app = create_app(repository=repository, artifact_root=tmp_path / "artifacts")
+    client = TestClient(app)
+    run = repository.create_run("Deploy validated dashboard.")
+    dashboard = repository.add_artifact(
+        run_id=run.id,
+        artifact_type=ArtifactType.DASHBOARD,
+        uri=str(tmp_path / "dashboard.html"),
+        metadata={"source": "test", "format": "html"},
+    )
+    deployment_job = client.post(
+        f"/runs/{run.id}/deployments",
+        json={
+            "artifact_ids": [dashboard.id],
+            "destination": "azure://static-web-apps/procurement",
+            "requested_by": "analytics-lead",
+        },
+    ).json()
+
+    response = client.post(
+        f"/runs/{run.id}/deployments/{deployment_job['id']}/approval",
+        json={
+            "approved": True,
+            "approver": "release-manager",
+            "rationale": "Evaluation passed and artifacts were reviewed.",
+        },
+    )
+
+    body = response.json()
+    deployment_artifacts = [
+        artifact
+        for artifact in repository.list_artifacts(run.id)
+        if artifact.type == ArtifactType.DEPLOYMENT
+    ]
+    decision_events = [
+        event
+        for event in repository.list_events(run.id)
+        if event.event_type == AgentEventType.APPROVAL_DECISION
+    ]
+    assert response.status_code == 200
+    assert body["status"] == WorkflowJobStatus.COMPLETED
+    assert body["payload"]["approval"]["decision"] == "approved"
+    assert body["payload"]["approval"]["approver"] == "release-manager"
+    assert body["payload"]["deployment_artifact_id"] == deployment_artifacts[0].id
+    assert repository.get_run(run.id).status == RunStatus.COMPLETED
+    assert deployment_artifacts[0].source_artifact_ids == [dashboard.id]
+    assert deployment_artifacts[0].metadata["approved_by"] == "release-manager"
+    assert deployment_artifacts[0].metadata["destination"] == "azure://static-web-apps/procurement"
+    assert decision_events[0].payload["decision"] == "approved"
+    assert decision_events[0].payload["approver"] == "release-manager"
+
+
+def test_deny_deployment_request_fails_job_without_promotion_artifact(tmp_path):
+    repository = InMemoryRunRepository()
+    app = create_app(repository=repository, artifact_root=tmp_path / "artifacts")
+    client = TestClient(app)
+    run = repository.create_run("Deploy validated dashboard.")
+    dashboard = repository.add_artifact(
+        run_id=run.id,
+        artifact_type=ArtifactType.DASHBOARD,
+        uri=str(tmp_path / "dashboard.html"),
+        metadata={"source": "test", "format": "html"},
+    )
+    deployment_job = client.post(
+        f"/runs/{run.id}/deployments",
+        json={
+            "artifact_ids": [dashboard.id],
+            "destination": "azure://static-web-apps/procurement",
+            "requested_by": "analytics-lead",
+        },
+    ).json()
+
+    response = client.post(
+        f"/runs/{run.id}/deployments/{deployment_job['id']}/approval",
+        json={
+            "approved": False,
+            "approver": "release-manager",
+            "rationale": "Dashboard needs stakeholder review first.",
+        },
+    )
+
+    body = response.json()
+    assert response.status_code == 200
+    assert body["status"] == WorkflowJobStatus.FAILED
+    assert body["error_summary"] == "Deployment approval denied."
+    assert body["payload"]["approval"]["decision"] == "denied"
+    assert repository.get_run(run.id).status == RunStatus.FAILED
+    assert all(
+        artifact.type != ArtifactType.DEPLOYMENT
+        for artifact in repository.list_artifacts(run.id)
+    )
+
+
+def test_deployment_approval_rejects_invalid_state(tmp_path):
+    repository = InMemoryRunRepository()
+    app = create_app(repository=repository, artifact_root=tmp_path / "artifacts")
+    client = TestClient(app)
+    run = repository.create_run("Deploy validated dashboard.")
+    dashboard = repository.add_artifact(
+        run_id=run.id,
+        artifact_type=ArtifactType.DASHBOARD,
+        uri=str(tmp_path / "dashboard.html"),
+        metadata={"source": "test", "format": "html"},
+    )
+    deployment_job = client.post(
+        f"/runs/{run.id}/deployments",
+        json={"artifact_ids": [dashboard.id], "destination": "local://preview"},
+    ).json()
+    client.post(
+        f"/runs/{run.id}/deployments/{deployment_job['id']}/approval",
+        json={"approved": True, "approver": "release-manager"},
+    )
+
+    response = client.post(
+        f"/runs/{run.id}/deployments/{deployment_job['id']}/approval",
+        json={"approved": True, "approver": "release-manager"},
+    )
+
+    assert response.status_code == 400
+    assert "not waiting for approval" in response.json()["detail"]
+
+
 def test_enqueue_procurement_workflow_from_api(tmp_path):
     repository = InMemoryRunRepository()
     app = create_app(repository=repository, artifact_root=tmp_path / "artifacts")
@@ -602,3 +786,26 @@ def test_upload_dataset_rejects_unsupported_file_type(tmp_path):
     )
 
     assert response.status_code == 400
+
+
+def test_upload_dataset_writes_payload_through_artifact_store(tmp_path):
+    client = build_client(tmp_path)
+    run = client.post("/runs", json={"task": "Analyze procurement spend."}).json()
+
+    response = client.post(
+        f"/runs/{run['id']}/datasets/upload",
+        files={
+            "file": (
+                "procurement.csv",
+                b"supplier,spend_amount\nAcme,100\n",
+                "text/csv",
+            )
+        },
+    )
+
+    assert response.status_code == 201
+    artifact = response.json()
+    assert artifact["type"] == "dataset"
+    assert artifact["metadata"]["storage_backend"] == "local"
+    assert artifact["metadata"]["storage_key"].endswith("/datasets/" + artifact["id"] + ".csv")
+    assert Path(artifact["uri"]).read_text(encoding="utf-8") == "supplier,spend_amount\nAcme,100\n"
