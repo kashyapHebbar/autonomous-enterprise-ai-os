@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +23,7 @@ from aeai_os.data import (
 from aeai_os.runs.models import ArtifactRecord
 from aeai_os.runs.repository import InMemoryRunRepository
 from aeai_os.schemas.enums import AgentEventType, ArtifactType
+from aeai_os.storage import ArtifactStorageError, ArtifactStore, LocalArtifactStore
 
 
 class AnalyticsCodeAgent:
@@ -36,9 +36,10 @@ class AnalyticsCodeAgent:
         code_guard: PythonCodeGuard | None = None,
         warehouse_registry: WarehouseConnectorRegistry | None = None,
         warehouse_row_limit: int = 10_000,
+        artifact_store: ArtifactStore | None = None,
     ) -> None:
         self._repository = repository
-        self._artifact_root = Path(artifact_root)
+        self._artifact_store = artifact_store or LocalArtifactStore(artifact_root)
         self._code_guard = code_guard or PythonCodeGuard()
         self._warehouse_registry = warehouse_registry or default_warehouse_registry()
         self._warehouse_row_limit = warehouse_row_limit
@@ -79,22 +80,33 @@ class AnalyticsCodeAgent:
             dataset = self._resolve_dataset_artifact(agent_input)
             adapter, adapter_name = self._build_dataset_adapter(dataset)
             analysis = analyze_procurement_dataset(adapter).to_dict()
-            output_dir = self._artifact_root / agent_input.run_id / agent_input.node_id
-            output_dir.mkdir(parents=True, exist_ok=True)
-            analysis_path = output_dir / "procurement_analysis.json"
-            code_path = output_dir / "procurement_analysis.py"
-            _write_json(analysis_path, analysis)
-            code_path.write_text(source_code, encoding="utf-8")
+            kpi_artifact_id = self._repository.next_artifact_id()
+            code_artifact_id = self._repository.next_artifact_id()
+            analysis_payload = self._artifact_store.write_json(
+                run_id=agent_input.run_id,
+                node_id=agent_input.node_id,
+                filename="procurement_analysis.json",
+                payload=analysis,
+            )
+            code_payload = self._artifact_store.write_text(
+                run_id=agent_input.run_id,
+                node_id=agent_input.node_id,
+                filename="procurement_analysis.py",
+                payload=source_code,
+                content_type="text/x-python; charset=utf-8",
+            )
 
             kpi_artifact = self._repository.add_artifact(
                 run_id=agent_input.run_id,
                 artifact_type=ArtifactType.KPI_TABLE,
-                uri=str(analysis_path),
+                artifact_id=kpi_artifact_id,
+                uri=analysis_payload.uri,
                 metadata={
                     "source": "analytics_code_agent",
                     "format": "json",
                     "total_spend": analysis["kpis"]["total_spend"],
                     "insight_count": len(analysis["insights"]),
+                    **analysis_payload.metadata,
                 },
                 source_artifact_ids=[dataset.id],
                 producer_node_id=agent_input.node_id,
@@ -102,17 +114,19 @@ class AnalyticsCodeAgent:
             code_artifact = self._repository.add_artifact(
                 run_id=agent_input.run_id,
                 artifact_type=ArtifactType.CODE,
-                uri=str(code_path),
+                artifact_id=code_artifact_id,
+                uri=code_payload.uri,
                 metadata={
                     "source": "analytics_code_agent",
                     "language": "python",
                     "safety_decision": safety_report.decision.value,
                     "execution_mode": "validated_artifact_only",
+                    **code_payload.metadata,
                 },
                 source_artifact_ids=[dataset.id],
                 producer_node_id=agent_input.node_id,
             )
-        except (AnalyticsError, DataIngestionError, KeyError, OSError) as exc:
+        except (AnalyticsError, ArtifactStorageError, DataIngestionError, KeyError, OSError) as exc:
             return self._failed_output(str(exc), safety_report=safety_report.to_dict())
 
         return AgentOutput(
@@ -160,7 +174,10 @@ class AnalyticsCodeAgent:
                 ),
                 connector.__class__.__name__,
             )
-        return CsvDatasetAdapter.from_path(dataset.uri), "CsvDatasetAdapter"
+        return (
+            CsvDatasetAdapter.from_path(self._artifact_store.local_path(dataset.uri)),
+            "CsvDatasetAdapter",
+        )
 
     def _resolve_dataset_artifact(self, agent_input: AgentInput) -> ArtifactRecord:
         artifact_id = (
@@ -193,7 +210,3 @@ class AnalyticsCodeAgent:
             ],
             metrics={"safety_report": safety_report} if safety_report else {},
         )
-
-
-def _write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")

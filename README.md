@@ -36,7 +36,7 @@ flowchart LR
     Report --> Eval[Evaluation agent]
     Orchestrator --> Security[Tool permission policy]
     Orchestrator --> Obs[Traces and metrics]
-    Data --> Artifacts[Local artifact store]
+    Data --> Artifacts[Artifact store: local / S3-compatible]
     Analytics --> Artifacts
     Viz --> Artifacts
     Report --> Artifacts
@@ -154,6 +154,31 @@ Optional controls include `SNOWFLAKE_ROLE`, `SNOWFLAKE_CONNECT_TIMEOUT_SECONDS`,
 `SNOWFLAKE_QUERY_TIMEOUT_SECONDS`, `SNOWFLAKE_ROW_LIMIT`, and `SNOWFLAKE_APPLICATION`.
 The connector validates unquoted identifiers, blocks unsafe statements, applies query timeouts and a
 maximum row limit, and local tests use a mocked connection factory so no real credentials are needed.
+
+## Artifact Storage
+
+Run artifact metadata is stored in the run repository, while payloads are written through an
+artifact store. Local filesystem storage remains the default for development and demos. Set
+`AEAI_ARTIFACT_STORAGE_BACKEND=s3` to write generated datasets, schema profiles, KPI JSON, charts,
+reports, and evaluations to an S3-compatible backend such as AWS S3 or MinIO.
+
+Install object storage support with:
+
+```bash
+pip install ".[storage]"
+```
+
+S3-compatible settings:
+
+- `AEAI_ARTIFACT_S3_BUCKET`
+- `AEAI_ARTIFACT_S3_PREFIX`
+- `AEAI_ARTIFACT_S3_ENDPOINT_URL`
+- `AEAI_ARTIFACT_S3_REGION`
+- `AEAI_ARTIFACT_S3_ACCESS_KEY_ID`
+- `AEAI_ARTIFACT_S3_SECRET_ACCESS_KEY`
+
+Artifact records retain stable URIs such as local file paths or `s3://bucket/key` plus storage
+metadata including backend, key, content type, and payload size.
 
 ## Run With Docker Compose
 

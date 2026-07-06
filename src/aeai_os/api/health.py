@@ -14,6 +14,10 @@ def build_health_payload(settings: AppSettings | None = None) -> dict:
             {"name": "api", "status": "ok"},
             {"name": "orchestrator", "status": "not_configured"},
             {"name": "agent_registry", "status": "not_configured"},
-            {"name": "artifact_store", "status": "not_configured"},
+            {
+                "name": "artifact_store",
+                "status": "ok",
+                "backend": settings.artifact_storage_backend,
+            },
         ],
     }

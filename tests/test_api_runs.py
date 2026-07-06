@@ -1,4 +1,5 @@
 import sqlite3
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
@@ -785,3 +786,26 @@ def test_upload_dataset_rejects_unsupported_file_type(tmp_path):
     )
 
     assert response.status_code == 400
+
+
+def test_upload_dataset_writes_payload_through_artifact_store(tmp_path):
+    client = build_client(tmp_path)
+    run = client.post("/runs", json={"task": "Analyze procurement spend."}).json()
+
+    response = client.post(
+        f"/runs/{run['id']}/datasets/upload",
+        files={
+            "file": (
+                "procurement.csv",
+                b"supplier,spend_amount\nAcme,100\n",
+                "text/csv",
+            )
+        },
+    )
+
+    assert response.status_code == 201
+    artifact = response.json()
+    assert artifact["type"] == "dataset"
+    assert artifact["metadata"]["storage_backend"] == "local"
+    assert artifact["metadata"]["storage_key"].endswith("/datasets/" + artifact["id"] + ".csv")
+    assert Path(artifact["uri"]).read_text(encoding="utf-8") == "supplier,spend_amount\nAcme,100\n"

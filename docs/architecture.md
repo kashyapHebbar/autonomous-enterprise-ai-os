@@ -59,7 +59,7 @@ flowchart LR
 | LangGraph Orchestrator | Execute agent graph, persist state, handle retries and pauses | Core platform kernel |
 | Agent Registry | Map graph node types to executable agent implementations | Static registry for MVP |
 | State Store | Persist runs, graph nodes, events, approvals, and evaluations | Postgres |
-| Artifact Store | Store input datasets, generated charts, code, dashboards, and reports | Local filesystem layout with object-store abstraction |
+| Artifact Store | Store input datasets, generated charts, code, dashboards, and reports | Local filesystem by default, S3-compatible payload backend optional |
 | Observability Pipeline | Record traces, metrics, logs, evals, and run timing | OpenTelemetry spans with a Prometheus-compatible metrics endpoint |
 | Security Layer | Classify tools, enforce approvals, and audit tool calls | Required for code execution and future cloud tools |
 

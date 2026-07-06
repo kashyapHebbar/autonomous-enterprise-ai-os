@@ -12,6 +12,7 @@ sys.path.insert(0, str(SRC))
 def main() -> int:
     from aeai_os.runs.factory import build_run_repository
     from aeai_os.settings import get_settings
+    from aeai_os.storage import build_artifact_store
     from aeai_os.workflows.worker import WorkflowWorker
 
     parser = argparse.ArgumentParser(description="Process one queued workflow job.")
@@ -20,10 +21,12 @@ def main() -> int:
 
     settings = get_settings()
     repository = build_run_repository(settings)
+    artifact_store = build_artifact_store(settings)
     worker = WorkflowWorker(
         repository=repository,
         artifact_root=settings.artifact_root,
         worker_id=args.worker_id,
+        artifact_store=artifact_store,
     )
     job = worker.process_next_job()
     if job is None:
