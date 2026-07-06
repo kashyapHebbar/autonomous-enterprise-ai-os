@@ -19,9 +19,9 @@ The first vertical slice is a procurement analytics workflow:
 - Data retrieval, analytics/code, visualization, report, and evaluation agents
 - Security policy gates for required tools and risky actions
 - API-driven workflow execution, approval decisions, failed-node retry, and run inspection
-- OpenTelemetry trace IDs, Prometheus-compatible metrics, and optional MLflow evaluation tracking
+- OpenTelemetry trace IDs, Prometheus-compatible metrics, and optional MLflow/LangSmith tracking
 - Docker Compose for API, workflow worker, Postgres, Redis, and MinIO
-- Kubernetes starter manifests in `deploy/kubernetes/`
+- Kubernetes baseline manifests for API, worker, local dependencies, probes, and observability
 
 ## Architecture
 
@@ -36,7 +36,7 @@ flowchart LR
     Report --> Eval[Evaluation agent]
     Orchestrator --> Security[Tool permission policy]
     Orchestrator --> Obs[Traces and metrics]
-    Data --> Artifacts[Local artifact store]
+    Data --> Artifacts[Artifact store: local / S3-compatible]
     Analytics --> Artifacts
     Viz --> Artifacts
     Report --> Artifacts
@@ -99,6 +99,12 @@ The generated summary records:
 
 ## API Routes
 
+Authentication is disabled by default for local demos. When `AEAI_AUTH_ENABLED=true`, `/runs`
+endpoints expect `X-AEAI-User-Id`, optional `X-AEAI-User-Name`, and `X-AEAI-Roles` headers.
+Supported roles are `viewer` for read-only inspection, `operator` for run and artifact mutations,
+`approver` for approval decisions, and `admin` for all current capabilities. Mutating API actions
+write `audit` events with actor identity under `/runs/{run_id}/events`.
+
 | Route | Purpose |
 | --- | --- |
 | `POST /runs` | Create an agent workflow run |
@@ -108,6 +114,8 @@ The generated summary records:
 | `POST /runs/{run_id}/execute/procurement` | Execute the procurement workflow synchronously |
 | `POST /runs/{run_id}/execute/procurement/async` | Queue the procurement workflow |
 | `GET /runs/{run_id}/workflow-jobs` | Inspect queued workflow jobs |
+| `POST /runs/{run_id}/deployments` | Request approval to promote artifacts |
+| `POST /runs/{run_id}/deployments/{job_id}/approval` | Approve or deny a deployment request |
 | `GET /runs/{run_id}/graph-nodes` | Inspect execution graph node state |
 | `GET /runs/{run_id}/events` | Inspect agent event telemetry |
 | `GET /runs/{run_id}/timeline` | Inspect chronological run activity |
@@ -121,14 +129,62 @@ The generated summary records:
 
 ## Warehouse Dataset References
 
-The procurement workflow supports local CSV files and SQLite-backed warehouse references for offline
-tests and demos. `SqliteWarehouseConnector` provides table/query execution through the same adapter
-contract used by analytics agents, while `SnowflakeWarehouseConnector` validates `SNOWFLAKE_*`
-environment settings and keeps Snowflake execution behind parameterized connector calls.
+The procurement workflow supports local CSV files, SQLite-backed warehouse references for offline
+tests and demos, and Snowflake-backed references when the optional warehouse dependency is installed
+and `SNOWFLAKE_*` settings are configured. `SqliteWarehouseConnector` and
+`SnowflakeWarehouseConnector` provide table/query execution through the same adapter contract used by
+analytics agents.
 
 Dataset artifacts can be marked as warehouse-backed with URIs such as
 `sqlite:///absolute/path/to/warehouse.db#procurement` or
-`snowflake://ANALYTICS/PUBLIC/PROCUREMENT` plus metadata `{"source": "warehouse"}`.
+`snowflake://ANALYTICS/PUBLIC/PROCUREMENT` plus metadata `{"source": "warehouse"}`. Query references
+can pass bind values through metadata `query_parameters` so previews and full extraction paths remain
+parameterized.
+
+Install Snowflake support with:
+
+```bash
+pip install ".[warehouse]"
+```
+
+Required Snowflake environment variables:
+
+- `SNOWFLAKE_ACCOUNT`
+- `SNOWFLAKE_USER`
+- `SNOWFLAKE_PASSWORD`
+- `SNOWFLAKE_WAREHOUSE`
+- `SNOWFLAKE_DATABASE`
+- `SNOWFLAKE_SCHEMA`
+
+Optional controls include `SNOWFLAKE_ROLE`, `SNOWFLAKE_CONNECT_TIMEOUT_SECONDS`,
+`SNOWFLAKE_QUERY_TIMEOUT_SECONDS`, `SNOWFLAKE_ROW_LIMIT`, and `SNOWFLAKE_APPLICATION`.
+The connector validates unquoted identifiers, blocks unsafe statements, applies query timeouts and a
+maximum row limit, and local tests use a mocked connection factory so no real credentials are needed.
+
+## Artifact Storage
+
+Run artifact metadata is stored in the run repository, while payloads are written through an
+artifact store. Local filesystem storage remains the default for development and demos. Set
+`AEAI_ARTIFACT_STORAGE_BACKEND=s3` to write generated datasets, schema profiles, KPI JSON, charts,
+reports, and evaluations to an S3-compatible backend such as AWS S3 or MinIO.
+
+Install object storage support with:
+
+```bash
+pip install ".[storage]"
+```
+
+S3-compatible settings:
+
+- `AEAI_ARTIFACT_S3_BUCKET`
+- `AEAI_ARTIFACT_S3_PREFIX`
+- `AEAI_ARTIFACT_S3_ENDPOINT_URL`
+- `AEAI_ARTIFACT_S3_REGION`
+- `AEAI_ARTIFACT_S3_ACCESS_KEY_ID`
+- `AEAI_ARTIFACT_S3_SECRET_ACCESS_KEY`
+
+Artifact records retain stable URIs such as local file paths or `s3://bucket/key` plus storage
+metadata including backend, key, content type, and payload size.
 
 ## Run With Docker Compose
 
@@ -152,7 +208,31 @@ curl "http://127.0.0.1:8000/runs/${RUN_ID}"
 ```
 
 Open `http://127.0.0.1:8000/run-inspector/runs/${RUN_ID}` to inspect graph nodes,
-events, artifacts, evaluations, and approve/deny or retry actionable nodes.
+events, artifact lineage, approval history, evaluation/MLflow status, deployment history, and
+approve/deny or retry actionable nodes.
+
+## Kubernetes Baseline
+
+Validate the Kubernetes manifests locally:
+
+```bash
+make k8s-validate
+```
+
+The baseline in `deploy/kubernetes/` includes the API, workflow worker, Postgres, Redis, MinIO,
+config, secrets, services, health probes, and observability environment variables. See
+[deploy/kubernetes/README.md](deploy/kubernetes/README.md) for kind/minikube deployment and teardown
+steps.
+
+With RBAC enabled, include an actor and role header:
+
+```bash
+curl -X POST http://127.0.0.1:8000/runs \
+  -H "Content-Type: application/json" \
+  -H "X-AEAI-User-Id: operator-1" \
+  -H "X-AEAI-Roles: operator" \
+  -d '{"task":"Analyze this procurement dataset and create a dashboard report."}'
+```
 
 Queued workflow execution defaults to the repository-backed queue. Set
 `AEAI_WORKFLOW_QUEUE_BACKEND=redis` to use Redis as the pending-job broker while keeping the run
@@ -171,6 +251,7 @@ claims, retry according to `max_attempts`, and move exhausted jobs to `dead_lett
 make test
 make smoke
 make demo
+make k8s-validate
 ```
 
 The regression suite covers:
@@ -184,11 +265,16 @@ The regression suite covers:
 Tracing is enabled locally without exporting spans by default. Set `AEAI_TRACE_EXPORTER=console`
 to print spans during development, or use `AEAI_TRACE_EXPORTER=otlp_http` /
 `AEAI_TRACE_EXPORTER=otlp_grpc` with `AEAI_OTEL_EXPORTER_OTLP_ENDPOINT` in deployed environments.
-Install `.[observability]` when exporting to an OTLP collector or MLflow.
+Install `.[observability]` when exporting to an OTLP collector, MLflow, or LangSmith.
 
 MLflow tracking is disabled by default. Set `AEAI_MLFLOW_TRACKING_ENABLED=true` and
 `AEAI_MLFLOW_TRACKING_URI` to mirror evaluation scores, pass/fail state, check metrics, run IDs, and
 trace IDs into an MLflow experiment.
+
+LangSmith trace review is disabled by default. Set `AEAI_LANGSMITH_TRACING_ENABLED=true`,
+`AEAI_LANGSMITH_API_KEY`, and optionally `AEAI_LANGSMITH_PROJECT` to mirror agent events and
+evaluation results into LangSmith with run IDs, trace IDs, graph node IDs, agent names, and artifact
+IDs in metadata.
 
 ## Current Limitations
 
@@ -198,7 +284,7 @@ trace IDs into an MLflow experiment.
 
 ## Direction
 
-The next roadmap is LangSmith trace review, deployment approvals, and a richer UI for inspecting
+The next roadmap is deployment approvals and a richer UI for inspecting
 execution graphs, artifacts, approval decisions, MLflow runs, and deployment history.
 
 ## Responsible Use

@@ -14,6 +14,7 @@ class RunStatus(StrEnum):
 class WorkflowJobStatus(StrEnum):
     QUEUED = "queued"
     RUNNING = "running"
+    WAITING_FOR_APPROVAL = "waiting_for_approval"
     COMPLETED = "completed"
     FAILED = "failed"
     DEAD_LETTER = "dead_letter"
@@ -38,9 +39,11 @@ class ArtifactType(StrEnum):
     REPORT = "report"
     CODE = "code"
     EVALUATION = "evaluation"
+    DEPLOYMENT = "deployment"
 
 
 class AgentEventType(StrEnum):
+    AUDIT = "audit"
     TOOL_CALL = "tool_call"
     LOG = "log"
     EVALUATION = "evaluation"

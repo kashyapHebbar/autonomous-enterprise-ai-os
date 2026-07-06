@@ -6,6 +6,7 @@ from uuid import uuid4
 from aeai_os.runs.models import WorkflowJobRecord
 from aeai_os.runs.repository import InMemoryRunRepository
 from aeai_os.schemas.enums import RunStatus, WorkflowJobStatus
+from aeai_os.storage import ArtifactStore
 from aeai_os.workflows.procurement import execute_procurement_workflow
 from aeai_os.workflows.queue import RepositoryWorkflowQueue, WorkflowQueueBackend
 
@@ -37,10 +38,12 @@ class WorkflowWorker:
         worker_id: str | None = None,
         queue: WorkflowQueueBackend | None = None,
         claim_timeout_seconds: int | None = 300,
+        artifact_store: ArtifactStore | None = None,
     ) -> None:
         self._repository = repository
         self._queue = queue or RepositoryWorkflowQueue(repository)
         self._artifact_root = Path(artifact_root)
+        self._artifact_store = artifact_store
         self.worker_id = worker_id or f"worker_{uuid4().hex}"
         self._claim_timeout_seconds = claim_timeout_seconds
 
@@ -67,6 +70,7 @@ class WorkflowWorker:
                 repository=self._repository,
                 artifact_root=self._artifact_root,
                 run_id=job.run_id,
+                artifact_store=self._artifact_store,
             )
         except Exception as exc:
             return self._retry_or_fail(job, str(exc))

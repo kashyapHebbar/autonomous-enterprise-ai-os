@@ -6,6 +6,7 @@ from aeai_os.api.health import build_health_payload
 from aeai_os.runs.factory import build_run_repository
 from aeai_os.runs.repository import InMemoryRunRepository
 from aeai_os.settings import get_settings
+from aeai_os.storage import build_artifact_store
 
 
 def create_app(
@@ -31,6 +32,7 @@ def create_app(
     run_repository = repository or build_run_repository(settings)
     run_artifact_root = artifact_root or Path(settings.artifact_root)
     workflow_queue = build_workflow_queue(settings, run_repository)
+    artifact_store = build_artifact_store(settings, artifact_root=run_artifact_root)
     static_root = Path(__file__).resolve().parents[1] / "web" / "static"
 
     app = FastAPI(
@@ -41,6 +43,7 @@ def create_app(
     app.state.run_repository = run_repository
     app.state.artifact_root = run_artifact_root
     app.state.workflow_queue = workflow_queue
+    app.state.artifact_store = artifact_store
 
     @app.middleware("http")
     async def trace_requests(request, call_next):
@@ -80,7 +83,14 @@ def create_app(
     def health() -> dict:
         return build_health_payload()
 
-    app.include_router(build_runs_router(run_repository, run_artifact_root, workflow_queue))
+    app.include_router(
+        build_runs_router(
+            run_repository,
+            run_artifact_root,
+            artifact_store,
+            workflow_queue,
+        )
+    )
     app.include_router(build_metrics_router(run_repository))
 
     @app.get("/run-inspector/runs/{run_id}", include_in_schema=False)
