@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
@@ -31,6 +31,8 @@ from aeai_os.runs.repository import (
     RunCheckpointNotFoundError,
     RunNotFoundError,
     WorkflowJobNotFoundError,
+    WorkflowJobOwnershipError,
+    WorkflowJobStateError,
     _evaluation_event,
     utc_now,
 )
@@ -207,15 +209,23 @@ class SQLAlchemyRunRepository:
         self,
         worker_id: str,
         workflow_name: str | None = None,
+        stale_after_seconds: int | None = None,
     ) -> WorkflowJobRecord | None:
         normalized_workflow = workflow_name.strip() if workflow_name else None
+        if stale_after_seconds is not None:
+            self.recover_timed_out_workflow_jobs(
+                timeout_seconds=stale_after_seconds,
+                workflow_name=normalized_workflow,
+            )
         with self._session_factory() as session:
             query = select(WorkflowJobModel).where(
                 WorkflowJobModel.status == WorkflowJobStatus.QUEUED.value
             )
             if normalized_workflow is not None:
                 query = query.where(WorkflowJobModel.workflow_name == normalized_workflow)
-            model = session.scalars(query.order_by(WorkflowJobModel.created_at)).first()
+            model = session.scalars(
+                query.order_by(WorkflowJobModel.created_at).with_for_update(skip_locked=True)
+            ).first()
             if model is None:
                 return None
 
@@ -224,13 +234,64 @@ class SQLAlchemyRunRepository:
             model.worker_id = worker_id
             model.attempt_count += 1
             model.started_at = model.started_at or now
+            model.heartbeat_at = now
             model.updated_at = now
             session.commit()
             return _workflow_job_from_model(model)
 
-    def complete_workflow_job(self, job_id: str) -> WorkflowJobRecord:
+    def claim_workflow_job(
+        self,
+        job_id: str,
+        worker_id: str,
+        stale_after_seconds: int | None = None,
+    ) -> WorkflowJobRecord | None:
+        if stale_after_seconds is not None:
+            self.recover_timed_out_workflow_jobs(timeout_seconds=stale_after_seconds)
+        with self._session_factory() as session:
+            model = session.scalars(
+                select(WorkflowJobModel)
+                .where(WorkflowJobModel.id == job_id)
+                .with_for_update()
+            ).first()
+            if model is None:
+                raise WorkflowJobNotFoundError(f"Workflow job not found: {job_id}")
+            if WorkflowJobStatus(model.status) != WorkflowJobStatus.QUEUED:
+                return None
+            now = utc_now()
+            model.status = WorkflowJobStatus.RUNNING.value
+            model.worker_id = worker_id
+            model.attempt_count += 1
+            model.started_at = model.started_at or now
+            model.heartbeat_at = now
+            model.updated_at = now
+            session.commit()
+            return _workflow_job_from_model(model)
+
+    def heartbeat_workflow_job(
+        self,
+        job_id: str,
+        worker_id: str,
+    ) -> WorkflowJobRecord:
         with self._session_factory() as session:
             model = _get_workflow_job_model(session, job_id)
+            _ensure_job_model_owned_by_worker(model, worker_id)
+            now = utc_now()
+            model.heartbeat_at = now
+            model.updated_at = now
+            session.commit()
+            return _workflow_job_from_model(model)
+
+    def complete_workflow_job(
+        self,
+        job_id: str,
+        worker_id: str | None = None,
+    ) -> WorkflowJobRecord:
+        with self._session_factory() as session:
+            model = _get_workflow_job_model(session, job_id)
+            if WorkflowJobStatus(model.status) == WorkflowJobStatus.COMPLETED:
+                return _workflow_job_from_model(model)
+            if worker_id is not None:
+                _ensure_job_model_owned_by_worker(model, worker_id)
             now = utc_now()
             model.status = WorkflowJobStatus.COMPLETED.value
             model.updated_at = now
@@ -243,25 +304,78 @@ class SQLAlchemyRunRepository:
         job_id: str,
         error_summary: str,
         retry: bool = True,
+        worker_id: str | None = None,
     ) -> WorkflowJobRecord:
         with self._session_factory() as session:
             model = _get_workflow_job_model(session, job_id)
+            if worker_id is not None:
+                _ensure_job_model_owned_by_worker(model, worker_id)
             now = utc_now()
             should_retry = retry and model.attempt_count < model.max_attempts
             model.status = (
                 WorkflowJobStatus.QUEUED.value
                 if should_retry
-                else WorkflowJobStatus.FAILED.value
+                else WorkflowJobStatus.DEAD_LETTER.value
             )
             if should_retry:
                 model.worker_id = None
                 model.finished_at = None
+                model.heartbeat_at = None
             else:
                 model.finished_at = now
             model.error_summary = error_summary
             model.updated_at = now
             session.commit()
             return _workflow_job_from_model(model)
+
+    def recover_timed_out_workflow_jobs(
+        self,
+        timeout_seconds: int,
+        workflow_name: str | None = None,
+        now: datetime | None = None,
+    ) -> list[WorkflowJobRecord]:
+        if timeout_seconds < 1:
+            raise ValueError("Workflow job timeout must be at least 1 second.")
+
+        normalized_workflow = workflow_name.strip() if workflow_name else None
+        reference_time = now or utc_now()
+        cutoff = reference_time - timedelta(seconds=timeout_seconds)
+        with self._session_factory() as session:
+            query = select(WorkflowJobModel).where(
+                WorkflowJobModel.status == WorkflowJobStatus.RUNNING.value
+            )
+            if normalized_workflow is not None:
+                query = query.where(WorkflowJobModel.workflow_name == normalized_workflow)
+            models = session.scalars(
+                query.order_by(WorkflowJobModel.created_at).with_for_update(skip_locked=True)
+            ).all()
+            recovered: list[WorkflowJobRecord] = []
+            for model in models:
+                heartbeat_at = _optional_utc_datetime(model.heartbeat_at) or _utc_datetime(
+                    model.updated_at
+                )
+                if heartbeat_at > cutoff:
+                    continue
+
+                should_retry = model.attempt_count < model.max_attempts
+                model.status = (
+                    WorkflowJobStatus.QUEUED.value
+                    if should_retry
+                    else WorkflowJobStatus.DEAD_LETTER.value
+                )
+                model.worker_id = None if should_retry else model.worker_id
+                model.error_summary = (
+                    f"Workflow job heartbeat timed out after {timeout_seconds} seconds."
+                )
+                if should_retry:
+                    model.heartbeat_at = None
+                    model.finished_at = None
+                else:
+                    model.finished_at = reference_time
+                model.updated_at = reference_time
+                recovered.append(_workflow_job_from_model(model))
+            session.commit()
+            return recovered
 
     def next_artifact_id(self) -> str:
         return f"artifact_{uuid4().hex}"
@@ -535,6 +649,7 @@ def _workflow_job_from_model(model: WorkflowJobModel) -> WorkflowJobRecord:
         error_summary=model.error_summary,
         started_at=_optional_utc_datetime(model.started_at),
         finished_at=_optional_utc_datetime(model.finished_at),
+        heartbeat_at=_optional_utc_datetime(model.heartbeat_at),
         created_at=_utc_datetime(model.created_at),
         updated_at=_utc_datetime(model.updated_at),
     )
@@ -625,3 +740,15 @@ def _optional_utc_datetime(value: datetime | None) -> datetime | None:
     if value is None:
         return None
     return _utc_datetime(value)
+
+
+def _ensure_job_model_owned_by_worker(model: WorkflowJobModel, worker_id: str) -> None:
+    status = WorkflowJobStatus(model.status)
+    if status != WorkflowJobStatus.RUNNING:
+        raise WorkflowJobStateError(
+            f"Workflow job {model.id} is {status.value}, not running."
+        )
+    if model.worker_id != worker_id:
+        raise WorkflowJobOwnershipError(
+            f"Workflow job {model.id} is owned by {model.worker_id}, not {worker_id}."
+        )

@@ -35,6 +35,7 @@ class WorkflowJobRecord:
     error_summary: str | None = None
     started_at: datetime | None = None
     finished_at: datetime | None = None
+    heartbeat_at: datetime | None = None
 
 
 @dataclass(frozen=True)

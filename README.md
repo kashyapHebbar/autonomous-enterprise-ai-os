@@ -20,7 +20,7 @@ The first vertical slice is a procurement analytics workflow:
 - Security policy gates for required tools and risky actions
 - API-driven workflow execution, approval decisions, failed-node retry, and run inspection
 - OpenTelemetry trace IDs, Prometheus-compatible metrics, and optional MLflow/LangSmith tracking
-- Docker Compose for API, Postgres, Redis, and MinIO
+- Docker Compose for API, workflow worker, Postgres, Redis, and MinIO
 - Kubernetes baseline manifests for API, worker, local dependencies, probes, and observability
 
 ## Architecture
@@ -193,6 +193,7 @@ docker compose up --build
 ```
 
 The local stack includes the API, Postgres, Redis, and MinIO.
+It also includes a `workflow-worker` service that continuously claims queued procurement jobs.
 
 Run the procurement workflow through the local API:
 
@@ -232,6 +233,11 @@ curl -X POST http://127.0.0.1:8000/runs \
   -H "X-AEAI-Roles: operator" \
   -d '{"task":"Analyze this procurement dataset and create a dashboard report."}'
 ```
+
+Queued workflow execution defaults to the repository-backed queue. Set
+`AEAI_WORKFLOW_QUEUE_BACKEND=redis` to use Redis as the pending-job broker while keeping the run
+repository as the authoritative execution guard. Workers heartbeat claimed jobs, recover timed-out
+claims, retry according to `max_attempts`, and move exhausted jobs to `dead_letter`.
 
 ## Documentation
 

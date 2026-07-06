@@ -218,11 +218,11 @@ Current local behavior:
 - Nodes that return `waiting_for_approval` pause the run until `approve_node` resumes it.
 - `POST /runs/{run_id}/execute/procurement/async` persists a workflow job for background
   processing.
+- `scripts/run_workflow_worker.py` claims queued procurement jobs, heartbeats ownership, executes
+  the workflow, and records completion, retry, timeout recovery, or dead-letter state.
 - `POST /runs/{run_id}/deployments` creates a deployment workflow job in
   `waiting_for_approval`; approval completes the job and creates a deployment artifact, while
   denial records a failed deployment outcome.
-- `scripts/run_workflow_worker.py` claims one queued procurement job, executes the workflow, and
-  records completion, retry, or failure state.
 - `GET /runs/{run_id}/graph-nodes`, `GET /runs/{run_id}/events`, and
   `GET /runs/{run_id}/timeline` expose the graph inspection surface used by the run inspector UI.
 
@@ -231,6 +231,44 @@ The in-memory repository remains the default local checkpoint backend. Set
 repository against Postgres or SQLite-compatible test databases. The SQLAlchemy backend persists
 runs, workflow jobs, graph nodes, artifacts, agent events, evaluations, and checkpoints behind the
 same repository contract.
+
+## Distributed Workflow Queue
+
+The workflow queue is configurable through environment variables:
+
+```bash
+AEAI_WORKFLOW_QUEUE_BACKEND=repository
+AEAI_WORKFLOW_QUEUE_TIMEOUT_SECONDS=300
+AEAI_WORKFLOW_QUEUE_KEY_PREFIX=aeai:workflow
+AEAI_REDIS_URL=redis://redis:6379/0
+```
+
+`repository` is the default backend for local tests and stores queue state in the configured run
+repository. With `AEAI_RUN_REPOSITORY_BACKEND=sqlalchemy`, multiple workers share durable queue
+state through Postgres. `redis` uses Redis as the pending-job broker while the repository remains
+the authoritative source for claims, retries, dead-lettering, and idempotent completion guards.
+
+Run one worker locally:
+
+```bash
+python scripts/run_workflow_worker.py --worker-id local-worker
+```
+
+Run continuous polling:
+
+```bash
+python scripts/run_workflow_worker.py --loop --worker-id local-worker
+```
+
+Docker Compose starts both the API and a continuous worker:
+
+```bash
+docker compose up --build
+```
+
+To try Redis-backed pending-job fan-out in Compose, set `AEAI_WORKFLOW_QUEUE_BACKEND=redis` in the
+environment used by the API and worker. Workers will only complete or fail jobs they own; stale
+claims are requeued until attempts are exhausted, then moved to `dead_letter`.
 
 ## Artifact Storage
 

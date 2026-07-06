@@ -14,6 +14,7 @@ def main() -> int:
     from aeai_os.runs.factory import build_run_repository
     from aeai_os.settings import get_settings
     from aeai_os.storage import build_artifact_store
+    from aeai_os.workflows.queue import build_workflow_queue
     from aeai_os.workflows.worker import WorkflowWorker
 
     parser = argparse.ArgumentParser(description="Process one queued workflow job.")
@@ -35,15 +36,23 @@ def main() -> int:
         default=None,
         help="Optional maximum jobs to process before exiting.",
     )
+    parser.add_argument("--claim-timeout-seconds", type=int, default=None)
     args = parser.parse_args()
 
     settings = get_settings()
     repository = build_run_repository(settings)
+    queue = build_workflow_queue(settings, repository)
     artifact_store = build_artifact_store(settings)
     worker = WorkflowWorker(
         repository=repository,
         artifact_root=settings.artifact_root,
         worker_id=args.worker_id,
+        queue=queue,
+        claim_timeout_seconds=(
+            args.claim_timeout_seconds
+            if args.claim_timeout_seconds is not None
+            else settings.workflow_queue_timeout_seconds
+        ),
         artifact_store=artifact_store,
     )
     if args.loop:

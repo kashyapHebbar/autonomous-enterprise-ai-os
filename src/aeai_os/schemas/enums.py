@@ -17,6 +17,7 @@ class WorkflowJobStatus(StrEnum):
     WAITING_FOR_APPROVAL = "waiting_for_approval"
     COMPLETED = "completed"
     FAILED = "failed"
+    DEAD_LETTER = "dead_letter"
 
 
 class GraphNodeStatus(StrEnum):
