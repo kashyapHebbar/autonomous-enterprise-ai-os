@@ -248,11 +248,15 @@ claims, retry according to `max_attempts`, and move exhausted jobs to `dead_lett
 ## Tests
 
 ```bash
+make lint
 make test
 make smoke
 make demo
 make k8s-validate
 ```
+
+GitHub Actions runs this same validation sequence on pull requests and pushes to `main` after
+installing development dependencies with `make install`.
 
 The regression suite covers:
 
