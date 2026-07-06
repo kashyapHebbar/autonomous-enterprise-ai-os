@@ -9,6 +9,10 @@ from uuid import uuid4
 from sqlalchemy import Engine, create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
+from aeai_os.observability.langsmith_tracking import (
+    log_agent_event_to_langsmith,
+    log_evaluation_to_langsmith,
+)
 from aeai_os.observability.mlflow_tracking import log_evaluation_to_mlflow
 from aeai_os.observability.tracing import ensure_trace_id, start_span
 from aeai_os.runs.models import (
@@ -360,7 +364,8 @@ class SQLAlchemyRunRepository:
 
     def add_event(self, event: AgentEventRecord) -> AgentEventRecord:
         with self._session_factory() as session:
-            _get_run_model(session, event.run_id)
+            run = _run_from_model(_get_run_model(session, event.run_id))
+            log_agent_event_to_langsmith(run=run, event=event)
             model = AgentEventModel(
                 id=event.id,
                 run_id=event.run_id,
@@ -415,11 +420,17 @@ class SQLAlchemyRunRepository:
                     run=run_record,
                     evaluation=record,
                 )
+                langsmith_result = log_evaluation_to_langsmith(
+                    run=run_record,
+                    evaluation=record,
+                )
                 event_record = _evaluation_event(
                     record=record,
                     trace_id=run_record.trace_id,
                     mlflow_status=mlflow_result.status,
                     mlflow_message=mlflow_result.message,
+                    langsmith_status=langsmith_result.status,
+                    langsmith_message=langsmith_result.message,
                 )
                 event = AgentEventModel(
                     id=event_record.id,

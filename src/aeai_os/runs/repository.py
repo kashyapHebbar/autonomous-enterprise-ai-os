@@ -7,6 +7,10 @@ from threading import RLock
 from typing import Any
 from uuid import uuid4
 
+from aeai_os.observability.langsmith_tracking import (
+    log_agent_event_to_langsmith,
+    log_evaluation_to_langsmith,
+)
 from aeai_os.observability.mlflow_tracking import log_evaluation_to_mlflow
 from aeai_os.observability.tracing import ensure_trace_id, start_span
 from aeai_os.runs.models import (
@@ -337,7 +341,8 @@ class InMemoryRunRepository:
 
     def add_event(self, event: AgentEventRecord) -> AgentEventRecord:
         with self._lock:
-            self.get_run(event.run_id)
+            run = self.get_run(event.run_id)
+            log_agent_event_to_langsmith(run=run, event=event)
             self._events[event.run_id].append(event)
             return event
 
@@ -365,6 +370,7 @@ class InMemoryRunRepository:
                 },
             ):
                 mlflow_result = log_evaluation_to_mlflow(run=run, evaluation=record)
+                langsmith_result = log_evaluation_to_langsmith(run=run, evaluation=record)
                 self._evaluations[evaluation.run_id].append(record)
                 self._events[evaluation.run_id].append(
                     _evaluation_event(
@@ -372,6 +378,8 @@ class InMemoryRunRepository:
                         trace_id=run.trace_id,
                         mlflow_status=mlflow_result.status,
                         mlflow_message=mlflow_result.message,
+                        langsmith_status=langsmith_result.status,
+                        langsmith_message=langsmith_result.message,
                     )
                 )
             return record
@@ -429,11 +437,14 @@ def _evaluation_event(
     trace_id: str | None,
     mlflow_status: str,
     mlflow_message: str | None,
+    langsmith_status: str,
+    langsmith_message: str | None,
 ) -> AgentEventRecord:
     payload = {
         "message": "Evaluation result logged.",
         "backend": "opentelemetry",
         "mlflow_status": mlflow_status,
+        "langsmith_status": langsmith_status,
         "evaluation_id": record.id,
         "target_artifact_id": record.target_artifact_id,
         "score": record.score,
@@ -444,6 +455,8 @@ def _evaluation_event(
     }
     if mlflow_message:
         payload["mlflow_message"] = mlflow_message
+    if langsmith_message:
+        payload["langsmith_message"] = langsmith_message
     return AgentEventRecord(
         id=f"event_{uuid4().hex}",
         run_id=record.run_id,

@@ -19,7 +19,7 @@ The first vertical slice is a procurement analytics workflow:
 - Data retrieval, analytics/code, visualization, report, and evaluation agents
 - Security policy gates for required tools and risky actions
 - API-driven workflow execution, approval decisions, failed-node retry, and run inspection
-- OpenTelemetry trace IDs, Prometheus-compatible metrics, and optional MLflow evaluation tracking
+- OpenTelemetry trace IDs, Prometheus-compatible metrics, and optional MLflow/LangSmith tracking
 - Docker Compose for API, Postgres, Redis, and MinIO
 - Kubernetes starter manifests in `deploy/kubernetes/`
 
@@ -181,11 +181,16 @@ The regression suite covers:
 Tracing is enabled locally without exporting spans by default. Set `AEAI_TRACE_EXPORTER=console`
 to print spans during development, or use `AEAI_TRACE_EXPORTER=otlp_http` /
 `AEAI_TRACE_EXPORTER=otlp_grpc` with `AEAI_OTEL_EXPORTER_OTLP_ENDPOINT` in deployed environments.
-Install `.[observability]` when exporting to an OTLP collector or MLflow.
+Install `.[observability]` when exporting to an OTLP collector, MLflow, or LangSmith.
 
 MLflow tracking is disabled by default. Set `AEAI_MLFLOW_TRACKING_ENABLED=true` and
 `AEAI_MLFLOW_TRACKING_URI` to mirror evaluation scores, pass/fail state, check metrics, run IDs, and
 trace IDs into an MLflow experiment.
+
+LangSmith trace review is disabled by default. Set `AEAI_LANGSMITH_TRACING_ENABLED=true`,
+`AEAI_LANGSMITH_API_KEY`, and optionally `AEAI_LANGSMITH_PROJECT` to mirror agent events and
+evaluation results into LangSmith with run IDs, trace IDs, graph node IDs, agent names, and artifact
+IDs in metadata.
 
 ## Current Limitations
 
@@ -195,7 +200,7 @@ trace IDs into an MLflow experiment.
 
 ## Direction
 
-The next roadmap is LangSmith trace review, deployment approvals, and a richer UI for inspecting
+The next roadmap is deployment approvals and a richer UI for inspecting
 execution graphs, artifacts, approval decisions, MLflow runs, and deployment history.
 
 ## Responsible Use
