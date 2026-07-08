@@ -239,6 +239,26 @@ Queued workflow execution defaults to the repository-backed queue. Set
 repository as the authoritative execution guard. Workers heartbeat claimed jobs, recover timed-out
 claims, retry according to `max_attempts`, and move exhausted jobs to `dead_letter`.
 
+## Database Migrations
+
+Persistent run storage uses Alembic migrations. The API can still create tables automatically for
+local demos with `AEAI_RUN_REPOSITORY_CREATE_SCHEMA=true`, but shared or deployed databases should
+be initialized explicitly:
+
+```bash
+AEAI_DATABASE_URL=postgresql+psycopg://aeai:aeai_password@localhost:5432/aeai_os make db-upgrade
+AEAI_DATABASE_URL=postgresql+psycopg://aeai:aeai_password@localhost:5432/aeai_os make db-validate
+```
+
+For a CI-friendly local check against SQLite:
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/manage_database.py \
+  --database-url sqlite+pysqlite:///./tmp-platform.db upgrade
+PYTHONPATH=src .venv/bin/python scripts/manage_database.py \
+  --database-url sqlite+pysqlite:///./tmp-platform.db validate
+```
+
 ## Documentation
 
 - Architecture: [docs/architecture.md](docs/architecture.md)

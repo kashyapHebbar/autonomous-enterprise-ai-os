@@ -37,6 +37,29 @@ GitHub Actions runs the same validation sequence on every pull request and push 
 The CI workflow installs the development dependencies with `make install` and runs the five checks
 above.
 
+## Database Migrations
+
+Persistent platform tables are managed by Alembic. The migration wrapper reads
+`AEAI_DATABASE_URL`, so the normal Postgres flow is:
+
+```bash
+AEAI_DATABASE_URL=postgresql+psycopg://aeai:aeai_password@localhost:5432/aeai_os make db-upgrade
+AEAI_DATABASE_URL=postgresql+psycopg://aeai:aeai_password@localhost:5432/aeai_os make db-validate
+```
+
+The same commands work in deployed environments when `AEAI_DATABASE_URL` points at the target
+database. For tests or local experiments without Postgres, use SQLite:
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/manage_database.py \
+  --database-url sqlite+pysqlite:///./tmp-platform.db upgrade
+PYTHONPATH=src .venv/bin/python scripts/manage_database.py \
+  --database-url sqlite+pysqlite:///./tmp-platform.db validate
+```
+
+Set `AEAI_RUN_REPOSITORY_CREATE_SCHEMA=false` when the API or worker should rely on migrations
+instead of creating tables at startup.
+
 ## Run The API Locally
 
 ```bash
