@@ -1,6 +1,6 @@
 PYTHON ?= $(shell if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3.11; fi)
 
-.PHONY: install test lint format smoke demo k8s-validate dev up down
+.PHONY: install test lint format smoke demo k8s-validate db-upgrade db-validate dev up down
 
 install:
 	$(PYTHON) -m pip install -e ".[dev]"
@@ -22,6 +22,12 @@ demo:
 
 k8s-validate:
 	$(PYTHON) scripts/validate_kubernetes_manifests.py deploy/kubernetes
+
+db-upgrade:
+	PYTHONPATH=src $(PYTHON) scripts/manage_database.py upgrade
+
+db-validate:
+	PYTHONPATH=src $(PYTHON) scripts/manage_database.py validate
 
 dev:
 	PYTHONPATH=src $(PYTHON) -m uvicorn aeai_os.api.app:create_app --factory --reload --host 0.0.0.0 --port 8000
