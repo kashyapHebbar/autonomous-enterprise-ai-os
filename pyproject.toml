@@ -53,7 +53,7 @@ warehouse = [
 where = ["src"]
 
 [tool.pytest.ini_options]
-addopts = "-q"
+addopts = "-q -p no:langsmith_plugin"
 pythonpath = ["src"]
 testpaths = ["tests"]
 

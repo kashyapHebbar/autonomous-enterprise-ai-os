@@ -5,6 +5,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
 
+from aeai_os.artifacts import ArtifactLineageService
 from aeai_os.runs.models import AgentEventRecord, EvaluationResultRecord, GraphNodeRecord
 from aeai_os.runs.repository import (
     InMemoryRunRepository,
@@ -49,6 +50,29 @@ def test_repository_creates_pending_run_and_attaches_dataset(repository):
     assert updated.dataset_artifact_id == artifact.id
     assert repository.list_runs() == [updated]
     assert repository.list_artifacts(run.id) == [artifact]
+
+
+def test_repository_records_artifact_storage_metadata(repository):
+    run = repository.create_run("Analyze procurement data.")
+
+    artifact = repository.add_artifact(
+        run_id=run.id,
+        artifact_type=ArtifactType.DASHBOARD,
+        uri="s3://bucket/runs/dashboard.html",
+        metadata={
+            "storage_backend": "s3",
+            "storage_key": "runs/dashboard.html",
+            "content_type": "text/html",
+            "size_bytes": "2048",
+        },
+        producer_node_id="visualization",
+    )
+
+    assert artifact.storage_backend == "s3"
+    assert artifact.storage_key == "runs/dashboard.html"
+    assert artifact.content_type == "text/html"
+    assert artifact.size_bytes == 2048
+    assert repository.get_artifact(run.id, artifact.id) == artifact
 
 
 def test_repository_rejects_short_task(repository):
@@ -101,6 +125,85 @@ def test_sqlalchemy_repository_survives_recreation(tmp_path):
     assert restored.status == RunStatus.FAILED
     assert restored.error_summary == "Dataset quality gate failed."
     assert second_repository.list_runs() == [restored]
+
+
+def test_sqlalchemy_artifact_metadata_and_lineage_survive_recreation(tmp_path):
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'artifact-lineage.db'}"
+    first_repository = SQLAlchemyRunRepository.from_url(database_url, create_schema=True)
+    run = first_repository.create_run("Analyze procurement data.")
+    dataset = first_repository.add_artifact(
+        run_id=run.id,
+        artifact_type=ArtifactType.DATASET,
+        uri="s3://bucket/raw/procurement.csv",
+        metadata={
+            "storage_backend": "s3",
+            "storage_key": "raw/procurement.csv",
+            "content_type": "text/csv",
+            "size_bytes": 1200,
+        },
+    )
+    kpi = first_repository.add_artifact(
+        run_id=run.id,
+        artifact_type=ArtifactType.KPI_TABLE,
+        uri="s3://bucket/analytics/kpis.json",
+        metadata={
+            "storage_backend": "s3",
+            "storage_key": "analytics/kpis.json",
+            "content_type": "application/json",
+            "size_bytes": 640,
+        },
+        source_artifact_ids=[dataset.id],
+        producer_node_id="analytics",
+    )
+    chart = first_repository.add_artifact(
+        run_id=run.id,
+        artifact_type=ArtifactType.CHART,
+        uri="s3://bucket/visualization/chart.html",
+        metadata={"storage_backend": "s3", "storage_key": "visualization/chart.html"},
+        source_artifact_ids=[kpi.id],
+        producer_node_id="visualization",
+        content_type="text/html",
+        size_bytes=900,
+    )
+    dashboard = first_repository.add_artifact(
+        run_id=run.id,
+        artifact_type=ArtifactType.DASHBOARD,
+        uri="s3://bucket/visualization/dashboard.html",
+        metadata={"storage_backend": "s3", "storage_key": "visualization/dashboard.html"},
+        source_artifact_ids=[kpi.id, chart.id],
+        producer_node_id="visualization",
+        content_type="text/html",
+        size_bytes=1500,
+    )
+    report = first_repository.add_artifact(
+        run_id=run.id,
+        artifact_type=ArtifactType.REPORT,
+        uri="s3://bucket/report/procurement.md",
+        metadata={"storage_backend": "s3", "storage_key": "report/procurement.md"},
+        source_artifact_ids=[dataset.id, chart.id, dashboard.id],
+        producer_node_id="report",
+        content_type="text/markdown",
+        size_bytes=800,
+    )
+
+    second_repository = SQLAlchemyRunRepository.from_url(database_url, create_schema=False)
+    restored_report = second_repository.get_artifact(run.id, report.id)
+    lineage = ArtifactLineageService(second_repository).build_lineage(run.id, report.id)
+    upstream_ids = {artifact.id for artifact in lineage.upstream_artifacts}
+    edge_pairs = {
+        (edge.source_artifact_id, edge.target_artifact_id)
+        for edge in lineage.edges
+    }
+
+    assert restored_report.storage_backend == "s3"
+    assert restored_report.storage_key == "report/procurement.md"
+    assert restored_report.content_type == "text/markdown"
+    assert restored_report.size_bytes == 800
+    assert {dataset.id, kpi.id, chart.id, dashboard.id} <= upstream_ids
+    assert (dataset.id, report.id) in edge_pairs
+    assert (chart.id, report.id) in edge_pairs
+    assert (dashboard.id, report.id) in edge_pairs
+    assert (kpi.id, dashboard.id) in edge_pairs
 
 
 def test_repository_persists_graph_events_evaluations_and_checkpoints(repository):

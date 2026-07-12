@@ -302,8 +302,9 @@ claims are requeued until attempts are exhausted, then moved to `dead_letter`.
 ## Artifact Storage
 
 Artifact metadata and artifact payloads are deliberately separate. The run repository stores
-`ArtifactRecord` metadata, lineage, type, producer, stable URI, and storage metadata. The
-`ArtifactStore` writes and reads the payload bytes used by agents.
+`ArtifactRecord` metadata, lineage, type, producer, stable URI, and first-class storage metadata
+fields: `storage_backend`, `storage_key`, `content_type`, and `size_bytes`. The `ArtifactStore`
+writes and reads the payload bytes used by agents.
 
 Local filesystem storage is the default:
 

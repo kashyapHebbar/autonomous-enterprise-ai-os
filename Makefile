@@ -6,7 +6,7 @@ install:
 	$(PYTHON) -m pip install -e ".[dev]"
 
 test:
-	$(PYTHON) -m pytest
+	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest
 
 lint:
 	$(PYTHON) -m ruff check src tests scripts

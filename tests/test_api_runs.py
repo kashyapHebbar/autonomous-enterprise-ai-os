@@ -340,6 +340,78 @@ def test_get_artifact_and_lineage(tmp_path):
     assert missing_response.status_code == 404
 
 
+def test_sqlalchemy_artifact_lineage_endpoint_survives_app_recreation(tmp_path, monkeypatch):
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'artifact-lineage.db'}"
+    monkeypatch.setenv("AEAI_RUN_REPOSITORY_BACKEND", "sqlalchemy")
+    monkeypatch.setenv("AEAI_RUN_REPOSITORY_CREATE_SCHEMA", "true")
+    monkeypatch.setenv("AEAI_DATABASE_URL", database_url)
+
+    first_app = create_app(artifact_root=tmp_path / "artifacts")
+    repository = first_app.state.run_repository
+    run = repository.create_run("Analyze procurement spend.")
+    dataset = repository.add_artifact(
+        run_id=run.id,
+        artifact_type=ArtifactType.DATASET,
+        uri="s3://bucket/raw/procurement.csv",
+        metadata={
+            "storage_backend": "s3",
+            "storage_key": "raw/procurement.csv",
+            "content_type": "text/csv",
+            "size_bytes": 1024,
+        },
+    )
+    kpi = repository.add_artifact(
+        run_id=run.id,
+        artifact_type=ArtifactType.KPI_TABLE,
+        uri="s3://bucket/analytics/kpis.json",
+        metadata={"storage_backend": "s3", "storage_key": "analytics/kpis.json"},
+        source_artifact_ids=[dataset.id],
+        producer_node_id="analytics",
+        content_type="application/json",
+        size_bytes=512,
+    )
+    dashboard = repository.add_artifact(
+        run_id=run.id,
+        artifact_type=ArtifactType.DASHBOARD,
+        uri="s3://bucket/visualization/dashboard.html",
+        metadata={"storage_backend": "s3", "storage_key": "visualization/dashboard.html"},
+        source_artifact_ids=[kpi.id],
+        producer_node_id="visualization",
+        content_type="text/html",
+        size_bytes=2048,
+    )
+    report = repository.add_artifact(
+        run_id=run.id,
+        artifact_type=ArtifactType.REPORT,
+        uri="s3://bucket/report/procurement.md",
+        metadata={"storage_backend": "s3", "storage_key": "report/procurement.md"},
+        source_artifact_ids=[dataset.id, dashboard.id],
+        producer_node_id="report",
+        content_type="text/markdown",
+        size_bytes=1536,
+    )
+
+    second_client = TestClient(create_app(artifact_root=tmp_path / "artifacts"))
+    response = second_client.get(f"/runs/{run.id}/artifacts/{report.id}/lineage")
+    body = response.json()
+    upstream_ids = {artifact["id"] for artifact in body["upstream_artifacts"]}
+    edge_pairs = {
+        (edge["source_artifact_id"], edge["target_artifact_id"])
+        for edge in body["edges"]
+    }
+
+    assert response.status_code == 200
+    assert body["root_artifact"]["id"] == report.id
+    assert body["root_artifact"]["storage_backend"] == "s3"
+    assert body["root_artifact"]["storage_key"] == "report/procurement.md"
+    assert body["root_artifact"]["content_type"] == "text/markdown"
+    assert body["root_artifact"]["size_bytes"] == 1536
+    assert {dataset.id, kpi.id, dashboard.id} <= upstream_ids
+    assert (dataset.id, report.id) in edge_pairs
+    assert (dashboard.id, report.id) in edge_pairs
+    assert (kpi.id, dashboard.id) in edge_pairs
+
+
 def test_run_detail_and_evaluations_endpoint_include_failed_evaluation(tmp_path):
     repository = InMemoryRunRepository()
     app = create_app(repository=repository, artifact_root=tmp_path / "artifacts")

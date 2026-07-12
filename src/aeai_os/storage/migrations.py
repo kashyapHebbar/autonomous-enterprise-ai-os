@@ -2,9 +2,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from pathlib import Path
+from typing import Any
 
-from alembic import command
-from alembic.config import Config
 from sqlalchemy import Engine, create_engine, inspect
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -24,7 +23,11 @@ EXPECTED_TABLES = {
 EXPECTED_INDEXES: Mapping[str, set[str]] = {
     "runs": {"ix_runs_status"},
     "graph_nodes": {"ix_graph_nodes_run_id", "ix_graph_nodes_status"},
-    "artifacts": {"ix_artifacts_run_id", "ix_artifacts_type"},
+    "artifacts": {
+        "ix_artifacts_run_id",
+        "ix_artifacts_type",
+        "ix_artifacts_storage_backend",
+    },
     "workflow_jobs": {
         "ix_workflow_jobs_run_id",
         "ix_workflow_jobs_workflow_name",
@@ -34,8 +37,22 @@ EXPECTED_INDEXES: Mapping[str, set[str]] = {
     "evaluation_results": {"ix_evaluation_results_run_id"},
 }
 
+EXPECTED_COLUMNS: Mapping[str, set[str]] = {
+    "artifacts": {
+        "content_type",
+        "storage_backend",
+        "storage_key",
+        "size_bytes",
+        "source_artifact_ids",
+        "producer_node_id",
+        "metadata_json",
+    },
+}
 
-def build_alembic_config(database_url: str) -> Config:
+
+def build_alembic_config(database_url: str) -> Any:
+    from alembic.config import Config
+
     config = Config(str(ALEMBIC_INI))
     config.set_main_option("script_location", str(MIGRATION_SCRIPT_LOCATION))
     config.set_main_option("sqlalchemy.url", database_url)
@@ -43,6 +60,8 @@ def build_alembic_config(database_url: str) -> Config:
 
 
 def upgrade_database(database_url: str, revision: str = "head") -> None:
+    from alembic import command
+
     command.upgrade(build_alembic_config(database_url), revision)
 
 
@@ -72,5 +91,12 @@ def validate_persistent_schema_engine(engine: Engine) -> list[str]:
         }
         for index_name in sorted(expected_indexes - existing_indexes):
             errors.append(f"Missing index: {table_name}.{index_name}")
+
+    for table_name, expected_columns in EXPECTED_COLUMNS.items():
+        if table_name not in existing_tables:
+            continue
+        existing_columns = {column["name"] for column in inspector.get_columns(table_name)}
+        for column_name in sorted(expected_columns - existing_columns):
+            errors.append(f"Missing column: {table_name}.{column_name}")
 
     return errors

@@ -183,8 +183,9 @@ S3-compatible settings:
 - `AEAI_ARTIFACT_S3_ACCESS_KEY_ID`
 - `AEAI_ARTIFACT_S3_SECRET_ACCESS_KEY`
 
-Artifact records retain stable URIs such as local file paths or `s3://bucket/key` plus storage
-metadata including backend, key, content type, and payload size.
+Artifact records retain stable URIs such as local file paths or `s3://bucket/key` plus durable
+storage metadata fields for backend, key, content type, and payload size. Source artifact IDs and
+producer node IDs are persisted so lineage remains available after API restarts.
 
 ## Run With Docker Compose
 

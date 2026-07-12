@@ -33,6 +33,7 @@ from aeai_os.runs.repository import (
     WorkflowJobNotFoundError,
     WorkflowJobOwnershipError,
     WorkflowJobStateError,
+    _artifact_storage_metadata,
     _evaluation_event,
     utc_now,
 )
@@ -389,16 +390,32 @@ class SQLAlchemyRunRepository:
         source_artifact_ids: list[str] | None = None,
         producer_node_id: str | None = None,
         artifact_id: str | None = None,
+        content_type: str | None = None,
+        storage_backend: str | None = None,
+        storage_key: str | None = None,
+        size_bytes: int | None = None,
     ) -> ArtifactRecord:
         with self._session_factory() as session:
             run = _get_run_model(session, run_id)
+            normalized_metadata = dict(metadata or {})
+            storage_metadata = _artifact_storage_metadata(
+                normalized_metadata,
+                content_type=content_type,
+                storage_backend=storage_backend,
+                storage_key=storage_key,
+                size_bytes=size_bytes,
+            )
             model = ArtifactModel(
                 id=artifact_id or self.next_artifact_id(),
                 run_id=run_id,
                 producer_node_id=producer_node_id,
                 type=artifact_type.value,
                 uri=uri,
-                metadata_json=dict(metadata or {}),
+                metadata_json=normalized_metadata,
+                content_type=storage_metadata["content_type"],
+                storage_backend=storage_metadata["storage_backend"],
+                storage_key=storage_metadata["storage_key"],
+                size_bytes=storage_metadata["size_bytes"],
                 source_artifact_ids=list(source_artifact_ids or []),
                 created_at=utc_now(),
             )
@@ -656,15 +673,27 @@ def _workflow_job_from_model(model: WorkflowJobModel) -> WorkflowJobRecord:
 
 
 def _artifact_from_model(model: ArtifactModel) -> ArtifactRecord:
+    metadata = dict(model.metadata_json or {})
+    storage_metadata = _artifact_storage_metadata(
+        metadata,
+        content_type=model.content_type,
+        storage_backend=model.storage_backend,
+        storage_key=model.storage_key,
+        size_bytes=model.size_bytes,
+    )
     return ArtifactRecord(
         id=model.id,
         run_id=model.run_id,
         producer_node_id=model.producer_node_id,
         type=ArtifactType(model.type),
         uri=model.uri,
-        metadata=dict(model.metadata_json or {}),
+        metadata=metadata,
         source_artifact_ids=list(model.source_artifact_ids or []),
         created_at=_utc_datetime(model.created_at),
+        content_type=storage_metadata["content_type"],
+        storage_backend=storage_metadata["storage_backend"],
+        storage_key=storage_metadata["storage_key"],
+        size_bytes=storage_metadata["size_bytes"],
     )
 
 
