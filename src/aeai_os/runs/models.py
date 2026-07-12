@@ -64,6 +64,10 @@ class ArtifactRecord:
     source_artifact_ids: list[str]
     created_at: datetime
     producer_node_id: str | None = None
+    content_type: str | None = None
+    storage_backend: str | None = None
+    storage_key: str | None = None
+    size_bytes: int | None = None
 
 
 @dataclass(frozen=True)

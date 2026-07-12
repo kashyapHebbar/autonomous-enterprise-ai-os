@@ -210,6 +210,10 @@ Represents a produced or uploaded file/object.
 | type | enum | dataset, schema_profile, quality_report, kpi_table, chart, dashboard, report, code, evaluation |
 | uri | string | Local path or object URI |
 | metadata | json | Size, format, row count, checksums, etc. |
+| content_type | string | Nullable MIME/content type from payload storage |
+| storage_backend | string | Nullable payload backend such as local or s3 |
+| storage_key | string | Nullable backend object key or relative local key |
+| size_bytes | integer | Nullable payload size |
 | source_artifact_ids | json | Provenance links |
 | created_at | timestamp | Creation time |
 

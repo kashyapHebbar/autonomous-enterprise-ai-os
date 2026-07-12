@@ -137,6 +137,10 @@ class ArtifactResponse(BaseModel):
     type: ArtifactType
     uri: str
     metadata: dict[str, Any]
+    content_type: str | None
+    storage_backend: str | None
+    storage_key: str | None
+    size_bytes: int | None
     source_artifact_ids: list[str]
     created_at: datetime
 
@@ -248,6 +252,10 @@ def artifact_to_response(artifact: ArtifactRecord) -> ArtifactResponse:
         type=artifact.type,
         uri=artifact.uri,
         metadata=artifact.metadata,
+        content_type=artifact.content_type,
+        storage_backend=artifact.storage_backend,
+        storage_key=artifact.storage_key,
+        size_bytes=artifact.size_bytes,
         source_artifact_ids=artifact.source_artifact_ids,
         created_at=artifact.created_at,
     )

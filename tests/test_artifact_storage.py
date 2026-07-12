@@ -146,5 +146,9 @@ def test_procurement_workflow_writes_generated_artifacts_to_s3_store(tmp_path):
         for artifact in generated_artifacts
     )
     assert all(artifact.metadata["storage_backend"] == "s3" for artifact in generated_artifacts)
+    assert all(artifact.storage_backend == "s3" for artifact in generated_artifacts)
+    assert all(artifact.storage_key for artifact in generated_artifacts)
+    assert all(artifact.content_type for artifact in generated_artifacts)
+    assert all(artifact.size_bytes and artifact.size_bytes > 0 for artifact in generated_artifacts)
     reports = [artifact for artifact in generated_artifacts if artifact.type == ArtifactType.REPORT]
     assert "Procurement Analysis Report" in store.read_text(reports[-1].uri)

@@ -55,6 +55,10 @@ class ArtifactModel(Base):
     type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     uri: Mapped[str] = mapped_column(Text, nullable=False)
     metadata_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    content_type: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    storage_backend: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    storage_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     source_artifact_ids: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 

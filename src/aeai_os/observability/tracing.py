@@ -3,23 +3,15 @@ from __future__ import annotations
 import os
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
 
-from opentelemetry import trace
-from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import (
-    BatchSpanProcessor,
-    ConsoleSpanExporter,
-    SimpleSpanProcessor,
-    SpanProcessor,
-)
-
 _CONFIGURED = False
 _CONFIGURED_RESULT: TracingConfigurationResult | None = None
 _TRACER_NAME = "aeai_os"
+_CURRENT_TRACE_ID: ContextVar[str | None] = ContextVar("aeai_trace_id", default=None)
 
 
 @dataclass(frozen=True)
@@ -38,7 +30,7 @@ class TracingConfig:
 
 @dataclass(frozen=True)
 class TracingExporterResolution:
-    processor: SpanProcessor | None
+    processor: Any | None
     status: str
     message: str | None = None
 
@@ -90,6 +82,8 @@ def resolve_span_processor(config: TracingConfig) -> TracingExporterResolution:
         )
 
     if config.exporter == "console":
+        from opentelemetry.sdk.trace.export import ConsoleSpanExporter, SimpleSpanProcessor
+
         return TracingExporterResolution(
             processor=SimpleSpanProcessor(ConsoleSpanExporter()),
             status="configured",
@@ -100,6 +94,7 @@ def resolve_span_processor(config: TracingConfig) -> TracingExporterResolution:
             from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
                 OTLPSpanExporter,
             )
+            from opentelemetry.sdk.trace.export import BatchSpanProcessor
         except ImportError:
             return TracingExporterResolution(
                 processor=None,
@@ -120,6 +115,7 @@ def resolve_span_processor(config: TracingConfig) -> TracingExporterResolution:
             from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
                 OTLPSpanExporter,
             )
+            from opentelemetry.sdk.trace.export import BatchSpanProcessor
         except ImportError:
             return TracingExporterResolution(
                 processor=None,
@@ -166,6 +162,19 @@ def configure_tracing(
         )
         return _CONFIGURED_RESULT
 
+    if config.exporter == "none":
+        _CONFIGURED = True
+        _CONFIGURED_RESULT = TracingConfigurationResult(
+            config=config,
+            configured=False,
+            exporter_status="not_configured",
+        )
+        return _CONFIGURED_RESULT
+
+    from opentelemetry import trace
+    from opentelemetry.sdk.resources import Resource
+    from opentelemetry.sdk.trace import TracerProvider
+
     provider = trace.get_tracer_provider()
     if provider.__class__.__name__ == "ProxyTracerProvider":
         provider = TracerProvider(
@@ -193,6 +202,16 @@ def configure_tracing(
 
 
 def current_trace_id() -> str | None:
+    local_trace_id = _CURRENT_TRACE_ID.get()
+    if local_trace_id:
+        return local_trace_id
+    if _CONFIGURED_RESULT is None or _CONFIGURED_RESULT.exporter_status in {
+        "disabled",
+        "not_configured",
+    }:
+        return None
+    from opentelemetry import trace
+
     span_context = trace.get_current_span().get_span_context()
     if span_context.is_valid and span_context.trace_id:
         return f"{span_context.trace_id:032x}"
@@ -210,14 +229,33 @@ def ensure_trace_id(trace_id: str | None = None) -> str:
 def start_span(
     name: str,
     attributes: Mapping[str, Any] | None = None,
-) -> Iterator[trace.Span]:
-    configure_tracing()
+) -> Iterator[Any]:
+    configuration = configure_tracing()
+    if configuration.exporter_status in {"disabled", "not_configured"}:
+        trace_id = uuid4().hex
+        token = _CURRENT_TRACE_ID.set(trace_id)
+        try:
+            yield _NoopSpan(trace_id=trace_id)
+        finally:
+            _CURRENT_TRACE_ID.reset(token)
+        return
+
+    from opentelemetry import trace
+
     tracer = trace.get_tracer(_TRACER_NAME)
     with tracer.start_as_current_span(
         name,
         attributes=_normalize_attributes(attributes or {}),
     ) as span:
         yield span
+
+
+@dataclass(frozen=True)
+class _NoopSpan:
+    trace_id: str
+
+    def set_attribute(self, key: str, value: Any) -> None:
+        return None
 
 
 def _normalize_attributes(attributes: Mapping[str, Any]) -> dict[str, Any]:
