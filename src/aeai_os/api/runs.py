@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Body, File, HTTPException, UploadFile, status
@@ -19,6 +19,7 @@ from aeai_os.api.run_schemas import (
     DeploymentApprovalDecisionRequest,
     EvaluationResponse,
     GraphNodeResponse,
+    ImportRunArchiveRequest,
     RunDetailResponse,
     RunExecutionResponse,
     RunResponse,
@@ -42,6 +43,12 @@ from aeai_os.deployments import (
     request_deployment_approval,
 )
 from aeai_os.orchestration.service import OrchestrationError, OrchestrationResult
+from aeai_os.runs.archive import (
+    RunArchiveConflictError,
+    RunArchiveError,
+    export_run_archive,
+    import_run_archive,
+)
 from aeai_os.runs.models import AgentEventRecord
 from aeai_os.runs.repository import (
     ArtifactNotFoundError,
@@ -107,6 +114,40 @@ def build_runs_router(
     @router.get("", response_model=list[RunResponse])
     def list_runs(user: RunReader) -> list[RunResponse]:
         return [run_to_response(run) for run in repository.list_runs()]
+
+    @router.post("/import", response_model=RunDetailResponse, status_code=status.HTTP_201_CREATED)
+    def import_run(
+        request: Annotated[ImportRunArchiveRequest, Body(...)],
+        actor: RunWriter,
+    ) -> RunDetailResponse:
+        try:
+            run = import_run_archive(
+                repository,
+                request.archive,
+                overwrite=request.overwrite,
+            )
+        except RunArchiveConflictError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        except RunArchiveError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        _record_audit_event(
+            repository,
+            run.id,
+            actor,
+            action="run.import_archive",
+            target={"run_id": run.id},
+            details={"overwrite": request.overwrite},
+        )
+        return run_to_detail_response(
+            repository.get_run(run.id),
+            repository.list_artifacts(run.id),
+            repository.list_evaluations(run.id),
+        )
+
+    @router.get("/{run_id}/export", response_model=dict[str, Any])
+    def export_run(run_id: str, user: RunReader) -> dict[str, Any]:
+        _get_run_or_404(repository, run_id)
+        return export_run_archive(repository, run_id)
 
     @router.get("/{run_id}", response_model=RunDetailResponse)
     def get_run(run_id: str, user: RunReader) -> RunDetailResponse:

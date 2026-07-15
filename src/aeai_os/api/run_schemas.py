@@ -31,6 +31,11 @@ class CreateRunRequest(BaseModel):
         return normalized
 
 
+class ImportRunArchiveRequest(BaseModel):
+    archive: dict[str, Any] = Field(...)
+    overwrite: bool = False
+
+
 class AttachDatasetReferenceRequest(BaseModel):
     uri: str = Field(..., max_length=2048)
     format: str = Field(default="csv", max_length=32)

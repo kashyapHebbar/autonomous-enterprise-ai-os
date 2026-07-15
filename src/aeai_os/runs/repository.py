@@ -110,6 +110,42 @@ class InMemoryRunRepository:
             except KeyError as exc:
                 raise RunNotFoundError(f"Run not found: {run_id}") from exc
 
+    def restore_run(
+        self,
+        run: RunRecord,
+        *,
+        artifacts: list[ArtifactRecord] | None = None,
+        graph_nodes: list[GraphNodeRecord] | None = None,
+        events: list[AgentEventRecord] | None = None,
+        evaluations: list[EvaluationResultRecord] | None = None,
+        workflow_jobs: list[WorkflowJobRecord] | None = None,
+        checkpoint: RunCheckpointRecord | None = None,
+    ) -> RunRecord:
+        with self._lock:
+            self._runs[run.id] = deepcopy(run)
+            self._artifacts[run.id] = [deepcopy(artifact) for artifact in artifacts or []]
+            self._graph_nodes[run.id] = [deepcopy(node) for node in graph_nodes or []]
+            self._events[run.id] = [deepcopy(event) for event in events or []]
+            self._evaluations[run.id] = [
+                deepcopy(evaluation) for evaluation in evaluations or []
+            ]
+            self._workflow_job_order = [
+                job_id
+                for job_id in self._workflow_job_order
+                if self._workflow_jobs[job_id].run_id != run.id
+            ]
+            for job_id, job in list(self._workflow_jobs.items()):
+                if job.run_id == run.id:
+                    del self._workflow_jobs[job_id]
+            for job in workflow_jobs or []:
+                self._workflow_jobs[job.id] = deepcopy(job)
+                self._workflow_job_order.append(job.id)
+            if checkpoint is None:
+                self._checkpoints.pop(run.id, None)
+            else:
+                self._checkpoints[run.id] = deepcopy(checkpoint)
+            return deepcopy(self._runs[run.id])
+
     def update_status(
         self,
         run_id: str,
