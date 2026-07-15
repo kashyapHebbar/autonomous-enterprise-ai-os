@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import Engine, create_engine, select
+from sqlalchemy import Engine, create_engine, delete, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from aeai_os.observability.langsmith_tracking import (
@@ -114,6 +114,34 @@ class SQLAlchemyRunRepository:
     def get_run(self, run_id: str) -> RunRecord:
         with self._session_factory() as session:
             return _run_from_model(_get_run_model(session, run_id))
+
+    def restore_run(
+        self,
+        run: RunRecord,
+        *,
+        artifacts: list[ArtifactRecord] | None = None,
+        graph_nodes: list[GraphNodeRecord] | None = None,
+        events: list[AgentEventRecord] | None = None,
+        evaluations: list[EvaluationResultRecord] | None = None,
+        workflow_jobs: list[WorkflowJobRecord] | None = None,
+        checkpoint: RunCheckpointRecord | None = None,
+    ) -> RunRecord:
+        with self._session_factory() as session:
+            _delete_run_children(session, run.id)
+            session.execute(delete(RunModel).where(RunModel.id == run.id))
+            session.flush()
+            session.add(_run_to_model(run))
+            session.add_all(_artifact_to_model(artifact) for artifact in artifacts or [])
+            session.add_all(_graph_node_to_model(node) for node in graph_nodes or [])
+            session.add_all(_event_to_model(event) for event in events or [])
+            session.add_all(
+                _evaluation_to_model(evaluation) for evaluation in evaluations or []
+            )
+            session.add_all(_workflow_job_to_model(job) for job in workflow_jobs or [])
+            if checkpoint is not None:
+                session.add(_checkpoint_to_model(checkpoint))
+            session.commit()
+            return _run_from_model(_get_run_model(session, run.id))
 
     def update_status(
         self,
@@ -637,6 +665,117 @@ def _get_workflow_job_model(session: Session, job_id: str) -> WorkflowJobModel:
     if model is None:
         raise WorkflowJobNotFoundError(f"Workflow job not found: {job_id}")
     return model
+
+
+def _delete_run_children(session: Session, run_id: str) -> None:
+    session.execute(delete(EvaluationResultModel).where(EvaluationResultModel.run_id == run_id))
+    session.execute(delete(RunCheckpointModel).where(RunCheckpointModel.run_id == run_id))
+    session.execute(delete(AgentEventModel).where(AgentEventModel.run_id == run_id))
+    session.execute(delete(GraphNodeModel).where(GraphNodeModel.run_id == run_id))
+    session.execute(delete(ArtifactModel).where(ArtifactModel.run_id == run_id))
+    session.execute(delete(WorkflowJobModel).where(WorkflowJobModel.run_id == run_id))
+
+
+def _run_to_model(run: RunRecord) -> RunModel:
+    return RunModel(
+        id=run.id,
+        task=run.task,
+        status=run.status.value,
+        metadata_json=deepcopy(run.metadata),
+        dataset_artifact_id=run.dataset_artifact_id,
+        trace_id=run.trace_id,
+        error_summary=run.error_summary,
+        created_at=run.created_at,
+        updated_at=run.updated_at,
+    )
+
+
+def _artifact_to_model(artifact: ArtifactRecord) -> ArtifactModel:
+    return ArtifactModel(
+        id=artifact.id,
+        run_id=artifact.run_id,
+        producer_node_id=artifact.producer_node_id,
+        type=artifact.type.value,
+        uri=artifact.uri,
+        metadata_json=deepcopy(artifact.metadata),
+        content_type=artifact.content_type,
+        storage_backend=artifact.storage_backend,
+        storage_key=artifact.storage_key,
+        size_bytes=artifact.size_bytes,
+        source_artifact_ids=list(artifact.source_artifact_ids),
+        created_at=artifact.created_at,
+    )
+
+
+def _graph_node_to_model(node: GraphNodeRecord) -> GraphNodeModel:
+    return GraphNodeModel(
+        id=node.id,
+        run_id=node.run_id,
+        agent_type=node.agent_type,
+        status=node.status.value,
+        depends_on=list(node.depends_on),
+        required_tools=list(node.required_tools),
+        expected_artifacts=list(node.expected_artifacts),
+        retry_count=node.retry_count,
+        started_at=node.started_at,
+        finished_at=node.finished_at,
+        created_at=node.created_at,
+        updated_at=node.updated_at,
+    )
+
+
+def _event_to_model(event: AgentEventRecord) -> AgentEventModel:
+    return AgentEventModel(
+        id=event.id,
+        run_id=event.run_id,
+        node_id=event.node_id,
+        event_type=str(event.event_type),
+        payload=deepcopy(event.payload),
+        created_at=event.created_at,
+    )
+
+
+def _evaluation_to_model(evaluation: EvaluationResultRecord) -> EvaluationResultModel:
+    if evaluation.created_at is None:
+        raise ValueError(f"Evaluation record is missing created_at: {evaluation.id}")
+    return EvaluationResultModel(
+        id=evaluation.id,
+        run_id=evaluation.run_id,
+        target_artifact_id=evaluation.target_artifact_id,
+        score=evaluation.score,
+        passed=evaluation.passed,
+        checks=deepcopy(evaluation.checks),
+        created_at=evaluation.created_at,
+    )
+
+
+def _workflow_job_to_model(job: WorkflowJobRecord) -> WorkflowJobModel:
+    return WorkflowJobModel(
+        id=job.id,
+        run_id=job.run_id,
+        workflow_name=job.workflow_name,
+        status=job.status.value,
+        payload=deepcopy(job.payload),
+        attempt_count=job.attempt_count,
+        max_attempts=job.max_attempts,
+        worker_id=job.worker_id,
+        error_summary=job.error_summary,
+        started_at=job.started_at,
+        finished_at=job.finished_at,
+        heartbeat_at=job.heartbeat_at,
+        created_at=job.created_at,
+        updated_at=job.updated_at,
+    )
+
+
+def _checkpoint_to_model(checkpoint: RunCheckpointRecord) -> RunCheckpointModel:
+    return RunCheckpointModel(
+        run_id=checkpoint.run_id,
+        version=checkpoint.version,
+        state_json=deepcopy(checkpoint.state),
+        created_at=checkpoint.created_at,
+        updated_at=checkpoint.updated_at,
+    )
 
 
 def _run_from_model(model: RunModel) -> RunRecord:

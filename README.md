@@ -108,7 +108,9 @@ write `audit` events with actor identity under `/runs/{run_id}/events`.
 | Route | Purpose |
 | --- | --- |
 | `POST /runs` | Create an agent workflow run |
+| `POST /runs/import` | Import a portable run archive for offline inspection |
 | `GET /runs/{run_id}` | Inspect run state, artifacts, evaluations, and trace ID |
+| `GET /runs/{run_id}/export` | Export run metadata, artifacts, graph nodes, events, jobs, evaluations, and checkpoint |
 | `POST /runs/{run_id}/datasets/reference` | Attach an external dataset reference |
 | `POST /runs/{run_id}/datasets/upload` | Upload a local dataset file |
 | `POST /runs/{run_id}/execute/procurement` | Execute the procurement workflow synchronously |
@@ -211,6 +213,26 @@ curl "http://127.0.0.1:8000/runs/${RUN_ID}"
 Open `http://127.0.0.1:8000/run-inspector/runs/${RUN_ID}` to inspect graph nodes,
 events, artifact lineage, approval history, evaluation/MLflow status, deployment history, and
 approve/deny or retry actionable nodes.
+
+## Run Archives
+
+Completed runs can be exported as portable JSON archives for portfolio demos, debugging, and
+offline replay in Run Inspector. Archives include run metadata, artifacts, graph nodes, events,
+workflow jobs, evaluations, and checkpoint state, but not artifact payload bytes. Secret-like keys
+such as passwords, tokens, API keys, and credentials are redacted during export.
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/manage_run_archive.py \
+  --database-url sqlite+pysqlite:///./runs.db export "$RUN_ID" --output run-archive.json
+
+PYTHONPATH=src .venv/bin/python scripts/manage_run_archive.py \
+  --database-url sqlite+pysqlite:///./offline-runs.db --create-schema replay \
+  --input run-archive.json
+```
+
+The API offers the same flow with `GET /runs/{run_id}/export` and `POST /runs/import`. After replay,
+open `/run-inspector/runs/{run_id}` against the local API to inspect the imported run without the
+original infrastructure.
 
 ## Kubernetes Baseline
 

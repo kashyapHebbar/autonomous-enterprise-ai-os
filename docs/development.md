@@ -139,6 +139,7 @@ curl http://localhost:8000/runs/{run_id}/artifacts
 curl http://localhost:8000/runs/{run_id}/graph-nodes
 curl http://localhost:8000/runs/{run_id}/events
 curl http://localhost:8000/runs/{run_id}/timeline
+curl http://localhost:8000/runs/{run_id}/export
 ```
 
 The browser inspector for the same data is available at
@@ -146,6 +147,40 @@ The browser inspector for the same data is available at
 It shows approve/deny controls for nodes and deployment jobs waiting on human
 approval, a retry control for failed nodes, inline artifact lineage, approval history,
 evaluation/MLflow status, and deployment history.
+
+## Run Archives
+
+Run archives are portable JSON snapshots for demos and offline debugging. They include run
+metadata, artifact records, graph nodes, agent events, workflow jobs, evaluations, and checkpoint
+state. They do not include artifact payload bytes, and export redacts secret-like keys such as
+passwords, tokens, API keys, authorization headers, and credentials.
+
+Export through the API:
+
+```bash
+curl http://localhost:8000/runs/{run_id}/export > run-archive.json
+```
+
+Replay through the API:
+
+```bash
+curl -X POST http://localhost:8000/runs/import \
+  -H "Content-Type: application/json" \
+  -d @<(python -c 'import json,sys; print(json.dumps({"archive": json.load(open("run-archive.json"))}))')
+```
+
+Or use the CLI against a local SQLAlchemy repository:
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/manage_run_archive.py \
+  --database-url sqlite+pysqlite:///./runs.db export {run_id} --output run-archive.json
+PYTHONPATH=src .venv/bin/python scripts/manage_run_archive.py \
+  --database-url sqlite+pysqlite:///./offline-runs.db --create-schema replay \
+  --input run-archive.json
+```
+
+After replay, open `http://localhost:8000/run-inspector/runs/{run_id}` against the repository that
+received the archive.
 
 Execute the procurement workflow for a run with an attached dataset:
 
