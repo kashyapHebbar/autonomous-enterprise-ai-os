@@ -25,6 +25,7 @@ from aeai_os.api.run_schemas import (
     RunExecutionResponse,
     RunResponse,
     RunTimelineItemResponse,
+    WorkflowJobControlRequest,
     WorkflowJobResponse,
     agent_event_to_response,
     artifact_lineage_to_response,
@@ -58,6 +59,7 @@ from aeai_os.runs.repository import (
     InMemoryRunRepository,
     RunNotFoundError,
     WorkflowJobNotFoundError,
+    WorkflowJobStateError,
     utc_now,
 )
 from aeai_os.schemas.enums import AgentEventType, ArtifactType
@@ -72,6 +74,10 @@ from aeai_os.workflows.queue import WorkflowQueueBackend
 from aeai_os.workflows.worker import enqueue_procurement_workflow
 
 ALLOWED_UPLOAD_EXTENSIONS = {".csv", ".tsv", ".json", ".parquet"}
+WorkflowJobControlBody = Annotated[
+    WorkflowJobControlRequest,
+    Body(default_factory=WorkflowJobControlRequest),
+]
 
 
 def build_runs_router(
@@ -80,6 +86,7 @@ def build_runs_router(
     artifact_store: ArtifactStore,
     workflow_queue: WorkflowQueueBackend | None = None,
     workflow_execution_mode: str = "sync",
+    procurement_workflow_max_attempts: int = 3,
 ):
     router = APIRouter(prefix="/runs", tags=["runs"])
     lineage_service = ArtifactLineageService(repository)
@@ -185,6 +192,7 @@ def build_runs_router(
                 run_id=run_id,
                 actor=actor,
                 queue=workflow_queue,
+                max_attempts=procurement_workflow_max_attempts,
             )
 
         _get_run_or_404(repository, run_id)
@@ -221,6 +229,7 @@ def build_runs_router(
             run_id=run_id,
             actor=actor,
             queue=workflow_queue,
+            max_attempts=procurement_workflow_max_attempts,
         )
 
     @router.get("/{run_id}/workflow-jobs", response_model=list[WorkflowJobResponse])
@@ -249,6 +258,76 @@ def build_runs_router(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Workflow job not found for run: {job_id}",
             )
+        return workflow_job_to_response(job)
+
+    @router.post(
+        "/{run_id}/workflow-jobs/{job_id}/retry",
+        response_model=WorkflowJobResponse,
+    )
+    def retry_dead_letter_workflow_job(
+        run_id: str,
+        job_id: str,
+        request: WorkflowJobControlBody,
+        actor: RunWriter,
+    ) -> WorkflowJobResponse:
+        _get_run_or_404(repository, run_id)
+        _get_workflow_job_for_run_or_404(repository, run_id, job_id)
+        try:
+            if workflow_queue is None:
+                job = repository.retry_dead_letter_workflow_job(
+                    job_id=job_id,
+                    reason=request.reason,
+                )
+            else:
+                job = workflow_queue.retry_dead_letter(
+                    job_id=job_id,
+                    reason=request.reason,
+                )
+        except WorkflowJobStateError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        _record_audit_event(
+            repository,
+            run_id,
+            actor,
+            action="workflow.retry_dead_letter",
+            target={"run_id": run_id, "workflow_job_id": job.id},
+            details={"reason": request.reason, "attempt_count": job.attempt_count},
+        )
+        return workflow_job_to_response(job)
+
+    @router.post(
+        "/{run_id}/workflow-jobs/{job_id}/dismiss",
+        response_model=WorkflowJobResponse,
+    )
+    def dismiss_dead_letter_workflow_job(
+        run_id: str,
+        job_id: str,
+        request: WorkflowJobControlBody,
+        actor: RunWriter,
+    ) -> WorkflowJobResponse:
+        _get_run_or_404(repository, run_id)
+        _get_workflow_job_for_run_or_404(repository, run_id, job_id)
+        try:
+            if workflow_queue is None:
+                job = repository.dismiss_dead_letter_workflow_job(
+                    job_id=job_id,
+                    reason=request.reason,
+                )
+            else:
+                job = workflow_queue.dismiss_dead_letter(
+                    job_id=job_id,
+                    reason=request.reason,
+                )
+        except WorkflowJobStateError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        _record_audit_event(
+            repository,
+            run_id,
+            actor,
+            action="workflow.dismiss_dead_letter",
+            target={"run_id": run_id, "workflow_job_id": job.id},
+            details={"reason": request.reason},
+        )
         return workflow_job_to_response(job)
 
     @router.post(
@@ -598,6 +677,7 @@ def _enqueue_procurement_or_400(
     run_id: str,
     actor: AuthenticatedUser,
     queue: WorkflowQueueBackend | None,
+    max_attempts: int,
 ) -> WorkflowJobResponse:
     run = _get_run_or_404(repository, run_id)
     if not run.dataset_artifact_id:
@@ -612,6 +692,7 @@ def _enqueue_procurement_or_400(
         repository=repository,
         run_id=run_id,
         queue=queue,
+        max_attempts=max_attempts,
     )
     _record_audit_event(
         repository,
@@ -640,6 +721,26 @@ def _get_artifact_or_404(
         return repository.get_artifact(run_id, artifact_id)
     except ArtifactNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+def _get_workflow_job_for_run_or_404(
+    repository: InMemoryRunRepository,
+    run_id: str,
+    job_id: str,
+):
+    try:
+        job = repository.get_workflow_job(job_id)
+    except WorkflowJobNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    if job.run_id != run_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Workflow job not found for run: {job_id}",
+        )
+    return job
 
 
 def _execution_response(

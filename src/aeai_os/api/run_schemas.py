@@ -135,6 +135,18 @@ class DeploymentApprovalDecisionRequest(BaseModel):
         return normalized or None
 
 
+class WorkflowJobControlRequest(BaseModel):
+    reason: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("reason")
+    @classmethod
+    def validate_reason(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+
 class ArtifactResponse(BaseModel):
     id: str
     run_id: str

@@ -55,6 +55,22 @@ class WorkflowQueueBackend(Protocol):
     ) -> list[WorkflowJobRecord]:
         ...
 
+    def retry_dead_letter(
+        self,
+        *,
+        job_id: str,
+        reason: str | None = None,
+    ) -> WorkflowJobRecord:
+        ...
+
+    def dismiss_dead_letter(
+        self,
+        *,
+        job_id: str,
+        reason: str | None = None,
+    ) -> WorkflowJobRecord:
+        ...
+
 
 @dataclass
 class RepositoryWorkflowQueue:
@@ -124,6 +140,28 @@ class RepositoryWorkflowQueue:
         return self.repository.recover_timed_out_workflow_jobs(
             timeout_seconds=timeout_seconds,
             workflow_name=workflow_name,
+        )
+
+    def retry_dead_letter(
+        self,
+        *,
+        job_id: str,
+        reason: str | None = None,
+    ) -> WorkflowJobRecord:
+        return self.repository.retry_dead_letter_workflow_job(
+            job_id=job_id,
+            reason=reason,
+        )
+
+    def dismiss_dead_letter(
+        self,
+        *,
+        job_id: str,
+        reason: str | None = None,
+    ) -> WorkflowJobRecord:
+        return self.repository.dismiss_dead_letter_workflow_job(
+            job_id=job_id,
+            reason=reason,
         )
 
 
@@ -233,6 +271,16 @@ class RedisWorkflowQueue(RepositoryWorkflowQueue):
             if job.status == WorkflowJobStatus.QUEUED:
                 self._push_job(job)
         return recovered
+
+    def retry_dead_letter(
+        self,
+        *,
+        job_id: str,
+        reason: str | None = None,
+    ) -> WorkflowJobRecord:
+        job = super().retry_dead_letter(job_id=job_id, reason=reason)
+        self._push_job(job)
+        return job
 
     def _push_job(self, job: WorkflowJobRecord) -> None:
         self._redis.rpush(self._queue_key(job.workflow_name), job.id)

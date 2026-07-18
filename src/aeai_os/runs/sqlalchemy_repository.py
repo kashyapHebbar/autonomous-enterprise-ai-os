@@ -33,6 +33,7 @@ from aeai_os.runs.repository import (
     WorkflowJobNotFoundError,
     WorkflowJobOwnershipError,
     WorkflowJobStateError,
+    _append_workflow_failure,
     _artifact_storage_metadata,
     _evaluation_event,
     utc_now,
@@ -341,18 +342,94 @@ class SQLAlchemyRunRepository:
                 _ensure_job_model_owned_by_worker(model, worker_id)
             now = utc_now()
             should_retry = retry and model.attempt_count < model.max_attempts
-            model.status = (
-                WorkflowJobStatus.QUEUED.value
+            next_status = (
+                WorkflowJobStatus.QUEUED
                 if should_retry
-                else WorkflowJobStatus.DEAD_LETTER.value
+                else WorkflowJobStatus.DEAD_LETTER
             )
+            model.payload = _append_workflow_failure(
+                model.payload or {},
+                attempt_count=model.attempt_count,
+                status=next_status,
+                error_summary=error_summary,
+                recorded_at=now,
+                worker_id=worker_id or model.worker_id,
+                reason="worker_failure",
+            )
+            model.status = next_status.value
             if should_retry:
                 model.worker_id = None
                 model.finished_at = None
                 model.heartbeat_at = None
             else:
                 model.finished_at = now
+                run = _get_run_model(session, model.run_id)
+                run.status = RunStatus.FAILED.value
+                run.error_summary = error_summary
+                run.updated_at = now
             model.error_summary = error_summary
+            model.updated_at = now
+            session.commit()
+            return _workflow_job_from_model(model)
+
+    def retry_dead_letter_workflow_job(
+        self,
+        job_id: str,
+        reason: str | None = None,
+    ) -> WorkflowJobRecord:
+        with self._session_factory() as session:
+            model = _get_workflow_job_model(session, job_id)
+            if WorkflowJobStatus(model.status) != WorkflowJobStatus.DEAD_LETTER:
+                raise WorkflowJobStateError(
+                    f"Workflow job must be dead_letter before manual retry: {job_id}"
+                )
+            now = utc_now()
+            payload = deepcopy(model.payload or {})
+            manual_retries = int(payload.get("manual_retry_count", 0)) + 1
+            payload.update(
+                {
+                    "manual_retry_count": manual_retries,
+                    "last_manual_retry_at": now.isoformat(),
+                }
+            )
+            if reason:
+                payload["last_manual_retry_reason"] = reason
+            model.status = WorkflowJobStatus.QUEUED.value
+            model.payload = payload
+            model.max_attempts = max(model.max_attempts, model.attempt_count + 1)
+            model.worker_id = None
+            model.error_summary = None
+            model.heartbeat_at = None
+            model.finished_at = None
+            model.updated_at = now
+            run = _get_run_model(session, model.run_id)
+            run.status = RunStatus.PENDING.value
+            run.error_summary = None
+            run.updated_at = now
+            session.commit()
+            return _workflow_job_from_model(model)
+
+    def dismiss_dead_letter_workflow_job(
+        self,
+        job_id: str,
+        reason: str | None = None,
+    ) -> WorkflowJobRecord:
+        with self._session_factory() as session:
+            model = _get_workflow_job_model(session, job_id)
+            if WorkflowJobStatus(model.status) != WorkflowJobStatus.DEAD_LETTER:
+                raise WorkflowJobStateError(
+                    f"Workflow job must be dead_letter before dismissal: {job_id}"
+                )
+            now = utc_now()
+            payload = deepcopy(model.payload or {})
+            payload["dismissed_at"] = now.isoformat()
+            if reason:
+                payload["dismissal_reason"] = reason
+            model.status = WorkflowJobStatus.DISMISSED.value
+            model.payload = payload
+            model.worker_id = None
+            model.heartbeat_at = None
+            model.finished_at = now
             model.updated_at = now
             session.commit()
             return _workflow_job_from_model(model)
@@ -387,20 +464,35 @@ class SQLAlchemyRunRepository:
                     continue
 
                 should_retry = model.attempt_count < model.max_attempts
-                model.status = (
-                    WorkflowJobStatus.QUEUED.value
+                next_status = (
+                    WorkflowJobStatus.QUEUED
                     if should_retry
-                    else WorkflowJobStatus.DEAD_LETTER.value
+                    else WorkflowJobStatus.DEAD_LETTER
                 )
-                model.worker_id = None if should_retry else model.worker_id
-                model.error_summary = (
+                error_summary = (
                     f"Workflow job heartbeat timed out after {timeout_seconds} seconds."
                 )
+                model.payload = _append_workflow_failure(
+                    model.payload or {},
+                    attempt_count=model.attempt_count,
+                    status=next_status,
+                    error_summary=error_summary,
+                    recorded_at=reference_time,
+                    worker_id=model.worker_id,
+                    reason="heartbeat_timeout",
+                )
+                model.status = next_status.value
+                model.worker_id = None if should_retry else model.worker_id
+                model.error_summary = error_summary
                 if should_retry:
                     model.heartbeat_at = None
                     model.finished_at = None
                 else:
                     model.finished_at = reference_time
+                    run = _get_run_model(session, model.run_id)
+                    run.status = RunStatus.FAILED.value
+                    run.error_summary = error_summary
+                    run.updated_at = reference_time
                 model.updated_at = reference_time
                 recovered.append(_workflow_job_from_model(model))
             session.commit()

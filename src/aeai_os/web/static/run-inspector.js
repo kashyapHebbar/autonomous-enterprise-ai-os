@@ -245,6 +245,35 @@ function renderDeploymentJobActions(job) {
     </div>`;
 }
 
+function renderDeadLetterJobActions(job) {
+  if (job.status !== "dead_letter") {
+    return "";
+  }
+
+  const escapedJobId = escapeHtml(job.id);
+  const pending =
+    state.pendingAction !== null && state.pendingAction.jobId === job.id
+      ? state.pendingAction.action
+      : null;
+  const disabled = pending ? " disabled" : "";
+
+  return `
+    <div class="node-actions" aria-label="Dead-letter actions for ${escapedJobId}">
+      <button
+        class="node-action action-retry"
+        data-job-action="retry"
+        data-job-id="${escapedJobId}"
+        type="button"${disabled}
+      >${pending === "retry" ? "Retrying" : "Retry job"}</button>
+      <button
+        class="node-action action-deny"
+        data-job-action="dismiss"
+        data-job-id="${escapedJobId}"
+        type="button"${disabled}
+      >${pending === "dismiss" ? "Dismissing" : "Dismiss"}</button>
+    </div>`;
+}
+
 function renderNodes() {
   const nodes = state.data.graphNodes;
   els.graphNodes.innerHTML = nodes.length
@@ -291,6 +320,7 @@ function renderJobs() {
               ])}
               ${job.error_summary ? renderMeta([job.error_summary]) : ""}
               ${renderDeploymentJobActions(job)}
+              ${renderDeadLetterJobActions(job)}
             </article>`
         )
         .join("")
@@ -562,6 +592,24 @@ async function submitDeploymentAction(jobId, action) {
   });
 }
 
+async function submitWorkflowJobAction(jobId, action) {
+  const encodedRunId = encodeURIComponent(state.runId);
+  const encodedJobId = encodeURIComponent(jobId);
+  if (action !== "retry" && action !== "dismiss") {
+    throw new Error(`Unsupported workflow job action: ${action}`);
+  }
+  return requestJson(`/runs/${encodedRunId}/workflow-jobs/${encodedJobId}/${action}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      reason:
+        action === "retry"
+          ? "Manual retry requested from run inspector."
+          : "Dead-letter job dismissed from run inspector.",
+    }),
+  });
+}
+
 function actionSuccessMessage(nodeId, action) {
   if (action === "approve") {
     return `Approved ${nodeId}.`;
@@ -576,6 +624,12 @@ function deploymentActionSuccessMessage(jobId, action) {
   return action === "approve"
     ? `Approved deployment ${jobId}.`
     : `Denied deployment ${jobId}.`;
+}
+
+function workflowJobActionSuccessMessage(jobId, action) {
+  return action === "retry"
+    ? `Queued retry for workflow job ${jobId}.`
+    : `Dismissed workflow job ${jobId}.`;
 }
 
 async function handleNodeAction(event) {
@@ -605,11 +659,35 @@ async function handleNodeAction(event) {
 }
 
 async function handleDeploymentAction(event) {
-  const button = event.target.closest("[data-deployment-action]");
-  if (!button) {
+  const deploymentButton = event.target.closest("[data-deployment-action]");
+  const jobButton = event.target.closest("[data-job-action]");
+  if (!deploymentButton && !jobButton) {
     return;
   }
 
+  if (jobButton) {
+    const jobId = jobButton.dataset.jobId;
+    const action = jobButton.dataset.jobAction;
+    state.pendingAction = { jobId, action };
+    setActionStatus("", "idle");
+    renderJobs();
+
+    try {
+      await submitWorkflowJobAction(jobId, action);
+      setActionStatus(workflowJobActionSuccessMessage(jobId, action), "success");
+      await loadRun();
+    } catch (error) {
+      setActionStatus(error.message, "error");
+    } finally {
+      state.pendingAction = null;
+      if (state.data) {
+        renderJobs();
+      }
+    }
+    return;
+  }
+
+  const button = deploymentButton;
   const jobId = button.dataset.jobId;
   const action = button.dataset.deploymentAction;
   state.pendingAction = { jobId, action };
