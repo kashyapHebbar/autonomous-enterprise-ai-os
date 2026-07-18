@@ -19,21 +19,14 @@ from aeai_os.schemas.enums import (
 )
 from aeai_os.workflows import build_procurement_orchestrator
 
-VIEWER_HEADERS = {
-    "X-AEAI-User-Id": "viewer-1",
-    "X-AEAI-User-Name": "Viewer One",
-    "X-AEAI-Roles": "viewer",
-}
-OPERATOR_HEADERS = {
-    "X-AEAI-User-Id": "operator-1",
-    "X-AEAI-User-Name": "Operator One",
-    "X-AEAI-Roles": "operator",
-}
-APPROVER_HEADERS = {
-    "X-AEAI-User-Id": "approver-1",
-    "X-AEAI-User-Name": "Approver One",
-    "X-AEAI-Roles": "approver",
-}
+AUTH_TOKEN_PROFILES = (
+    "viewer-token=viewer-1|Viewer One|viewer;"
+    "operator-token=operator-1|Operator One|operator;"
+    "approver-token=approver-1|Approver One|approver"
+)
+VIEWER_HEADERS = {"X-AEAI-API-Key": "viewer-token"}
+OPERATOR_HEADERS = {"Authorization": "Bearer operator-token"}
+APPROVER_HEADERS = {"Authorization": "Bearer approver-token"}
 
 
 def write_procurement_fixture(path):
@@ -135,16 +128,29 @@ def test_auth_disabled_allows_local_run_creation_and_records_local_actor(tmp_pat
 
 def test_auth_enabled_requires_authenticated_headers(tmp_path, monkeypatch):
     monkeypatch.setenv("AEAI_AUTH_ENABLED", "true")
+    monkeypatch.setenv("AEAI_AUTH_TOKEN_PROFILES", AUTH_TOKEN_PROFILES)
     client = build_client(tmp_path)
 
     response = client.get("/runs")
 
     assert response.status_code == 401
-    assert "Missing X-AEAI-User-Id" in response.json()["detail"]
+    assert "Missing bearer token" in response.json()["detail"]
+
+
+def test_auth_enabled_rejects_invalid_bearer_token(tmp_path, monkeypatch):
+    monkeypatch.setenv("AEAI_AUTH_ENABLED", "true")
+    monkeypatch.setenv("AEAI_AUTH_TOKEN_PROFILES", AUTH_TOKEN_PROFILES)
+    client = build_client(tmp_path)
+
+    response = client.get("/runs", headers={"Authorization": "Bearer wrong-token"})
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Invalid authentication credentials."
 
 
 def test_role_permissions_constrain_read_write_and_approval_actions(tmp_path, monkeypatch):
     monkeypatch.setenv("AEAI_AUTH_ENABLED", "true")
+    monkeypatch.setenv("AEAI_AUTH_TOKEN_PROFILES", AUTH_TOKEN_PROFILES)
     repository = InMemoryRunRepository()
     app = create_app(repository=repository, artifact_root=tmp_path / "artifacts")
     client = TestClient(app)
@@ -634,6 +640,7 @@ def test_approval_endpoint_rejects_node_that_is_not_waiting(tmp_path):
 
 def test_approval_requires_approver_role_and_audits_actor(tmp_path, monkeypatch):
     monkeypatch.setenv("AEAI_AUTH_ENABLED", "true")
+    monkeypatch.setenv("AEAI_AUTH_TOKEN_PROFILES", AUTH_TOKEN_PROFILES)
     repository = InMemoryRunRepository()
     artifact_root = tmp_path / "artifacts"
     app = create_app(repository=repository, artifact_root=artifact_root)
