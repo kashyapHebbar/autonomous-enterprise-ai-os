@@ -1,0 +1,380 @@
+:root {
+  color-scheme: light;
+  --bg: #f5f7f6;
+  --surface: #ffffff;
+  --surface-strong: #eef3f1;
+  --ink: #18211f;
+  --muted: #66736d;
+  --border: #d7dfda;
+  --green: #23745c;
+  --amber: #a15f18;
+  --red: #aa3838;
+  --blue: #2f5f9f;
+  --shadow: 0 16px 44px rgba(22, 32, 28, 0.08);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.shell {
+  width: min(1440px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 24px 0 48px;
+}
+
+.topbar,
+.intro-band,
+.section-heading,
+.item-header,
+.meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.topbar {
+  padding: 16px 0 22px;
+  border-bottom: 1px solid var(--border);
+}
+
+.brand,
+.app-nav a,
+.run-link {
+  color: var(--ink);
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.brand {
+  overflow-wrap: anywhere;
+}
+
+.app-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.app-nav a,
+.icon-button,
+.run-link {
+  min-height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 900;
+}
+
+.app-nav a,
+.run-link {
+  padding: 7px 10px;
+  color: var(--muted);
+}
+
+.app-nav a[aria-current="page"],
+.app-nav a:hover,
+.app-nav a:focus-visible,
+.run-link:hover,
+.run-link:focus-visible {
+  border-color: rgba(47, 95, 159, 0.28);
+  background: rgba(47, 95, 159, 0.1);
+  color: var(--blue);
+}
+
+.intro-band {
+  padding: 22px 0;
+}
+
+.intro-band h1,
+.section-heading h2,
+.policy-layout h3 {
+  margin: 0;
+  line-height: 1.1;
+}
+
+.intro-band h1 {
+  font-size: clamp(1.8rem, 3vw, 3rem);
+}
+
+.eyebrow {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.summary-grid,
+.admin-grid,
+.policy-layout {
+  display: grid;
+  gap: 16px;
+}
+
+.summary-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 16px;
+}
+
+.metric,
+.panel {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.metric {
+  padding: 14px 16px;
+}
+
+.metric span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.metric strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 1.8rem;
+  line-height: 1;
+}
+
+.admin-grid {
+  grid-template-columns: minmax(320px, 0.9fr) minmax(0, 1.2fr);
+  align-items: start;
+}
+
+.panel {
+  padding: 16px;
+}
+
+.policies-panel,
+.affected-panel {
+  grid-column: 1 / -1;
+}
+
+.section-heading {
+  align-items: end;
+  margin-bottom: 14px;
+}
+
+.section-heading h2,
+.policy-layout h3 {
+  font-size: 1rem;
+}
+
+.policy-layout {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.item-list {
+  display: grid;
+  gap: 10px;
+}
+
+.item-card {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.compact-list .item-card {
+  padding: 10px;
+}
+
+.item-title {
+  min-width: 0;
+}
+
+.item-title strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.item-title span,
+.item-card p,
+.meta-row,
+.empty,
+.error-box {
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.item-card p {
+  margin: 8px 0 0;
+  line-height: 1.45;
+}
+
+.meta-row {
+  align-items: flex-start;
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.chip,
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 26px;
+  padding: 4px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-strong);
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.chip {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.status-ok,
+.status-registered,
+.status-allow,
+.status-low,
+.status-read_only {
+  border-color: rgba(35, 116, 92, 0.28);
+  background: rgba(35, 116, 92, 0.1);
+  color: var(--green);
+}
+
+.status-medium,
+.status-write,
+.status-code_execution,
+.status-approval_required,
+.status-external_network,
+.status-waiting_for_approval {
+  border-color: rgba(161, 95, 24, 0.28);
+  background: rgba(161, 95, 24, 0.1);
+  color: var(--amber);
+}
+
+.status-high,
+.status-block,
+.status-blocked,
+.status-failed,
+.status-not_configured,
+.status-deployment {
+  border-color: rgba(170, 56, 56, 0.3);
+  background: rgba(170, 56, 56, 0.1);
+  color: var(--red);
+}
+
+.status-escalate,
+.status-policy,
+.status-connector {
+  border-color: rgba(47, 95, 159, 0.28);
+  background: rgba(47, 95, 159, 0.1);
+  color: var(--blue);
+}
+
+.icon-button {
+  width: 40px;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.icon-button:hover:not(:disabled),
+.icon-button:focus-visible {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(22, 32, 28, 0.1);
+}
+
+.icon-button:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
+.empty,
+.error-box {
+  margin: 0;
+  padding: 12px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: var(--surface-strong);
+}
+
+.error-box {
+  border-style: solid;
+  border-color: rgba(170, 56, 56, 0.3);
+  background: rgba(170, 56, 56, 0.08);
+  color: var(--red);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 920px) {
+  .summary-grid,
+  .admin-grid,
+  .policy-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .policies-panel,
+  .affected-panel {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 640px) {
+  .shell {
+    width: min(100% - 20px, 1440px);
+    padding-top: 12px;
+  }
+
+  .topbar,
+  .intro-band,
+  .section-heading,
+  .item-header,
+  .meta-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .icon-button {
+    width: 100%;
+  }
+}

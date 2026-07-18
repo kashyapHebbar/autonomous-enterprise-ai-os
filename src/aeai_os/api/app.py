@@ -23,6 +23,8 @@ def create_app(
     from fastapi.exceptions import RequestValidationError
     from fastapi.responses import FileResponse, JSONResponse
 
+    from aeai_os.agents.registry import build_default_registry
+    from aeai_os.api.admin import build_admin_router
     from aeai_os.api.connectors import build_connectors_router
     from aeai_os.api.data_sources import build_data_sources_router
     from aeai_os.api.metrics import build_metrics_router
@@ -30,6 +32,7 @@ def create_app(
     from aeai_os.connectors import build_default_connector_registry
     from aeai_os.data.sources import DataSourceRegistry
     from aeai_os.observability.tracing import configure_tracing, current_trace_id, start_span
+    from aeai_os.security import default_tool_permission_registry
     from aeai_os.security.redaction import redact_value
     from aeai_os.workflows.queue import build_workflow_queue
 
@@ -41,6 +44,8 @@ def create_app(
     artifact_store = build_artifact_store(settings, artifact_root=run_artifact_root)
     connector_registry = build_default_connector_registry(settings)
     data_source_registry = DataSourceRegistry(connector_registry=connector_registry)
+    agent_registry = build_default_registry()
+    policy_registry = default_tool_permission_registry()
     static_root = Path(__file__).resolve().parents[1] / "web" / "static"
 
     app = FastAPI(
@@ -54,6 +59,8 @@ def create_app(
     app.state.artifact_store = artifact_store
     app.state.connector_registry = connector_registry
     app.state.data_source_registry = data_source_registry
+    app.state.agent_registry = agent_registry
+    app.state.policy_registry = policy_registry
 
     @app.exception_handler(HTTPException)
     async def redacted_http_exception(request, exc):
@@ -107,6 +114,7 @@ def create_app(
             "connectors": "/connectors",
             "data_sources": "/data-sources",
             "artifact_browser": "/app/artifacts",
+            "admin": "/app/admin",
             "run_inspector": "/run-inspector",
         }
 
@@ -128,6 +136,13 @@ def create_app(
     app.include_router(build_metrics_router(run_repository))
     app.include_router(build_connectors_router(connector_registry))
     app.include_router(build_data_sources_router(data_source_registry))
+    app.include_router(
+        build_admin_router(
+            agent_registry=agent_registry,
+            policy_registry=policy_registry,
+            run_repository=run_repository,
+        )
+    )
 
     @app.get("/app", include_in_schema=False)
     def control_plane_page() -> FileResponse:
@@ -137,9 +152,15 @@ def create_app(
     def artifact_browser_page() -> FileResponse:
         return FileResponse(static_root / "artifact-browser.html")
 
+    @app.get("/app/admin", include_in_schema=False)
+    def admin_page() -> FileResponse:
+        return FileResponse(static_root / "admin.html")
+
     @app.get("/app/{asset_name}", include_in_schema=False)
     def control_plane_asset(asset_name: str) -> FileResponse:
         allowed_assets = {
+            "admin.css",
+            "admin.js",
             "artifact-browser.css",
             "artifact-browser.js",
             "control-plane.css",

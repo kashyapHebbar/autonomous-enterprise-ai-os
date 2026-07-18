@@ -102,7 +102,8 @@ The generated summary records:
 ## API Routes
 
 Authentication is disabled by default for local demos. When `AEAI_AUTH_ENABLED=true`, `/runs`
-endpoints require either `Authorization: Bearer <token>` or `X-AEAI-API-Key: <token>`.
+and `/admin` endpoints require either `Authorization: Bearer <token>` or
+`X-AEAI-API-Key: <token>`.
 Configure accepted credentials with `AEAI_AUTH_TOKEN_PROFILES` as semicolon-separated
 `token=user_id|display_name|roles` entries, for example
 `operator-token=operator-1|Operator One|operator;reviewer-token=reviewer-1|Reviewer One|reviewer`.
@@ -136,8 +137,12 @@ detail responses and is also available at `/runs/{run_id}/audit-events`.
 | `GET /runs/{run_id}/evaluations` | List evaluation results for a run |
 | `GET /app` | Browser control plane for creating and browsing runs |
 | `GET /app/artifacts` | Browser artifact browser with dashboard/report previews |
+| `GET /app/admin` | Browser admin UI for agent, connector, credential, and policy inspection |
 | `GET /run-inspector/runs/{run_id}` | Browser run inspector UI |
 | `GET /runs/{run_id}/artifacts/{artifact_id}/content` | Preview or download safe artifact payloads |
+| `GET /admin/agents` | List registered agents, capabilities, and risk profiles |
+| `GET /admin/policies` | List registered tool permissions and policy rules |
+| `GET /admin/affected-runs` | List recent connector or policy affected runs with inspector links |
 | `GET /connectors` | List registered enterprise connectors and current status |
 | `GET /connectors/credential-profiles` | List sanitized credential profile references |
 | `GET /connectors/{connector_id}/health` | Inspect connector configuration health |
@@ -304,6 +309,8 @@ or dataset URI, browse recent runs, and open any run directly in Run Inspector.
 Open `http://127.0.0.1:8000/app/artifacts` to browse generated artifacts by run and producer node,
 preview HTML dashboards/charts and markdown reports, inspect lineage, and copy or download safe
 artifact links.
+Open `http://127.0.0.1:8000/app/admin` to inspect registered agents, connector health,
+credential profiles, policy rules, and connector/policy affected runs from one operations view.
 
 Open `http://127.0.0.1:8000/run-inspector/runs/${RUN_ID}` to inspect graph nodes,
 events, artifact lineage, approval history, evaluation/MLflow status, deployment history, and

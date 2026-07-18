@@ -25,10 +25,12 @@ AUTH_TOKEN_PROFILES = (
     "reviewer-token=reviewer-1|Reviewer One|reviewer;"
     "approver-token=approver-1|Approver One|approver"
 )
+ADMIN_AUTH_TOKEN_PROFILES = f"{AUTH_TOKEN_PROFILES};admin-token=admin-1|Admin One|admin"
 VIEWER_HEADERS = {"X-AEAI-API-Key": "viewer-token"}
 OPERATOR_HEADERS = {"Authorization": "Bearer operator-token"}
 REVIEWER_HEADERS = {"Authorization": "Bearer reviewer-token"}
 APPROVER_HEADERS = {"Authorization": "Bearer approver-token"}
+ADMIN_HEADERS = {"Authorization": "Bearer admin-token"}
 
 
 def write_procurement_fixture(path):
@@ -276,15 +278,19 @@ def test_control_plane_page_and_assets_are_served(tmp_path):
     root_response = client.get("/")
     page_response = client.get("/app")
     artifact_page_response = client.get("/app/artifacts")
+    admin_page_response = client.get("/app/admin")
     script_response = client.get("/app/control-plane.js")
     style_response = client.get("/app/control-plane.css")
     artifact_script_response = client.get("/app/artifact-browser.js")
     artifact_style_response = client.get("/app/artifact-browser.css")
+    admin_script_response = client.get("/app/admin.js")
+    admin_style_response = client.get("/app/admin.css")
     missing_response = client.get("/app/unknown.js")
 
     assert root_response.status_code == 200
     assert root_response.json()["control_plane"] == "/app"
     assert root_response.json()["artifact_browser"] == "/app/artifacts"
+    assert root_response.json()["admin"] == "/app/admin"
     assert page_response.status_code == 200
     assert "Control Plane" in page_response.text
     assert 'id="createRunForm"' in page_response.text
@@ -295,10 +301,18 @@ def test_control_plane_page_and_assets_are_served(tmp_path):
     assert 'id="artifactGroups"' in artifact_page_response.text
     assert 'id="previewSurface"' in artifact_page_response.text
     assert "/app/artifact-browser.js" in artifact_page_response.text
+    assert admin_page_response.status_code == 200
+    assert "Admin" in admin_page_response.text
+    assert 'id="agentsList"' in admin_page_response.text
+    assert 'id="connectorsList"' in admin_page_response.text
+    assert 'id="permissionsList"' in admin_page_response.text
+    assert "/app/admin.js" in admin_page_response.text
     assert script_response.status_code == 200
     assert style_response.status_code == 200
     assert artifact_script_response.status_code == 200
     assert artifact_style_response.status_code == 200
+    assert admin_script_response.status_code == 200
+    assert admin_style_response.status_code == 200
     assert missing_response.status_code == 404
 
 
@@ -329,6 +343,87 @@ def test_artifact_browser_script_previews_downloads_and_links_lineage(tmp_path):
     assert "/lineage" in response.text
     assert "navigator.clipboard.writeText" in response.text
     assert "Artifact type ${escapeHtml(artifact.type)} is not available" in response.text
+
+
+def test_admin_script_loads_registries_connectors_and_affected_runs(tmp_path):
+    client = build_client(tmp_path)
+
+    response = client.get("/app/admin.js")
+
+    assert response.status_code == 200
+    assert 'requestJson("/admin/agents")' in response.text
+    assert 'requestJson("/connectors")' in response.text
+    assert 'requestJson("/connectors/credential-profiles")' in response.text
+    assert 'requestJson("/admin/policies")' in response.text
+    assert 'requestJson("/admin/affected-runs")' in response.text
+    assert "/run-inspector/runs/" in response.text
+
+
+def test_admin_api_requires_admin_and_lists_configuration(tmp_path, monkeypatch):
+    monkeypatch.setenv("AEAI_AUTH_ENABLED", "true")
+    monkeypatch.setenv("AEAI_AUTH_TOKEN_PROFILES", ADMIN_AUTH_TOKEN_PROFILES)
+    client = build_client(tmp_path)
+
+    viewer_response = client.get("/admin/agents", headers=VIEWER_HEADERS)
+    admin_agents_response = client.get("/admin/agents", headers=ADMIN_HEADERS)
+    admin_policies_response = client.get("/admin/policies", headers=ADMIN_HEADERS)
+
+    assert viewer_response.status_code == 403
+    assert admin_agents_response.status_code == 200
+    assert admin_policies_response.status_code == 200
+    agents = admin_agents_response.json()
+    policies = admin_policies_response.json()
+    assert any(agent["agent_type"] == "planner" for agent in agents)
+    assert any("execution_graph" in agent["capabilities"] for agent in agents)
+    assert any(permission["tool"] == "snowflake_query" for permission in policies["permissions"])
+    assert any(rule["id"] == "external-connector-escalation" for rule in policies["rules"])
+    assert policies["summary"]["approval_required"] >= 1
+
+
+def test_admin_api_links_connector_and_policy_affected_runs(tmp_path):
+    repository = InMemoryRunRepository()
+    app = create_app(repository=repository, artifact_root=tmp_path / "artifacts")
+    client = TestClient(app)
+    connector_run = repository.create_run(
+        "Analyze Snowflake procurement data.",
+        metadata={"connector_id": "snowflake-default"},
+    )
+    repository.update_status(
+        connector_run.id,
+        RunStatus.FAILED,
+        error_summary="Snowflake connector credential is missing.",
+    )
+    policy_run = repository.create_run("Deploy procurement dashboard.")
+    repository.update_status(
+        policy_run.id,
+        RunStatus.WAITING_FOR_APPROVAL,
+        error_summary="Deployment policy approval required.",
+    )
+    repository.add_event(
+        AgentEventRecord(
+            id="event_policy",
+            run_id=policy_run.id,
+            node_id="deployment",
+            event_type=AgentEventType.APPROVAL_REQUEST.value,
+            payload={"policy_rule_id": "deployment-promotion-approval"},
+            created_at=utc_now(),
+        )
+    )
+
+    response = client.get("/admin/affected-runs")
+
+    assert response.status_code == 200
+    affected = response.json()
+    assert any(
+        run["connector_id"] == "snowflake-default"
+        and run["inspector_url"] == f"/run-inspector/runs/{connector_run.id}"
+        for run in affected
+    )
+    assert any(
+        run["policy_rule_id"] == "deployment-promotion-approval"
+        and run["inspector_url"] == f"/run-inspector/runs/{policy_run.id}"
+        for run in affected
+    )
 
 
 def test_artifact_content_endpoint_serves_previewable_payloads_and_blocks_datasets(tmp_path):
