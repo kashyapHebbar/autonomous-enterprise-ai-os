@@ -24,6 +24,7 @@ class AppSettings:
     workflow_queue_key_prefix: str = "aeai:workflow"
     redis_url: str = "redis://redis:6379/0"
     auth_enabled: bool = False
+    auth_token_profiles: str = ""
     auth_local_user_id: str = "local-dev"
     auth_local_user_name: str = "Local Developer"
     auth_local_roles: str = "admin"
@@ -74,6 +75,7 @@ def get_settings() -> AppSettings:
         ),
         redis_url=os.getenv("AEAI_REDIS_URL", "redis://redis:6379/0"),
         auth_enabled=_parse_bool(os.getenv("AEAI_AUTH_ENABLED"), default=False),
+        auth_token_profiles=os.getenv("AEAI_AUTH_TOKEN_PROFILES", ""),
         auth_local_user_id=os.getenv("AEAI_AUTH_LOCAL_USER_ID", "local-dev"),
         auth_local_user_name=os.getenv("AEAI_AUTH_LOCAL_USER_NAME", "Local Developer"),
         auth_local_roles=os.getenv("AEAI_AUTH_LOCAL_ROLES", "admin"),

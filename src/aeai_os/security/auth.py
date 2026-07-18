@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
+from hmac import compare_digest
 from typing import Any
 
 
@@ -105,6 +106,7 @@ def authenticated_user_from_headers(
     headers: Mapping[str, str],
     *,
     auth_enabled: bool,
+    token_profiles: str | Mapping[str, AuthenticatedUser],
     local_user_id: str,
     local_user_name: str | None,
     local_roles: str,
@@ -116,20 +118,66 @@ def authenticated_user_from_headers(
             roles=local_roles,
         )
 
-    user_id = _header(headers, "x-aeai-user-id")
-    if user_id is None:
-        raise AuthenticationError("Missing X-AEAI-User-Id header.")
+    token = _bearer_token(headers) or _header(headers, "x-aeai-api-key")
+    if token is None:
+        raise AuthenticationError("Missing bearer token or X-AEAI-API-Key header.")
 
-    roles = _header(headers, "x-aeai-roles") or _header(headers, "x-aeai-role")
-    if roles is None:
-        raise AuthenticationError("Missing X-AEAI-Roles header.")
-
-    user_name = _header(headers, "x-aeai-user-name")
-    return AuthenticatedUser(
-        id=_normalize_required(user_id, "User id"),
-        name=_normalize_optional(user_name) or _normalize_required(user_id, "User id"),
-        roles=parse_roles(roles),
+    profiles = (
+        dict(token_profiles)
+        if isinstance(token_profiles, Mapping)
+        else parse_token_profiles(token_profiles)
     )
+    if not profiles:
+        raise AuthenticationError("No authentication token profiles are configured.")
+
+    for expected_token, user in profiles.items():
+        if compare_digest(token, expected_token):
+            return user
+    raise AuthenticationError("Invalid authentication credentials.")
+
+
+def parse_token_profiles(raw_profiles: str) -> dict[str, AuthenticatedUser]:
+    """Parse semicolon-separated token=user_id|name|roles entries."""
+    profiles: dict[str, AuthenticatedUser] = {}
+    for raw_profile in raw_profiles.split(";"):
+        profile = raw_profile.strip()
+        if not profile:
+            continue
+        token, separator, user_spec = profile.partition("=")
+        if not separator:
+            raise AuthenticationError(
+                "Token profiles must use token=user_id|display_name|roles format."
+            )
+        normalized_token = _normalize_required(token, "Auth token")
+        parts = [part.strip() for part in user_spec.split("|")]
+        if len(parts) != 3:
+            raise AuthenticationError(
+                "Token profiles must include user id, display name, and roles."
+            )
+        if normalized_token in profiles:
+            raise AuthenticationError("Duplicate auth token profile configured.")
+        user_id, user_name, roles = parts
+        profiles[normalized_token] = AuthenticatedUser(
+            id=_normalize_required(user_id, "User id"),
+            name=_normalize_optional(user_name)
+            or _normalize_required(user_id, "User id"),
+            roles=parse_roles(roles),
+        )
+    return profiles
+
+
+def _bearer_token(headers: Mapping[str, str]) -> str | None:
+    authorization = _header(headers, "authorization")
+    if authorization is None:
+        return None
+
+    scheme, separator, credentials = authorization.partition(" ")
+    if not separator or scheme.lower() != "bearer":
+        raise AuthenticationError("Authorization header must use the Bearer scheme.")
+    token = credentials.strip()
+    if not token:
+        raise AuthenticationError("Bearer token must not be blank.")
+    return token
 
 
 def ensure_permission(user: AuthenticatedUser, permission: AuthPermission) -> None:

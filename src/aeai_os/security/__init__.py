@@ -8,6 +8,7 @@ from aeai_os.security.auth import (
     ensure_permission,
     local_development_user,
     parse_roles,
+    parse_token_profiles,
 )
 from aeai_os.security.policy import (
     ToolPermission,
@@ -36,4 +37,5 @@ __all__ = [
     "ensure_permission",
     "local_development_user",
     "parse_roles",
+    "parse_token_profiles",
 ]

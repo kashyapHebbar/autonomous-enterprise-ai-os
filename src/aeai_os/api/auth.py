@@ -22,6 +22,7 @@ def get_current_user(request: Request) -> AuthenticatedUser:
         return authenticated_user_from_headers(
             request.headers,
             auth_enabled=settings.auth_enabled,
+            token_profiles=settings.auth_token_profiles,
             local_user_id=settings.auth_local_user_id,
             local_user_name=settings.auth_local_user_name,
             local_roles=settings.auth_local_roles,
@@ -30,7 +31,7 @@ def get_current_user(request: Request) -> AuthenticatedUser:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(exc),
-            headers={"WWW-Authenticate": "AEAI-Headers"},
+            headers={"WWW-Authenticate": "Bearer"},
         ) from exc
 
 

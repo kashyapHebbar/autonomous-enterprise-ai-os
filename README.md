@@ -100,7 +100,10 @@ The generated summary records:
 ## API Routes
 
 Authentication is disabled by default for local demos. When `AEAI_AUTH_ENABLED=true`, `/runs`
-endpoints expect `X-AEAI-User-Id`, optional `X-AEAI-User-Name`, and `X-AEAI-Roles` headers.
+endpoints require either `Authorization: Bearer <token>` or `X-AEAI-API-Key: <token>`.
+Configure accepted credentials with `AEAI_AUTH_TOKEN_PROFILES` as semicolon-separated
+`token=user_id|display_name|roles` entries, for example
+`operator-token=operator-1|Operator One|operator;approver-token=approver-1|Approver One|approver`.
 Supported roles are `viewer` for read-only inspection, `operator` for run and artifact mutations,
 `approver` for approval decisions, and `admin` for all current capabilities. Mutating API actions
 write `audit` events with actor identity under `/runs/{run_id}/events`.
