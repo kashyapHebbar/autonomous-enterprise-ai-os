@@ -924,6 +924,40 @@ def test_enqueue_procurement_workflow_from_api(tmp_path):
     assert jobs_response.json() == [job]
 
 
+def test_primary_procurement_execution_endpoint_enqueues_in_async_mode(tmp_path, monkeypatch):
+    monkeypatch.setenv("AEAI_WORKFLOW_EXECUTION_MODE", "async")
+    repository = InMemoryRunRepository()
+    app = create_app(repository=repository, artifact_root=tmp_path / "artifacts")
+    client = TestClient(app)
+    dataset_path = tmp_path / "procurement.csv"
+    write_procurement_fixture(dataset_path)
+    run = client.post(
+        "/runs",
+        json={
+            "task": "Analyze this procurement dataset and create a dashboard report.",
+            "dataset_uri": str(dataset_path),
+        },
+    ).json()
+
+    response = client.post(f"/runs/{run['id']}/execute/procurement")
+
+    body = response.json()
+    audit_events = [
+        event for event in repository.list_events(run["id"])
+        if event.event_type == AgentEventType.AUDIT.value
+        and event.payload["action"] == "workflow.enqueue_procurement"
+    ]
+    assert response.status_code == 202
+    assert body["run_id"] == run["id"]
+    assert body["workflow_name"] == "procurement"
+    assert body["status"] == "queued"
+    assert body["attempt_count"] == 0
+    assert audit_events[0].payload["target"] == {
+        "run_id": run["id"],
+        "workflow_job_id": body["id"],
+    }
+
+
 def test_run_inspection_endpoints_expose_graph_events_and_timeline(tmp_path):
     repository = InMemoryRunRepository()
     app = create_app(repository=repository, artifact_root=tmp_path / "artifacts")

@@ -72,3 +72,14 @@ def test_workflow_worker_retries_then_records_final_failure(tmp_path):
     assert failed.attempt_count == 2
     assert failed.finished_at is not None
     assert repository.get_run(run.id).status == RunStatus.FAILED
+
+
+def test_workflow_worker_returns_none_when_no_procurement_job_is_pending(tmp_path):
+    repository = InMemoryRunRepository()
+    worker = WorkflowWorker(
+        repository=repository,
+        artifact_root=tmp_path / "artifacts",
+        worker_id="worker-idle",
+    )
+
+    assert worker.process_next_job() is None
