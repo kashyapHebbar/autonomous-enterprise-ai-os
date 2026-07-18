@@ -122,6 +122,8 @@ detail responses and is also available at `/runs/{run_id}/audit-events`.
 | `POST /runs/{run_id}/execute/procurement` | Execute synchronously in local mode or enqueue when `AEAI_WORKFLOW_EXECUTION_MODE=async` |
 | `POST /runs/{run_id}/execute/procurement/async` | Queue the procurement workflow explicitly |
 | `GET /runs/{run_id}/workflow-jobs` | Inspect queued workflow jobs |
+| `POST /runs/{run_id}/workflow-jobs/{job_id}/retry` | Requeue a dead-lettered workflow job for manual recovery |
+| `POST /runs/{run_id}/workflow-jobs/{job_id}/dismiss` | Mark a dead-lettered workflow job as dismissed |
 | `POST /runs/{run_id}/deployments` | Request approval to promote artifacts |
 | `POST /runs/{run_id}/deployments/{job_id}/approval` | Approve or deny a deployment request |
 | `GET /runs/{run_id}/graph-nodes` | Inspect execution graph node state |
@@ -271,7 +273,9 @@ enqueue workflow jobs and workers process them separately. Queued workflow execu
 repository-backed queue. Set `AEAI_WORKFLOW_QUEUE_BACKEND=redis` to use Redis as the pending-job
 broker while keeping the run repository as the authoritative execution guard. Workers heartbeat
 claimed jobs, recover timed-out claims, retry according to `max_attempts`, and move exhausted jobs to
-`dead_letter`.
+`dead_letter`. Procurement job retries default to `AEAI_PROCUREMENT_WORKFLOW_MAX_ATTEMPTS=3`.
+Dead-lettered jobs remain inspectable through `/runs/{run_id}/workflow-jobs` and the Run Inspector,
+where operators can manually retry or dismiss them.
 
 ## Database Migrations
 

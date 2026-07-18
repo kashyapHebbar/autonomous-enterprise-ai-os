@@ -349,13 +349,24 @@ class InMemoryRunRepository:
                 _ensure_job_owned_by_worker(job, worker_id)
             now = utc_now()
             should_retry = retry and job.attempt_count < job.max_attempts
+            next_status = (
+                WorkflowJobStatus.QUEUED
+                if should_retry
+                else WorkflowJobStatus.DEAD_LETTER
+            )
+            payload = _append_workflow_failure(
+                job.payload,
+                attempt_count=job.attempt_count,
+                status=next_status,
+                error_summary=error_summary,
+                recorded_at=now,
+                worker_id=worker_id or job.worker_id,
+                reason="worker_failure",
+            )
             failed = replace(
                 job,
-                status=(
-                    WorkflowJobStatus.QUEUED
-                    if should_retry
-                    else WorkflowJobStatus.DEAD_LETTER
-                ),
+                status=next_status,
+                payload=payload,
                 worker_id=None if should_retry else job.worker_id,
                 error_summary=error_summary,
                 updated_at=now,
@@ -363,7 +374,84 @@ class InMemoryRunRepository:
                 finished_at=None if should_retry else now,
             )
             self._workflow_jobs[job_id] = failed
+            if failed.status == WorkflowJobStatus.DEAD_LETTER:
+                self._runs[job.run_id] = replace(
+                    self.get_run(job.run_id),
+                    status=RunStatus.FAILED,
+                    error_summary=error_summary,
+                    updated_at=now,
+                )
             return deepcopy(failed)
+
+    def retry_dead_letter_workflow_job(
+        self,
+        job_id: str,
+        reason: str | None = None,
+    ) -> WorkflowJobRecord:
+        with self._lock:
+            job = self._get_workflow_job_for_update(job_id)
+            if job.status != WorkflowJobStatus.DEAD_LETTER:
+                raise WorkflowJobStateError(
+                    f"Workflow job must be dead_letter before manual retry: {job_id}"
+                )
+            now = utc_now()
+            payload = deepcopy(job.payload)
+            manual_retries = int(payload.get("manual_retry_count", 0)) + 1
+            payload.update(
+                {
+                    "manual_retry_count": manual_retries,
+                    "last_manual_retry_at": now.isoformat(),
+                }
+            )
+            if reason:
+                payload["last_manual_retry_reason"] = reason
+            retried = replace(
+                job,
+                status=WorkflowJobStatus.QUEUED,
+                payload=payload,
+                max_attempts=max(job.max_attempts, job.attempt_count + 1),
+                worker_id=None,
+                error_summary=None,
+                heartbeat_at=None,
+                finished_at=None,
+                updated_at=now,
+            )
+            self._workflow_jobs[job_id] = retried
+            self._runs[job.run_id] = replace(
+                self.get_run(job.run_id),
+                status=RunStatus.PENDING,
+                error_summary=None,
+                updated_at=now,
+            )
+            return deepcopy(retried)
+
+    def dismiss_dead_letter_workflow_job(
+        self,
+        job_id: str,
+        reason: str | None = None,
+    ) -> WorkflowJobRecord:
+        with self._lock:
+            job = self._get_workflow_job_for_update(job_id)
+            if job.status != WorkflowJobStatus.DEAD_LETTER:
+                raise WorkflowJobStateError(
+                    f"Workflow job must be dead_letter before dismissal: {job_id}"
+                )
+            now = utc_now()
+            payload = deepcopy(job.payload)
+            payload["dismissed_at"] = now.isoformat()
+            if reason:
+                payload["dismissal_reason"] = reason
+            dismissed = replace(
+                job,
+                status=WorkflowJobStatus.DISMISSED,
+                payload=payload,
+                worker_id=None,
+                heartbeat_at=None,
+                finished_at=now,
+                updated_at=now,
+            )
+            self._workflow_jobs[job_id] = dismissed
+            return deepcopy(dismissed)
 
     def recover_timed_out_workflow_jobs(
         self,
@@ -393,13 +481,24 @@ class InMemoryRunRepository:
                     f"Workflow job heartbeat timed out after {timeout_seconds} seconds."
                 )
                 should_retry = job.attempt_count < job.max_attempts
+                next_status = (
+                    WorkflowJobStatus.QUEUED
+                    if should_retry
+                    else WorkflowJobStatus.DEAD_LETTER
+                )
+                payload = _append_workflow_failure(
+                    job.payload,
+                    attempt_count=job.attempt_count,
+                    status=next_status,
+                    error_summary=error_summary,
+                    recorded_at=reference_time,
+                    worker_id=job.worker_id,
+                    reason="heartbeat_timeout",
+                )
                 recovered_job = replace(
                     job,
-                    status=(
-                        WorkflowJobStatus.QUEUED
-                        if should_retry
-                        else WorkflowJobStatus.DEAD_LETTER
-                    ),
+                    status=next_status,
+                    payload=payload,
                     worker_id=None if should_retry else job.worker_id,
                     error_summary=error_summary,
                     heartbeat_at=None if should_retry else job.heartbeat_at,
@@ -407,6 +506,13 @@ class InMemoryRunRepository:
                     updated_at=reference_time,
                 )
                 self._workflow_jobs[job_id] = recovered_job
+                if recovered_job.status == WorkflowJobStatus.DEAD_LETTER:
+                    self._runs[job.run_id] = replace(
+                        self.get_run(job.run_id),
+                        status=RunStatus.FAILED,
+                        error_summary=error_summary,
+                        updated_at=reference_time,
+                    )
                 recovered.append(deepcopy(recovered_job))
         return recovered
 
@@ -609,6 +715,33 @@ def _artifact_storage_metadata(
             size_bytes if size_bytes is not None else _optional_int(metadata.get("size_bytes"))
         ),
     }
+
+
+def _append_workflow_failure(
+    payload: dict[str, Any],
+    *,
+    attempt_count: int,
+    status: WorkflowJobStatus,
+    error_summary: str,
+    recorded_at: datetime,
+    worker_id: str | None,
+    reason: str,
+) -> dict[str, Any]:
+    updated = deepcopy(payload)
+    history = list(updated.get("failure_history", []))
+    history.append(
+        {
+            "attempt_count": attempt_count,
+            "status": status.value,
+            "error_summary": error_summary,
+            "recorded_at": recorded_at.isoformat(),
+            "worker_id": worker_id,
+            "reason": reason,
+        }
+    )
+    updated["failure_history"] = history
+    updated["last_failure"] = history[-1]
+    return updated
 
 
 def _optional_string(value: Any) -> str | None:

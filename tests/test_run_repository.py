@@ -11,6 +11,7 @@ from aeai_os.runs.repository import (
     InMemoryRunRepository,
     RunNotFoundError,
     WorkflowJobOwnershipError,
+    WorkflowJobStateError,
     utc_now,
 )
 from aeai_os.runs.sqlalchemy_repository import SQLAlchemyRunRepository
@@ -389,7 +390,69 @@ def test_repository_marks_workflow_job_failed_after_attempts_are_exhausted(repos
     assert failed.id == job.id
     assert failed.status == WorkflowJobStatus.DEAD_LETTER
     assert failed.error_summary == "Dataset artifact is missing."
+    assert failed.payload["last_failure"]["status"] == WorkflowJobStatus.DEAD_LETTER
+    assert failed.payload["last_failure"]["reason"] == "worker_failure"
+    assert failed.payload["last_failure"]["error_summary"] == "Dataset artifact is missing."
     assert failed.finished_at is not None
+    assert repository.get_run(run.id).status == RunStatus.FAILED
+
+
+def test_repository_manually_retries_and_dismisses_dead_letter_jobs(repository):
+    first_run = repository.create_run("Analyze procurement retry path.")
+    first_job = repository.enqueue_workflow_job(first_run.id, "procurement", max_attempts=1)
+    first_claim = repository.claim_next_workflow_job("worker-one")
+    dead_letter = repository.fail_workflow_job(
+        first_claim.id,
+        "Dataset artifact is missing.",
+        retry=True,
+    )
+
+    retried = repository.retry_dead_letter_workflow_job(
+        dead_letter.id,
+        reason="Dataset was attached after the original failure.",
+    )
+    reclaimed = repository.claim_next_workflow_job("worker-two")
+
+    second_run = repository.create_run("Analyze procurement dismissal path.")
+    second_job = repository.enqueue_workflow_job(second_run.id, "procurement", max_attempts=1)
+    second_claim = repository.claim_next_workflow_job("worker-one")
+    second_dead_letter = repository.fail_workflow_job(
+        second_claim.id,
+        "External system remained unavailable.",
+        retry=True,
+    )
+    dismissed = repository.dismiss_dead_letter_workflow_job(
+        second_dead_letter.id,
+        reason="Superseded by a fresh run.",
+    )
+
+    assert first_job.id == dead_letter.id
+    assert retried.status == WorkflowJobStatus.QUEUED
+    assert retried.error_summary is None
+    assert retried.max_attempts == 2
+    assert retried.payload["manual_retry_count"] == 1
+    assert retried.payload["last_manual_retry_reason"] == (
+        "Dataset was attached after the original failure."
+    )
+    assert repository.get_run(first_run.id).status == RunStatus.PENDING
+    assert reclaimed.id == retried.id
+    assert reclaimed.worker_id == "worker-two"
+    assert reclaimed.attempt_count == 2
+    assert second_job.id == second_dead_letter.id
+    assert dismissed.status == WorkflowJobStatus.DISMISSED
+    assert dismissed.payload["dismissal_reason"] == "Superseded by a fresh run."
+    assert dismissed.finished_at is not None
+
+
+def test_repository_rejects_manual_control_for_non_dead_letter_jobs(repository):
+    run = repository.create_run("Analyze procurement data.")
+    job = repository.enqueue_workflow_job(run.id, "procurement")
+
+    with pytest.raises(WorkflowJobStateError):
+        repository.retry_dead_letter_workflow_job(job.id)
+
+    with pytest.raises(WorkflowJobStateError):
+        repository.dismiss_dead_letter_workflow_job(job.id)
 
 
 def test_repository_rejects_workflow_job_updates_from_non_owner(repository):
@@ -430,6 +493,8 @@ def test_repository_heartbeats_and_recovers_timed_out_workflow_jobs(repository):
     assert recovered[0].status == WorkflowJobStatus.QUEUED
     assert recovered[0].worker_id is None
     assert "heartbeat timed out" in recovered[0].error_summary
+    assert recovered[0].payload["last_failure"]["reason"] == "heartbeat_timeout"
+    assert recovered[0].payload["last_failure"]["status"] == WorkflowJobStatus.QUEUED
     assert reclaimed.id == job.id
     assert reclaimed.worker_id == "worker-two"
     assert reclaimed.attempt_count == 2
@@ -449,4 +514,6 @@ def test_repository_dead_letters_timed_out_job_after_attempts_exhausted(reposito
     assert recovered[0].status == WorkflowJobStatus.DEAD_LETTER
     assert recovered[0].worker_id == "worker-one"
     assert recovered[0].finished_at is not None
+    assert recovered[0].payload["last_failure"]["reason"] == "heartbeat_timeout"
+    assert repository.get_run(run.id).status == RunStatus.FAILED
     assert repository.claim_next_workflow_job("worker-two") is None

@@ -281,9 +281,12 @@ def test_run_inspector_script_exposes_detail_approval_and_retry_controls(tmp_pat
     assert 'data-node-action="retry"' in response.text
     assert 'data-deployment-action="approve"' in response.text
     assert 'data-deployment-action="deny"' in response.text
+    assert 'data-job-action="retry"' in response.text
+    assert 'data-job-action="dismiss"' in response.text
     assert "/graph-nodes/${encodedNodeId}/approval" in response.text
     assert "/graph-nodes/${encodedNodeId}/retry" in response.text
     assert "/deployments/${encodedJobId}/approval" in response.text
+    assert "/workflow-jobs/${encodedJobId}/${action}" in response.text
     assert "/artifacts/${encodeURIComponent(artifact.id)}/lineage" in response.text
     assert "renderApprovalHistory" in response.text
     assert "renderDeploymentHistory" in response.text
@@ -924,6 +927,27 @@ def test_enqueue_procurement_workflow_from_api(tmp_path):
     assert jobs_response.json() == [job]
 
 
+def test_enqueue_procurement_workflow_uses_configured_max_attempts(tmp_path, monkeypatch):
+    monkeypatch.setenv("AEAI_PROCUREMENT_WORKFLOW_MAX_ATTEMPTS", "5")
+    repository = InMemoryRunRepository()
+    app = create_app(repository=repository, artifact_root=tmp_path / "artifacts")
+    client = TestClient(app)
+    dataset_path = tmp_path / "procurement.csv"
+    write_procurement_fixture(dataset_path)
+    run = client.post(
+        "/runs",
+        json={
+            "task": "Analyze this procurement dataset and create a dashboard report.",
+            "dataset_uri": str(dataset_path),
+        },
+    ).json()
+
+    response = client.post(f"/runs/{run['id']}/execute/procurement/async")
+
+    assert response.status_code == 202
+    assert response.json()["max_attempts"] == 5
+
+
 def test_primary_procurement_execution_endpoint_enqueues_in_async_mode(tmp_path, monkeypatch):
     monkeypatch.setenv("AEAI_WORKFLOW_EXECUTION_MODE", "async")
     repository = InMemoryRunRepository()
@@ -956,6 +980,77 @@ def test_primary_procurement_execution_endpoint_enqueues_in_async_mode(tmp_path,
         "run_id": run["id"],
         "workflow_job_id": body["id"],
     }
+
+
+def test_dead_letter_workflow_job_can_be_retried_and_dismissed_from_api(tmp_path):
+    repository = InMemoryRunRepository()
+    app = create_app(repository=repository, artifact_root=tmp_path / "artifacts")
+    client = TestClient(app)
+    retry_run = repository.create_run("Retry dead-letter procurement job.")
+    retry_job = repository.enqueue_workflow_job(retry_run.id, "procurement", max_attempts=1)
+    retry_claim = repository.claim_next_workflow_job("worker-one")
+    repository.fail_workflow_job(
+        retry_claim.id,
+        "Dataset artifact is missing.",
+        retry=True,
+    )
+    dismiss_run = repository.create_run("Dismiss dead-letter procurement job.")
+    dismiss_job = repository.enqueue_workflow_job(dismiss_run.id, "procurement", max_attempts=1)
+    dismiss_claim = repository.claim_next_workflow_job("worker-one")
+    repository.fail_workflow_job(
+        dismiss_claim.id,
+        "External dependency remained unavailable.",
+        retry=True,
+    )
+
+    retry_response = client.post(
+        f"/runs/{retry_run.id}/workflow-jobs/{retry_job.id}/retry",
+        json={"reason": "Dataset was attached after failure."},
+    )
+    dismiss_response = client.post(
+        f"/runs/{dismiss_run.id}/workflow-jobs/{dismiss_job.id}/dismiss",
+        json={"reason": "Superseded by a new run."},
+    )
+
+    retry_body = retry_response.json()
+    dismiss_body = dismiss_response.json()
+    audit_actions = [
+        event.payload["action"]
+        for event in repository.list_events(retry_run.id)
+        + repository.list_events(dismiss_run.id)
+        if event.event_type == AgentEventType.AUDIT.value
+    ]
+    assert retry_response.status_code == 200
+    assert retry_body["status"] == "queued"
+    assert retry_body["max_attempts"] == 2
+    assert retry_body["payload"]["manual_retry_count"] == 1
+    assert retry_body["payload"]["last_manual_retry_reason"] == (
+        "Dataset was attached after failure."
+    )
+    assert repository.get_run(retry_run.id).status == RunStatus.PENDING
+    assert dismiss_response.status_code == 200
+    assert dismiss_body["status"] == "dismissed"
+    assert dismiss_body["payload"]["dismissal_reason"] == "Superseded by a new run."
+    assert {
+        "workflow.retry_dead_letter",
+        "workflow.dismiss_dead_letter",
+    }.issubset(set(audit_actions))
+
+
+def test_dead_letter_controls_reject_non_dead_letter_jobs(tmp_path):
+    repository = InMemoryRunRepository()
+    app = create_app(repository=repository, artifact_root=tmp_path / "artifacts")
+    client = TestClient(app)
+    run = repository.create_run("Reject invalid manual retry.")
+    job = repository.enqueue_workflow_job(run.id, "procurement")
+
+    response = client.post(
+        f"/runs/{run.id}/workflow-jobs/{job.id}/retry",
+        json={"reason": "This job is still queued."},
+    )
+
+    assert response.status_code == 400
+    assert "must be dead_letter" in response.json()["detail"]
 
 
 def test_run_inspection_endpoints_expose_graph_events_and_timeline(tmp_path):

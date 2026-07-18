@@ -89,6 +89,7 @@ def create_app(
             artifact_store,
             workflow_queue,
             workflow_execution_mode=settings.workflow_execution_mode,
+            procurement_workflow_max_attempts=settings.procurement_workflow_max_attempts,
         )
     )
     app.include_router(build_metrics_router(run_repository))
