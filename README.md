@@ -103,10 +103,12 @@ Authentication is disabled by default for local demos. When `AEAI_AUTH_ENABLED=t
 endpoints require either `Authorization: Bearer <token>` or `X-AEAI-API-Key: <token>`.
 Configure accepted credentials with `AEAI_AUTH_TOKEN_PROFILES` as semicolon-separated
 `token=user_id|display_name|roles` entries, for example
-`operator-token=operator-1|Operator One|operator;approver-token=approver-1|Approver One|approver`.
+`operator-token=operator-1|Operator One|operator;reviewer-token=reviewer-1|Reviewer One|reviewer`.
 Supported roles are `viewer` for read-only inspection, `operator` for run and artifact mutations,
-`approver` for approval decisions, and `admin` for all current capabilities. Mutating API actions
-write `audit` events with actor identity under `/runs/{run_id}/events`.
+`reviewer` for approval decisions, and `admin` for all current capabilities. The legacy `approver`
+role is also accepted for compatibility. Mutating API actions write structured `audit` events with
+actor identity, action, target, run ID, trace ID, and timestamp. Audit history is included in run
+detail responses and is also available at `/runs/{run_id}/audit-events`.
 
 | Route | Purpose |
 | --- | --- |
@@ -114,6 +116,7 @@ write `audit` events with actor identity under `/runs/{run_id}/events`.
 | `POST /runs/import` | Import a portable run archive for offline inspection |
 | `GET /runs/{run_id}` | Inspect run state, artifacts, evaluations, and trace ID |
 | `GET /runs/{run_id}/export` | Export run metadata, artifacts, graph nodes, events, jobs, evaluations, and checkpoint |
+| `GET /runs/{run_id}/audit-events` | Inspect structured audit history for protected actions |
 | `POST /runs/{run_id}/datasets/reference` | Attach an external dataset reference |
 | `POST /runs/{run_id}/datasets/upload` | Upload a local dataset file |
 | `POST /runs/{run_id}/execute/procurement` | Execute the procurement workflow synchronously |

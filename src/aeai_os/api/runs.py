@@ -14,6 +14,7 @@ from aeai_os.api.run_schemas import (
     ArtifactLineageResponse,
     ArtifactResponse,
     AttachDatasetReferenceRequest,
+    AuditEventResponse,
     CreateDeploymentRequest,
     CreateRunRequest,
     DeploymentApprovalDecisionRequest,
@@ -28,6 +29,7 @@ from aeai_os.api.run_schemas import (
     agent_event_to_response,
     artifact_lineage_to_response,
     artifact_to_response,
+    audit_event_to_response,
     build_run_timeline,
     evaluation_to_response,
     graph_node_to_response,
@@ -109,6 +111,7 @@ def build_runs_router(
             run,
             repository.list_artifacts(run.id),
             repository.list_evaluations(run.id),
+            repository.list_events(run.id),
         )
 
     @router.get("", response_model=list[RunResponse])
@@ -142,6 +145,7 @@ def build_runs_router(
             repository.get_run(run.id),
             repository.list_artifacts(run.id),
             repository.list_evaluations(run.id),
+            repository.list_events(run.id),
         )
 
     @router.get("/{run_id}/export", response_model=dict[str, Any])
@@ -156,6 +160,7 @@ def build_runs_router(
             run,
             repository.list_artifacts(run_id),
             repository.list_evaluations(run_id),
+            repository.list_events(run_id),
         )
 
     @router.post("/{run_id}/execute/procurement", response_model=RunExecutionResponse)
@@ -333,6 +338,15 @@ def build_runs_router(
         return [
             agent_event_to_response(event)
             for event in repository.list_events(run_id)
+        ]
+
+    @router.get("/{run_id}/audit-events", response_model=list[AuditEventResponse])
+    def list_audit_events(run_id: str, user: RunReader) -> list[AuditEventResponse]:
+        _get_run_or_404(repository, run_id)
+        return [
+            audit_event
+            for event in repository.list_events(run_id)
+            if (audit_event := audit_event_to_response(event)) is not None
         ]
 
     @router.get("/{run_id}/timeline", response_model=list[RunTimelineItemResponse])
@@ -547,9 +561,12 @@ def _record_audit_event(
     details: dict[str, object] | None = None,
 ) -> AgentEventRecord:
     created_at = utc_now()
+    run = repository.get_run(run_id)
     payload: dict[str, object] = {
         "message": f"{actor.id} performed {action}.",
         "audit": True,
+        "run_id": run_id,
+        "trace_id": run.trace_id,
         "action": action,
         "actor": actor.to_audit_payload(),
         "target": target or {"run_id": run_id},
@@ -598,6 +615,7 @@ def _execution_response(
         run=run,
         artifacts=repository.list_artifacts(run_id),
         evaluations=repository.list_evaluations(run_id),
+        events=repository.list_events(run_id),
         completed_node_ids=result.completed_node_ids,
         failed_node_ids=result.failed_node_ids,
         waiting_for_approval_node_id=result.waiting_for_approval_node_id,

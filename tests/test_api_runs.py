@@ -22,10 +22,12 @@ from aeai_os.workflows import build_procurement_orchestrator
 AUTH_TOKEN_PROFILES = (
     "viewer-token=viewer-1|Viewer One|viewer;"
     "operator-token=operator-1|Operator One|operator;"
+    "reviewer-token=reviewer-1|Reviewer One|reviewer;"
     "approver-token=approver-1|Approver One|approver"
 )
 VIEWER_HEADERS = {"X-AEAI-API-Key": "viewer-token"}
 OPERATOR_HEADERS = {"Authorization": "Bearer operator-token"}
+REVIEWER_HEADERS = {"Authorization": "Bearer reviewer-token"}
 APPROVER_HEADERS = {"Authorization": "Bearer approver-token"}
 
 
@@ -178,12 +180,18 @@ def test_role_permissions_constrain_read_write_and_approval_actions(tmp_path, mo
         event for event in repository.list_events(body["id"])
         if event.event_type == AgentEventType.AUDIT.value
     )
+    run_detail = client.get(f"/runs/{body['id']}", headers=VIEWER_HEADERS).json()
     assert viewer_read.status_code == 200
     assert viewer_write.status_code == 403
     assert approver_write.status_code == 403
     assert operator_write.status_code == 201
     assert audit_event.payload["actor"]["id"] == "operator-1"
     assert audit_event.payload["actor"]["roles"] == ["operator"]
+    assert audit_event.payload["run_id"] == body["id"]
+    assert audit_event.payload["trace_id"] == body["trace_id"]
+    assert run_detail["audit_events"][0]["action"] == "run.create"
+    assert run_detail["audit_events"][0]["actor"]["id"] == "operator-1"
+    assert run_detail["audit_events"][0]["target"] == {"run_id": body["id"]}
 
 
 def test_app_can_select_sqlalchemy_run_repository(tmp_path, monkeypatch):
@@ -652,11 +660,12 @@ def test_approval_requires_approver_role_and_audits_actor(tmp_path, monkeypatch)
         headers=OPERATOR_HEADERS,
         json={"approved": True, "comment": "Operator should not approve."},
     )
-    approver_response = client.post(
+    reviewer_response = client.post(
         f"/runs/{run.id}/graph-nodes/data_profile/approval",
-        headers=APPROVER_HEADERS,
-        json={"approved": True, "comment": "Approver can approve."},
+        headers=REVIEWER_HEADERS,
+        json={"approved": True, "comment": "Reviewer can approve."},
     )
+    audit_response = client.get(f"/runs/{run.id}/audit-events", headers=VIEWER_HEADERS)
 
     audit_events = [
         event for event in repository.list_events(run.id)
@@ -664,9 +673,16 @@ def test_approval_requires_approver_role_and_audits_actor(tmp_path, monkeypatch)
         and event.payload["action"] == "graph_node.approval"
     ]
     assert operator_response.status_code == 403
-    assert approver_response.status_code == 200
-    assert audit_events[-1].payload["actor"]["id"] == "approver-1"
+    assert reviewer_response.status_code == 200
+    assert audit_response.status_code == 200
+    assert audit_events[-1].payload["actor"]["id"] == "reviewer-1"
+    assert audit_events[-1].payload["actor"]["roles"] == ["reviewer"]
+    assert audit_events[-1].payload["run_id"] == run.id
+    assert audit_events[-1].payload["trace_id"] == run.trace_id
     assert audit_events[-1].payload["details"]["approved"] is True
+    assert audit_response.json()[-1]["action"] == "graph_node.approval"
+    assert audit_response.json()[-1]["actor"]["id"] == "reviewer-1"
+    assert audit_response.json()[-1]["trace_id"] == run.trace_id
 
 
 def test_retry_failed_graph_node_from_api(tmp_path):
