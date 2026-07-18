@@ -356,7 +356,7 @@ def test_admin_script_loads_registries_connectors_and_affected_runs(tmp_path):
     assert 'requestJson("/connectors/credential-profiles")' in response.text
     assert 'requestJson("/admin/policies")' in response.text
     assert 'requestJson("/admin/affected-runs")' in response.text
-    assert "/run-inspector/runs/" in response.text
+    assert "run.inspector_url" in response.text
 
 
 def test_admin_api_requires_admin_and_lists_configuration(tmp_path, monkeypatch):
