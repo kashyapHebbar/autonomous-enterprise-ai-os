@@ -270,6 +270,41 @@ def test_run_inspector_page_is_served(tmp_path):
     assert 'id="deploymentHistory"' in response.text
 
 
+def test_control_plane_page_and_assets_are_served(tmp_path):
+    client = build_client(tmp_path)
+
+    root_response = client.get("/")
+    page_response = client.get("/app")
+    script_response = client.get("/app/control-plane.js")
+    style_response = client.get("/app/control-plane.css")
+    missing_response = client.get("/app/unknown.js")
+
+    assert root_response.status_code == 200
+    assert root_response.json()["control_plane"] == "/app"
+    assert page_response.status_code == 200
+    assert "Control Plane" in page_response.text
+    assert 'id="createRunForm"' in page_response.text
+    assert 'id="runsList"' in page_response.text
+    assert "/app/control-plane.js" in page_response.text
+    assert script_response.status_code == 200
+    assert style_response.status_code == 200
+    assert missing_response.status_code == 404
+
+
+def test_control_plane_script_creates_and_links_runs(tmp_path):
+    client = build_client(tmp_path)
+
+    response = client.get("/app/control-plane.js")
+
+    assert response.status_code == 200
+    assert 'requestJson("/runs"' in response.text
+    assert 'requestJson("/data-sources")' in response.text
+    assert 'method: "POST"' in response.text
+    assert "data_source_id" in response.text
+    assert "dataset_uri" in response.text
+    assert "/run-inspector/runs/${encodeURIComponent(runId)}" in response.text
+
+
 def test_run_inspector_script_exposes_detail_approval_and_retry_controls(tmp_path):
     client = build_client(tmp_path)
 
