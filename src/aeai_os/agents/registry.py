@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
@@ -9,6 +9,7 @@ class AgentRegistration:
     agent_type: str
     description: str
     risk_profile: str
+    capabilities: tuple[str, ...] = field(default_factory=tuple)
 
 
 class AgentRegistry:
@@ -35,17 +36,53 @@ class AgentRegistry:
 def build_default_registry() -> AgentRegistry:
     return AgentRegistry(
         [
-            AgentRegistration("planner", "Creates the execution graph.", "medium"),
-            AgentRegistration("security", "Applies tool policy and approval gates.", "high"),
-            AgentRegistration("data_retrieval", "Profiles and retrieves datasets.", "low"),
+            AgentRegistration(
+                "planner",
+                "Creates the execution graph.",
+                "medium",
+                ("task_decomposition", "dependency_planning", "execution_graph"),
+            ),
+            AgentRegistration(
+                "security",
+                "Applies tool policy and approval gates.",
+                "high",
+                ("tool_policy", "approval_gates", "risk_assessment"),
+            ),
+            AgentRegistration(
+                "data_retrieval",
+                "Profiles and retrieves datasets.",
+                "low",
+                ("dataset_reference", "schema_profile", "quality_signals"),
+            ),
             AgentRegistration(
                 "analytics_code",
                 "Computes KPIs and reproducible analysis.",
                 "medium",
+                ("kpi_generation", "analysis_code", "deterministic_metrics"),
             ),
-            AgentRegistration("visualization", "Creates chart and dashboard artifacts.", "low"),
-            AgentRegistration("report", "Generates final report artifacts.", "low"),
-            AgentRegistration("evaluation", "Scores outputs for quality and grounding.", "low"),
-            AgentRegistration("deployment", "Stores or deploys validated artifacts.", "high"),
+            AgentRegistration(
+                "visualization",
+                "Creates chart and dashboard artifacts.",
+                "low",
+                ("chart_rendering", "dashboard_html", "visual_summary"),
+            ),
+            AgentRegistration(
+                "report",
+                "Generates final report artifacts.",
+                "low",
+                ("markdown_report", "executive_summary", "artifact_synthesis"),
+            ),
+            AgentRegistration(
+                "evaluation",
+                "Scores outputs for quality and grounding.",
+                "low",
+                ("quality_checks", "evaluation_records", "grounding_review"),
+            ),
+            AgentRegistration(
+                "deployment",
+                "Stores or deploys validated artifacts.",
+                "high",
+                ("artifact_promotion", "deployment_request", "release_metadata"),
+            ),
         ]
     )

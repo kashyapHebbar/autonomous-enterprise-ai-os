@@ -20,7 +20,15 @@ from aeai_os.runs.repository import (
     WorkflowJobOwnershipError,
     WorkflowJobStateError,
 )
-from aeai_os.runs.sqlalchemy_repository import SQLAlchemyRunRepository
+
+
+def __getattr__(name: str):
+    if name != "SQLAlchemyRunRepository":
+        raise AttributeError(f"module 'aeai_os.runs' has no attribute {name!r}")
+    from aeai_os.runs.sqlalchemy_repository import SQLAlchemyRunRepository
+
+    globals()[name] = SQLAlchemyRunRepository
+    return SQLAlchemyRunRepository
 
 __all__ = [
     "AgentEventRecord",
