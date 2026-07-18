@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 
 
 @dataclass(frozen=True)
@@ -50,22 +52,22 @@ def get_settings() -> AppSettings:
             os.getenv("MINIO_ENDPOINT", ""),
         ),
         artifact_s3_region=os.getenv("AEAI_ARTIFACT_S3_REGION", ""),
-        artifact_s3_access_key_id=os.getenv(
+        artifact_s3_access_key_id=get_env_secret(
             "AEAI_ARTIFACT_S3_ACCESS_KEY_ID",
-            os.getenv("MINIO_ACCESS_KEY", ""),
+            "MINIO_ACCESS_KEY",
         ),
-        artifact_s3_secret_access_key=os.getenv(
+        artifact_s3_secret_access_key=get_env_secret(
             "AEAI_ARTIFACT_S3_SECRET_ACCESS_KEY",
-            os.getenv("MINIO_SECRET_KEY", ""),
+            "MINIO_SECRET_KEY",
         ),
         run_repository_backend=os.getenv("AEAI_RUN_REPOSITORY_BACKEND", "memory"),
         run_repository_create_schema=_parse_bool(
             os.getenv("AEAI_RUN_REPOSITORY_CREATE_SCHEMA"),
             default=True,
         ),
-        database_url=os.getenv(
+        database_url=get_env_secret(
             "AEAI_DATABASE_URL",
-            "postgresql+psycopg://aeai:aeai_password@postgres:5432/aeai_os",
+            default="postgresql+psycopg://aeai:aeai_password@postgres:5432/aeai_os",
         ),
         workflow_queue_backend=os.getenv("AEAI_WORKFLOW_QUEUE_BACKEND", "repository"),
         workflow_execution_mode=os.getenv("AEAI_WORKFLOW_EXECUTION_MODE", "sync"),
@@ -81,7 +83,7 @@ def get_settings() -> AppSettings:
         ),
         redis_url=os.getenv("AEAI_REDIS_URL", "redis://redis:6379/0"),
         auth_enabled=_parse_bool(os.getenv("AEAI_AUTH_ENABLED"), default=False),
-        auth_token_profiles=os.getenv("AEAI_AUTH_TOKEN_PROFILES", ""),
+        auth_token_profiles=get_env_secret("AEAI_AUTH_TOKEN_PROFILES"),
         auth_local_user_id=os.getenv("AEAI_AUTH_LOCAL_USER_ID", "local-dev"),
         auth_local_user_name=os.getenv("AEAI_AUTH_LOCAL_USER_NAME", "Local Developer"),
         auth_local_roles=os.getenv("AEAI_AUTH_LOCAL_ROLES", "admin"),
@@ -92,3 +94,23 @@ def _parse_bool(value: str | None, *, default: bool) -> bool:
     if value is None or value.strip() == "":
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def get_env_secret(
+    *names: str,
+    default: str = "",
+    env: Mapping[str, str] | None = None,
+) -> str:
+    values = os.environ if env is None else env
+    for name in names:
+        direct = values.get(name)
+        if direct is not None and direct.strip():
+            return direct.strip()
+    for name in names:
+        file_path = values.get(f"{name}_FILE")
+        if file_path is None or not file_path.strip():
+            continue
+        path = Path(file_path.strip()).expanduser()
+        if path.is_file():
+            return path.read_text(encoding="utf-8").strip()
+    return default

@@ -44,6 +44,7 @@ from aeai_os.schemas.enums import (
     RunStatus,
     WorkflowJobStatus,
 )
+from aeai_os.security.redaction import redact_text, redact_uri, redact_value
 from aeai_os.storage.sqlalchemy_models import (
     AgentEventModel,
     ArtifactModel,
@@ -97,7 +98,7 @@ class SQLAlchemyRunRepository:
             id=f"run_{uuid4().hex}",
             task=normalized_task,
             status=RunStatus.PENDING.value,
-            metadata_json=dict(metadata or {}),
+            metadata_json=redact_value(dict(metadata or {})),
             created_at=now,
             updated_at=now,
             trace_id=ensure_trace_id(trace_id),
@@ -153,7 +154,7 @@ class SQLAlchemyRunRepository:
         with self._session_factory() as session:
             model = _get_run_model(session, run_id)
             model.status = status.value
-            model.error_summary = error_summary
+            model.error_summary = redact_text(error_summary)
             model.updated_at = utc_now()
             session.commit()
             return _run_from_model(model)
@@ -183,7 +184,7 @@ class SQLAlchemyRunRepository:
                 run_id=run_id,
                 workflow_name=normalized_workflow,
                 status=status.value,
-                payload=deepcopy(payload or {}),
+                payload=redact_value(deepcopy(payload or {})),
                 attempt_count=0,
                 max_attempts=max_attempts,
                 created_at=now,
@@ -208,8 +209,8 @@ class SQLAlchemyRunRepository:
             now = utc_now()
             model.status = status.value
             if payload is not None:
-                model.payload = deepcopy(payload)
-            model.error_summary = error_summary
+                model.payload = redact_value(deepcopy(payload))
+            model.error_summary = redact_text(error_summary)
             model.updated_at = now
             model.finished_at = now
             session.commit()
@@ -351,7 +352,7 @@ class SQLAlchemyRunRepository:
                 model.payload or {},
                 attempt_count=model.attempt_count,
                 status=next_status,
-                error_summary=error_summary,
+                error_summary=redact_text(error_summary) or "",
                 recorded_at=now,
                 worker_id=worker_id or model.worker_id,
                 reason="worker_failure",
@@ -365,9 +366,9 @@ class SQLAlchemyRunRepository:
                 model.finished_at = now
                 run = _get_run_model(session, model.run_id)
                 run.status = RunStatus.FAILED.value
-                run.error_summary = error_summary
+                run.error_summary = redact_text(error_summary)
                 run.updated_at = now
-            model.error_summary = error_summary
+            model.error_summary = redact_text(error_summary)
             model.updated_at = now
             session.commit()
             return _workflow_job_from_model(model)
@@ -393,7 +394,7 @@ class SQLAlchemyRunRepository:
                 }
             )
             if reason:
-                payload["last_manual_retry_reason"] = reason
+                payload["last_manual_retry_reason"] = redact_text(reason)
             model.status = WorkflowJobStatus.QUEUED.value
             model.payload = payload
             model.max_attempts = max(model.max_attempts, model.attempt_count + 1)
@@ -424,7 +425,7 @@ class SQLAlchemyRunRepository:
             payload = deepcopy(model.payload or {})
             payload["dismissed_at"] = now.isoformat()
             if reason:
-                payload["dismissal_reason"] = reason
+                payload["dismissal_reason"] = redact_text(reason)
             model.status = WorkflowJobStatus.DISMISSED.value
             model.payload = payload
             model.worker_id = None
@@ -476,14 +477,14 @@ class SQLAlchemyRunRepository:
                     model.payload or {},
                     attempt_count=model.attempt_count,
                     status=next_status,
-                    error_summary=error_summary,
+                    error_summary=redact_text(error_summary) or "",
                     recorded_at=reference_time,
                     worker_id=model.worker_id,
                     reason="heartbeat_timeout",
                 )
                 model.status = next_status.value
                 model.worker_id = None if should_retry else model.worker_id
-                model.error_summary = error_summary
+                model.error_summary = redact_text(error_summary)
                 if should_retry:
                     model.heartbeat_at = None
                     model.finished_at = None
@@ -491,7 +492,7 @@ class SQLAlchemyRunRepository:
                     model.finished_at = reference_time
                     run = _get_run_model(session, model.run_id)
                     run.status = RunStatus.FAILED.value
-                    run.error_summary = error_summary
+                    run.error_summary = redact_text(error_summary)
                     run.updated_at = reference_time
                 model.updated_at = reference_time
                 recovered.append(_workflow_job_from_model(model))
@@ -518,7 +519,7 @@ class SQLAlchemyRunRepository:
         with self._session_factory() as session:
             run = _get_run_model(session, run_id)
             resolved_artifact_id = artifact_id or self.next_artifact_id()
-            normalized_metadata = dict(metadata or {})
+            normalized_metadata = redact_value(dict(metadata or {}))
             storage_metadata = _artifact_storage_metadata(
                 normalized_metadata,
                 content_type=content_type,
@@ -544,7 +545,7 @@ class SQLAlchemyRunRepository:
                     run_id=run_id,
                     producer_node_id=producer_node_id,
                     type=artifact_type.value,
-                    uri=uri,
+                    uri=redact_uri(uri),
                     metadata_json=normalized_metadata,
                     content_type=storage_metadata["content_type"],
                     storage_backend=storage_metadata["storage_backend"],
@@ -630,14 +631,15 @@ class SQLAlchemyRunRepository:
     def add_event(self, event: AgentEventRecord) -> AgentEventRecord:
         with self._session_factory() as session:
             run = _run_from_model(_get_run_model(session, event.run_id))
-            log_agent_event_to_langsmith(run=run, event=event)
+            redacted_event = replace(event, payload=redact_value(event.payload))
+            log_agent_event_to_langsmith(run=run, event=redacted_event)
             model = AgentEventModel(
-                id=event.id,
-                run_id=event.run_id,
-                node_id=event.node_id,
-                event_type=str(event.event_type),
-                payload=deepcopy(event.payload),
-                created_at=event.created_at,
+                id=redacted_event.id,
+                run_id=redacted_event.run_id,
+                node_id=redacted_event.node_id,
+                event_type=str(redacted_event.event_type),
+                payload=deepcopy(redacted_event.payload),
+                created_at=redacted_event.created_at,
             )
             session.add(model)
             session.commit()
@@ -657,7 +659,7 @@ class SQLAlchemyRunRepository:
         with self._session_factory() as session:
             run = _get_run_model(session, evaluation.run_id)
             run_record = _run_from_model(run)
-            record = evaluation
+            record = replace(evaluation, checks=redact_value(evaluation.checks))
             if record.created_at is None:
                 record = replace(record, created_at=utc_now())
             with start_span(
@@ -678,7 +680,7 @@ class SQLAlchemyRunRepository:
                     target_artifact_id=record.target_artifact_id,
                     score=record.score,
                     passed=record.passed,
-                    checks=deepcopy(record.checks),
+                    checks=redact_value(deepcopy(record.checks)),
                     created_at=record.created_at,
                 )
                 mlflow_result = log_evaluation_to_mlflow(
@@ -738,14 +740,14 @@ class SQLAlchemyRunRepository:
                 model = RunCheckpointModel(
                     run_id=run_id,
                     version=1,
-                    state_json=deepcopy(state),
+                    state_json=redact_value(deepcopy(state)),
                     created_at=now,
                     updated_at=now,
                 )
                 session.add(model)
             else:
                 model.version += 1
-                model.state_json = deepcopy(state)
+                model.state_json = redact_value(deepcopy(state))
                 model.updated_at = now
             session.commit()
             return _checkpoint_from_model(model)
@@ -787,10 +789,10 @@ def _run_to_model(run: RunRecord) -> RunModel:
         id=run.id,
         task=run.task,
         status=run.status.value,
-        metadata_json=deepcopy(run.metadata),
+        metadata_json=redact_value(deepcopy(run.metadata)),
         dataset_artifact_id=run.dataset_artifact_id,
         trace_id=run.trace_id,
-        error_summary=run.error_summary,
+        error_summary=redact_text(run.error_summary),
         created_at=run.created_at,
         updated_at=run.updated_at,
     )
@@ -802,11 +804,11 @@ def _artifact_to_model(artifact: ArtifactRecord) -> ArtifactModel:
         run_id=artifact.run_id,
         producer_node_id=artifact.producer_node_id,
         type=artifact.type.value,
-        uri=artifact.uri,
-        metadata_json=deepcopy(artifact.metadata),
+        uri=redact_uri(artifact.uri),
+        metadata_json=redact_value(deepcopy(artifact.metadata)),
         content_type=artifact.content_type,
         storage_backend=artifact.storage_backend,
-        storage_key=artifact.storage_key,
+        storage_key=redact_uri(artifact.storage_key) if artifact.storage_key else None,
         size_bytes=artifact.size_bytes,
         source_artifact_ids=list(artifact.source_artifact_ids),
         created_at=artifact.created_at,
@@ -836,7 +838,7 @@ def _event_to_model(event: AgentEventRecord) -> AgentEventModel:
         run_id=event.run_id,
         node_id=event.node_id,
         event_type=str(event.event_type),
-        payload=deepcopy(event.payload),
+        payload=redact_value(deepcopy(event.payload)),
         created_at=event.created_at,
     )
 
@@ -850,7 +852,7 @@ def _evaluation_to_model(evaluation: EvaluationResultRecord) -> EvaluationResult
         target_artifact_id=evaluation.target_artifact_id,
         score=evaluation.score,
         passed=evaluation.passed,
-        checks=deepcopy(evaluation.checks),
+        checks=redact_value(deepcopy(evaluation.checks)),
         created_at=evaluation.created_at,
     )
 
@@ -861,11 +863,11 @@ def _workflow_job_to_model(job: WorkflowJobRecord) -> WorkflowJobModel:
         run_id=job.run_id,
         workflow_name=job.workflow_name,
         status=job.status.value,
-        payload=deepcopy(job.payload),
+        payload=redact_value(deepcopy(job.payload)),
         attempt_count=job.attempt_count,
         max_attempts=job.max_attempts,
         worker_id=job.worker_id,
-        error_summary=job.error_summary,
+        error_summary=redact_text(job.error_summary),
         started_at=job.started_at,
         finished_at=job.finished_at,
         heartbeat_at=job.heartbeat_at,
@@ -878,7 +880,7 @@ def _checkpoint_to_model(checkpoint: RunCheckpointRecord) -> RunCheckpointModel:
     return RunCheckpointModel(
         run_id=checkpoint.run_id,
         version=checkpoint.version,
-        state_json=deepcopy(checkpoint.state),
+        state_json=redact_value(deepcopy(checkpoint.state)),
         created_at=checkpoint.created_at,
         updated_at=checkpoint.updated_at,
     )

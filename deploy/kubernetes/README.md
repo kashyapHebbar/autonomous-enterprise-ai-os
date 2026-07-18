@@ -110,6 +110,13 @@ For production-like environments, replace the local development secret values be
 - `MINIO_ACCESS_KEY`
 - `MINIO_SECRET_KEY`
 
+The API also supports mounted secret files by setting variables such as
+`AEAI_DATABASE_URL_FILE`, `AEAI_AUTH_TOKEN_PROFILES_FILE`,
+`AEAI_ARTIFACT_S3_ACCESS_KEY_ID_FILE`, `AEAI_ARTIFACT_S3_SECRET_ACCESS_KEY_FILE`,
+`MINIO_ACCESS_KEY_FILE`, `MINIO_SECRET_KEY_FILE`, or `SNOWFLAKE_PASSWORD_FILE`. Use this when a
+cluster mounts secrets as files instead of injecting their values directly into the container
+environment.
+
 To send traces to an OTLP collector, set these config map values:
 
 - `AEAI_TRACE_EXPORTER=otlp_http` or `AEAI_TRACE_EXPORTER=otlp_grpc`

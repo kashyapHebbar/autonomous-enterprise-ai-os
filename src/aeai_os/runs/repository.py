@@ -23,6 +23,7 @@ from aeai_os.runs.models import (
     WorkflowJobRecord,
 )
 from aeai_os.schemas.enums import AgentEventType, ArtifactType, RunStatus, WorkflowJobStatus
+from aeai_os.security.redaction import redact_text, redact_uri, redact_value
 
 
 class RunNotFoundError(KeyError):
@@ -86,7 +87,7 @@ class InMemoryRunRepository:
             id=f"run_{uuid4().hex}",
             task=normalized_task,
             status=RunStatus.PENDING,
-            metadata=dict(metadata or {}),
+            metadata=redact_value(dict(metadata or {})),
             created_at=now,
             updated_at=now,
             trace_id=ensure_trace_id(trace_id),
@@ -157,7 +158,7 @@ class InMemoryRunRepository:
             updated = replace(
                 run,
                 status=status,
-                error_summary=error_summary,
+                error_summary=redact_text(error_summary),
                 updated_at=utc_now(),
             )
             self._runs[run_id] = updated
@@ -188,7 +189,7 @@ class InMemoryRunRepository:
                 run_id=run_id,
                 workflow_name=normalized_workflow,
                 status=status,
-                payload=deepcopy(payload or {}),
+                payload=redact_value(deepcopy(payload or {})),
                 attempt_count=0,
                 max_attempts=max_attempts,
                 created_at=now,
@@ -214,8 +215,12 @@ class InMemoryRunRepository:
             updated = replace(
                 job,
                 status=status,
-                payload=deepcopy(payload) if payload is not None else deepcopy(job.payload),
-                error_summary=error_summary,
+                payload=(
+                    redact_value(deepcopy(payload))
+                    if payload is not None
+                    else deepcopy(job.payload)
+                ),
+                error_summary=redact_text(error_summary),
                 updated_at=now,
                 finished_at=now,
             )
@@ -358,7 +363,7 @@ class InMemoryRunRepository:
                 job.payload,
                 attempt_count=job.attempt_count,
                 status=next_status,
-                error_summary=error_summary,
+                error_summary=redact_text(error_summary),
                 recorded_at=now,
                 worker_id=worker_id or job.worker_id,
                 reason="worker_failure",
@@ -378,7 +383,7 @@ class InMemoryRunRepository:
                 self._runs[job.run_id] = replace(
                     self.get_run(job.run_id),
                     status=RunStatus.FAILED,
-                    error_summary=error_summary,
+                    error_summary=redact_text(error_summary),
                     updated_at=now,
                 )
             return deepcopy(failed)
@@ -404,7 +409,7 @@ class InMemoryRunRepository:
                 }
             )
             if reason:
-                payload["last_manual_retry_reason"] = reason
+                payload["last_manual_retry_reason"] = redact_text(reason)
             retried = replace(
                 job,
                 status=WorkflowJobStatus.QUEUED,
@@ -440,7 +445,7 @@ class InMemoryRunRepository:
             payload = deepcopy(job.payload)
             payload["dismissed_at"] = now.isoformat()
             if reason:
-                payload["dismissal_reason"] = reason
+                payload["dismissal_reason"] = redact_text(reason)
             dismissed = replace(
                 job,
                 status=WorkflowJobStatus.DISMISSED,
@@ -490,7 +495,7 @@ class InMemoryRunRepository:
                     job.payload,
                     attempt_count=job.attempt_count,
                     status=next_status,
-                    error_summary=error_summary,
+                    error_summary=redact_text(error_summary),
                     recorded_at=reference_time,
                     worker_id=job.worker_id,
                     reason="heartbeat_timeout",
@@ -510,7 +515,7 @@ class InMemoryRunRepository:
                     self._runs[job.run_id] = replace(
                         self.get_run(job.run_id),
                         status=RunStatus.FAILED,
-                        error_summary=error_summary,
+                        error_summary=redact_text(error_summary),
                         updated_at=reference_time,
                     )
                 recovered.append(deepcopy(recovered_job))
@@ -536,7 +541,7 @@ class InMemoryRunRepository:
         with self._lock:
             run = self.get_run(run_id)
             resolved_artifact_id = artifact_id or self.next_artifact_id()
-            normalized_metadata = dict(metadata or {})
+            normalized_metadata = redact_value(dict(metadata or {}))
             storage_metadata = _artifact_storage_metadata(
                 normalized_metadata,
                 content_type=content_type,
@@ -562,7 +567,7 @@ class InMemoryRunRepository:
                     run_id=run_id,
                     producer_node_id=producer_node_id,
                     type=artifact_type,
-                    uri=uri,
+                    uri=redact_uri(uri),
                     metadata=normalized_metadata,
                     source_artifact_ids=list(source_artifact_ids or []),
                     created_at=utc_now(),
@@ -624,9 +629,10 @@ class InMemoryRunRepository:
     def add_event(self, event: AgentEventRecord) -> AgentEventRecord:
         with self._lock:
             run = self.get_run(event.run_id)
-            log_agent_event_to_langsmith(run=run, event=event)
-            self._events[event.run_id].append(event)
-            return event
+            redacted_event = replace(event, payload=redact_value(event.payload))
+            log_agent_event_to_langsmith(run=run, event=redacted_event)
+            self._events[event.run_id].append(redacted_event)
+            return redacted_event
 
     def list_events(self, run_id: str) -> list[AgentEventRecord]:
         with self._lock:
@@ -636,7 +642,7 @@ class InMemoryRunRepository:
     def add_evaluation(self, evaluation: EvaluationResultRecord) -> EvaluationResultRecord:
         with self._lock:
             run = self.get_run(evaluation.run_id)
-            record = evaluation
+            record = replace(evaluation, checks=redact_value(evaluation.checks))
             if record.created_at is None:
                 record = replace(record, created_at=utc_now())
             with start_span(
@@ -686,7 +692,7 @@ class InMemoryRunRepository:
             existing = self._checkpoints.get(run_id)
             checkpoint = RunCheckpointRecord(
                 run_id=run_id,
-                state=deepcopy(state),
+                state=redact_value(deepcopy(state)),
                 version=(existing.version + 1 if existing else 1),
                 created_at=(existing.created_at if existing else now),
                 updated_at=now,
@@ -721,10 +727,11 @@ def _artifact_storage_metadata(
     storage_key: str | None = None,
     size_bytes: int | None = None,
 ) -> dict[str, Any]:
+    resolved_storage_key = storage_key or _optional_string(metadata.get("storage_key"))
     return {
         "content_type": content_type or _optional_string(metadata.get("content_type")),
         "storage_backend": storage_backend or _optional_string(metadata.get("storage_backend")),
-        "storage_key": storage_key or _optional_string(metadata.get("storage_key")),
+        "storage_key": redact_uri(resolved_storage_key) if resolved_storage_key else None,
         "size_bytes": (
             size_bytes if size_bytes is not None else _optional_int(metadata.get("size_bytes"))
         ),
@@ -747,7 +754,7 @@ def _append_workflow_failure(
         {
             "attempt_count": attempt_count,
             "status": status.value,
-            "error_summary": error_summary,
+            "error_summary": redact_text(error_summary),
             "recorded_at": recorded_at.isoformat(),
             "worker_id": worker_id,
             "reason": reason,

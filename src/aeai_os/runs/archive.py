@@ -3,7 +3,6 @@ from __future__ import annotations
 from copy import deepcopy
 from datetime import datetime
 from typing import Any
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from aeai_os.runs.models import (
     AgentEventRecord,
@@ -16,22 +15,11 @@ from aeai_os.runs.models import (
 )
 from aeai_os.runs.repository import RunCheckpointNotFoundError, RunNotFoundError, utc_now
 from aeai_os.schemas.enums import ArtifactType, GraphNodeStatus, RunStatus, WorkflowJobStatus
+from aeai_os.security.redaction import REDACTED as _REDACTED
+from aeai_os.security.redaction import redact_text, redact_uri, redact_value
 
 RUN_ARCHIVE_SCHEMA_VERSION = "aeai.run_archive.v1"
-REDACTED = "[REDACTED]"
-SENSITIVE_KEY_FRAGMENTS = {
-    "api_key",
-    "apikey",
-    "auth",
-    "authorization",
-    "cookie",
-    "credential",
-    "password",
-    "private_key",
-    "secret",
-    "session",
-    "token",
-}
+REDACTED = _REDACTED
 
 
 class RunArchiveError(ValueError):
@@ -134,9 +122,9 @@ def import_run_archive(
 def _run_to_archive(run: RunRecord) -> dict[str, Any]:
     return {
         "id": run.id,
-        "task": run.task,
+        "task": redact_text(run.task) or "",
         "status": run.status.value,
-        "metadata": _sanitize(run.metadata),
+        "metadata": redact_value(run.metadata),
         "dataset_artifact_id": run.dataset_artifact_id,
         "trace_id": run.trace_id,
         "error_summary": run.error_summary,
@@ -151,11 +139,11 @@ def _artifact_to_archive(artifact: ArtifactRecord) -> dict[str, Any]:
         "run_id": artifact.run_id,
         "producer_node_id": artifact.producer_node_id,
         "type": artifact.type.value,
-        "uri": _sanitize_uri(artifact.uri),
-        "metadata": _sanitize(artifact.metadata),
+        "uri": redact_uri(artifact.uri),
+        "metadata": redact_value(artifact.metadata),
         "content_type": artifact.content_type,
         "storage_backend": artifact.storage_backend,
-        "storage_key": _sanitize_storage_key(artifact.storage_key),
+        "storage_key": redact_uri(artifact.storage_key) if artifact.storage_key else None,
         "size_bytes": artifact.size_bytes,
         "source_artifact_ids": list(artifact.source_artifact_ids),
         "created_at": artifact.created_at.isoformat(),
@@ -185,7 +173,7 @@ def _event_to_archive(event: AgentEventRecord) -> dict[str, Any]:
         "run_id": event.run_id,
         "node_id": event.node_id,
         "event_type": str(event.event_type),
-        "payload": _sanitize(event.payload),
+        "payload": redact_value(event.payload),
         "created_at": event.created_at.isoformat(),
     }
 
@@ -199,7 +187,7 @@ def _evaluation_to_archive(evaluation: EvaluationResultRecord) -> dict[str, Any]
         "target_artifact_id": evaluation.target_artifact_id,
         "score": evaluation.score,
         "passed": evaluation.passed,
-        "checks": _sanitize(evaluation.checks),
+        "checks": redact_value(evaluation.checks),
         "created_at": evaluation.created_at.isoformat(),
     }
 
@@ -210,7 +198,7 @@ def _workflow_job_to_archive(job: WorkflowJobRecord) -> dict[str, Any]:
         "run_id": job.run_id,
         "workflow_name": job.workflow_name,
         "status": job.status.value,
-        "payload": _sanitize(job.payload),
+        "payload": redact_value(job.payload),
         "attempt_count": job.attempt_count,
         "max_attempts": job.max_attempts,
         "worker_id": job.worker_id,
@@ -227,7 +215,7 @@ def _checkpoint_to_archive(checkpoint: RunCheckpointRecord) -> dict[str, Any]:
     return {
         "run_id": checkpoint.run_id,
         "version": checkpoint.version,
-        "state": _sanitize(checkpoint.state),
+        "state": redact_value(checkpoint.state),
         "created_at": checkpoint.created_at.isoformat(),
         "updated_at": checkpoint.updated_at.isoformat(),
     }
@@ -351,46 +339,3 @@ def _parse_optional_datetime(value: Any) -> datetime | None:
     if value in {None, ""}:
         return None
     return _parse_datetime(value)
-
-
-def _sanitize(value: Any) -> Any:
-    if isinstance(value, dict):
-        sanitized: dict[str, Any] = {}
-        for key, item in value.items():
-            string_key = str(key)
-            sanitized[string_key] = (
-                REDACTED if _is_sensitive_key(string_key) else _sanitize(item)
-            )
-        return sanitized
-    if isinstance(value, list):
-        return [_sanitize(item) for item in value]
-    if isinstance(value, tuple):
-        return [_sanitize(item) for item in value]
-    return value
-
-
-def _sanitize_uri(uri: str) -> str:
-    parsed = urlsplit(uri)
-    netloc = parsed.netloc
-    if parsed.username or parsed.password:
-        host = parsed.hostname or ""
-        port = f":{parsed.port}" if parsed.port else ""
-        netloc = f"{REDACTED}@{host}{port}"
-    query = urlencode(
-        [
-            (key, REDACTED if _is_sensitive_key(key) else value)
-            for key, value in parse_qsl(parsed.query, keep_blank_values=True)
-        ]
-    )
-    return urlunsplit((parsed.scheme, netloc, parsed.path, query, parsed.fragment))
-
-
-def _sanitize_storage_key(storage_key: str | None) -> str | None:
-    if storage_key is None:
-        return None
-    return _sanitize_uri(storage_key)
-
-
-def _is_sensitive_key(key: str) -> bool:
-    normalized = key.lower().replace("-", "_")
-    return any(fragment in normalized for fragment in SENSITIVE_KEY_FRAGMENTS)

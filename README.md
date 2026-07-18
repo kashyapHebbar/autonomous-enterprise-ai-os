@@ -151,6 +151,12 @@ detail responses and is also available at `/runs/{run_id}/audit-events`.
 The platform exposes first-class connector metadata for warehouse, object storage, and source-control
 integrations. Credential profiles are environment-backed references, not secret payloads. API
 responses only show configured/missing environment keys and never return secret values.
+For deployed environments, secret-bearing settings can be loaded from mounted files by setting
+`<ENV_NAME>_FILE`; direct environment variables still take precedence for local development.
+Supported secret-file settings include `AEAI_DATABASE_URL_FILE`,
+`AEAI_AUTH_TOKEN_PROFILES_FILE`, `AEAI_ARTIFACT_S3_ACCESS_KEY_ID_FILE`,
+`AEAI_ARTIFACT_S3_SECRET_ACCESS_KEY_FILE`, `MINIO_ACCESS_KEY_FILE`,
+`MINIO_SECRET_KEY_FILE`, and `SNOWFLAKE_PASSWORD_FILE`.
 
 Default connector IDs:
 
@@ -163,6 +169,11 @@ Default connector IDs:
 Warehouse dataset metadata can include `credential_profile` or `credential_profile_id` to bind a
 dataset reference to a profile such as `snowflake-default` without storing credentials in artifact
 metadata.
+
+Do not place raw passwords, tokens, API keys, private keys, connection strings, or presigned URLs in
+data-source metadata, artifact metadata, workflow job payloads, or free-form event payloads. Public
+API serializers and run archives redact common secret-like keys and URI credentials defensively, but
+connectors should pass credential material through environment variables or mounted secret files.
 
 ## Data Source Onboarding
 
@@ -294,7 +305,9 @@ approve/deny or retry actionable nodes.
 Completed runs can be exported as portable JSON archives for portfolio demos, debugging, and
 offline replay in Run Inspector. Archives include run metadata, artifacts, graph nodes, events,
 workflow jobs, evaluations, and checkpoint state, but not artifact payload bytes. Secret-like keys
-such as passwords, tokens, API keys, and credentials are redacted during export.
+such as passwords, tokens, API keys, and credentials are redacted during export. The same redaction
+is applied to public run, artifact, event, timeline, workflow-job, and data-source API responses so
+Run Inspector can be used for demos without exposing connector credentials.
 
 ```bash
 PYTHONPATH=src .venv/bin/python scripts/manage_run_archive.py \

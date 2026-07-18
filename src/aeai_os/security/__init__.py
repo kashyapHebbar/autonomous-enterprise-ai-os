@@ -22,6 +22,13 @@ from aeai_os.security.policy import (
     build_policy_registry_from_rules,
     default_tool_permission_registry,
 )
+from aeai_os.security.redaction import (
+    REDACTED,
+    is_sensitive_key,
+    redact_text,
+    redact_uri,
+    redact_value,
+)
 
 __all__ = [
     "AuthPermission",
@@ -41,7 +48,12 @@ __all__ = [
     "build_policy_registry_from_rules",
     "default_tool_permission_registry",
     "ensure_permission",
+    "is_sensitive_key",
     "local_development_user",
     "parse_roles",
     "parse_token_profiles",
+    "redact_text",
+    "redact_uri",
+    "redact_value",
+    "REDACTED",
 ]

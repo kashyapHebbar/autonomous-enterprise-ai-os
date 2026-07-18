@@ -9,6 +9,7 @@ from typing import Any, Protocol
 from urllib.parse import urlparse
 
 from aeai_os.observability.tracing import start_span
+from aeai_os.security.redaction import redact_value
 
 
 class ArtifactStorageError(RuntimeError):
@@ -301,7 +302,7 @@ def _storage_metadata(
     }
     if content_type:
         metadata["content_type"] = content_type
-    metadata.update(dict(extra or {}))
+    metadata.update(redact_value(dict(extra or {})))
     return metadata
 
 
@@ -335,7 +336,7 @@ def _uri_scheme(uri: str) -> str:
 def _object_metadata(metadata: Mapping[str, Any] | None = None) -> dict[str, str]:
     return {
         str(key): str(value)
-        for key, value in dict(metadata or {}).items()
+        for key, value in redact_value(dict(metadata or {})).items()
         if value is not None
     }
 

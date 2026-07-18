@@ -11,6 +11,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from aeai_os.data.profiling import DataIngestionError
 from aeai_os.observability.tracing import start_span
+from aeai_os.settings import get_env_secret
 
 ParameterSet = Sequence[Any] | Mapping[str, Any] | None
 SnowflakeConnectionFactory = Callable[..., Any]
@@ -248,7 +249,7 @@ class SnowflakeSettings:
         required = {
             "SNOWFLAKE_ACCOUNT": values.get("SNOWFLAKE_ACCOUNT", "").strip(),
             "SNOWFLAKE_USER": values.get("SNOWFLAKE_USER", "").strip(),
-            "SNOWFLAKE_PASSWORD": values.get("SNOWFLAKE_PASSWORD", "").strip(),
+            "SNOWFLAKE_PASSWORD": get_env_secret("SNOWFLAKE_PASSWORD", env=values),
             "SNOWFLAKE_WAREHOUSE": values.get("SNOWFLAKE_WAREHOUSE", "").strip(),
             "SNOWFLAKE_DATABASE": values.get("SNOWFLAKE_DATABASE", "").strip(),
             "SNOWFLAKE_SCHEMA": values.get("SNOWFLAKE_SCHEMA", "").strip(),
