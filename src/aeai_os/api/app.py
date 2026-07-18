@@ -18,8 +18,10 @@ def create_app(
     FastAPI is imported lazily so scaffold smoke checks can run before dependencies
     are installed.
     """
-    from fastapi import FastAPI
-    from fastapi.responses import FileResponse
+    from fastapi import FastAPI, HTTPException
+    from fastapi.encoders import jsonable_encoder
+    from fastapi.exceptions import RequestValidationError
+    from fastapi.responses import FileResponse, JSONResponse
 
     from aeai_os.api.connectors import build_connectors_router
     from aeai_os.api.data_sources import build_data_sources_router
@@ -28,6 +30,7 @@ def create_app(
     from aeai_os.connectors import build_default_connector_registry
     from aeai_os.data.sources import DataSourceRegistry
     from aeai_os.observability.tracing import configure_tracing, current_trace_id, start_span
+    from aeai_os.security.redaction import redact_value
     from aeai_os.workflows.queue import build_workflow_queue
 
     settings = get_settings()
@@ -51,6 +54,23 @@ def create_app(
     app.state.artifact_store = artifact_store
     app.state.connector_registry = connector_registry
     app.state.data_source_registry = data_source_registry
+
+    @app.exception_handler(HTTPException)
+    async def redacted_http_exception(request, exc):
+        del request
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": jsonable_encoder(redact_value(exc.detail))},
+            headers=exc.headers,
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def redacted_validation_exception(request, exc):
+        del request
+        return JSONResponse(
+            status_code=422,
+            content={"detail": jsonable_encoder(redact_value(exc.errors()))},
+        )
 
     @app.middleware("http")
     async def trace_requests(request, call_next):

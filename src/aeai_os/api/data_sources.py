@@ -16,6 +16,7 @@ from aeai_os.data.sources import (
     DataSourceValidationError,
     DataSourceValidationResult,
 )
+from aeai_os.security.redaction import redact_text, redact_uri, redact_value
 
 
 class CreateDataSourceRequest(BaseModel):
@@ -159,9 +160,9 @@ def _source_to_response(source: DataSourceRecord) -> DataSourceResponse:
         source_type=source.source_type,
         connector_id=source.connector_id,
         credential_profile_id=source.credential_profile_id,
-        dataset_uri=source.dataset_uri,
+        dataset_uri=redact_uri(source.dataset_uri),
         owner=source.owner,
-        metadata=source.metadata,
+        metadata=redact_value(source.metadata),
         created_at=source.created_at,
         updated_at=source.updated_at,
         latest_validation=(
@@ -177,7 +178,7 @@ def _validation_to_response(
 ) -> DataSourceValidationResponse:
     return DataSourceValidationResponse(
         status=validation.status,
-        message=validation.message,
+        message=redact_text(validation.message) or "",
         checked_at=validation.checked_at,
-        details=validation.details,
+        details=redact_value(validation.details),
     )

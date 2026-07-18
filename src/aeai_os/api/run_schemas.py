@@ -15,6 +15,7 @@ from aeai_os.runs.models import (
     WorkflowJobRecord,
 )
 from aeai_os.schemas.enums import ArtifactType, GraphNodeStatus, RunStatus, WorkflowJobStatus
+from aeai_os.security.redaction import redact_text, redact_uri, redact_value
 
 
 class CreateRunRequest(BaseModel):
@@ -289,11 +290,11 @@ def artifact_to_response(artifact: ArtifactRecord) -> ArtifactResponse:
         run_id=artifact.run_id,
         producer_node_id=artifact.producer_node_id,
         type=artifact.type,
-        uri=artifact.uri,
-        metadata=artifact.metadata,
+        uri=redact_uri(artifact.uri),
+        metadata=redact_value(artifact.metadata),
         content_type=artifact.content_type,
         storage_backend=artifact.storage_backend,
-        storage_key=artifact.storage_key,
+        storage_key=redact_uri(artifact.storage_key) if artifact.storage_key else None,
         size_bytes=artifact.size_bytes,
         source_artifact_ids=artifact.source_artifact_ids,
         created_at=artifact.created_at,
@@ -325,7 +326,7 @@ def evaluation_to_response(evaluation: EvaluationResultRecord) -> EvaluationResp
         target_artifact_id=evaluation.target_artifact_id,
         score=evaluation.score,
         passed=evaluation.passed,
-        checks=evaluation.checks,
+        checks=redact_value(evaluation.checks),
         created_at=evaluation.created_at,
     )
 
@@ -353,7 +354,7 @@ def agent_event_to_response(event: AgentEventRecord) -> AgentEventResponse:
         run_id=event.run_id,
         node_id=event.node_id,
         event_type=event.event_type,
-        payload=event.payload,
+        payload=redact_value(event.payload),
         created_at=event.created_at,
     )
 
@@ -373,9 +374,9 @@ def audit_event_to_response(event: AgentEventRecord) -> AuditEventResponse | Non
         run_id=str(event.payload.get("run_id") or event.run_id),
         trace_id=event.payload.get("trace_id"),
         action=str(event.payload.get("action") or "unknown"),
-        actor=dict(event.payload.get("actor") or {}),
-        target=dict(event.payload.get("target") or {}),
-        details=dict(event.payload.get("details") or {}),
+        actor=redact_value(dict(event.payload.get("actor") or {})),
+        target=redact_value(dict(event.payload.get("target") or {})),
+        details=redact_value(dict(event.payload.get("details") or {})),
         timestamp=parsed_timestamp,
         created_at=event.created_at,
     )
@@ -384,14 +385,14 @@ def audit_event_to_response(event: AgentEventRecord) -> AuditEventResponse | Non
 def run_to_response(run: RunRecord) -> RunResponse:
     return RunResponse(
         id=run.id,
-        task=run.task,
+        task=redact_text(run.task) or "",
         status=run.status,
-        metadata=run.metadata,
+        metadata=redact_value(run.metadata),
         dataset_artifact_id=run.dataset_artifact_id,
         created_at=run.created_at,
         updated_at=run.updated_at,
         trace_id=run.trace_id,
-        error_summary=run.error_summary,
+        error_summary=redact_text(run.error_summary),
     )
 
 
@@ -439,11 +440,11 @@ def workflow_job_to_response(job: WorkflowJobRecord) -> WorkflowJobResponse:
         run_id=job.run_id,
         workflow_name=job.workflow_name,
         status=job.status,
-        payload=job.payload,
+        payload=redact_value(job.payload),
         attempt_count=job.attempt_count,
         max_attempts=job.max_attempts,
         worker_id=job.worker_id,
-        error_summary=job.error_summary,
+        error_summary=redact_text(job.error_summary),
         started_at=job.started_at,
         finished_at=job.finished_at,
         heartbeat_at=job.heartbeat_at,
@@ -466,9 +467,9 @@ def build_run_timeline(
             kind="run",
             title="Run created",
             status=run.status.value,
-            summary=run.task,
+            summary=redact_text(run.task),
             run_id=run.id,
-            payload={"trace_id": run.trace_id, "metadata": run.metadata},
+            payload={"trace_id": run.trace_id, "metadata": redact_value(run.metadata)},
         )
     ]
 
@@ -479,7 +480,7 @@ def build_run_timeline(
                 kind="workflow_job",
                 title=f"{job.workflow_name} workflow queued",
                 status=job.status.value,
-                summary=job.error_summary,
+                summary=redact_text(job.error_summary),
                 run_id=job.run_id,
                 workflow_job_id=job.id,
                 payload={
@@ -487,7 +488,7 @@ def build_run_timeline(
                     "max_attempts": job.max_attempts,
                     "worker_id": job.worker_id,
                     "heartbeat_at": job.heartbeat_at.isoformat() if job.heartbeat_at else None,
-                    "job_payload": job.payload,
+                    "job_payload": redact_value(job.payload),
                 },
             )
         )
@@ -495,10 +496,10 @@ def build_run_timeline(
             items.append(
                 RunTimelineItemResponse(
                     timestamp=job.started_at,
-                    kind="workflow_job",
-                    title=f"{job.workflow_name} workflow claimed",
-                    status=WorkflowJobStatus.RUNNING.value,
-                    summary=job.worker_id,
+                kind="workflow_job",
+                title=f"{job.workflow_name} workflow claimed",
+                status=WorkflowJobStatus.RUNNING.value,
+                summary=redact_text(job.worker_id),
                     run_id=job.run_id,
                     workflow_job_id=job.id,
                     payload={"attempt_count": job.attempt_count},
@@ -508,10 +509,10 @@ def build_run_timeline(
             items.append(
                 RunTimelineItemResponse(
                     timestamp=job.finished_at,
-                    kind="workflow_job",
-                    title=f"{job.workflow_name} workflow finished",
-                    status=job.status.value,
-                    summary=job.error_summary,
+                kind="workflow_job",
+                title=f"{job.workflow_name} workflow finished",
+                status=job.status.value,
+                summary=redact_text(job.error_summary),
                     run_id=job.run_id,
                     workflow_job_id=job.id,
                     payload={"attempt_count": job.attempt_count},
@@ -537,7 +538,8 @@ def build_run_timeline(
         )
 
     for event in events:
-        message = event.payload.get("message")
+        event_payload = redact_value(event.payload)
+        message = event_payload.get("message")
         items.append(
             RunTimelineItemResponse(
                 timestamp=event.created_at,
@@ -547,7 +549,7 @@ def build_run_timeline(
                 summary=str(message) if message else event.node_id,
                 run_id=event.run_id,
                 node_id=event.node_id,
-                payload=event.payload,
+                payload=event_payload,
             )
         )
 
@@ -558,12 +560,12 @@ def build_run_timeline(
                 kind="artifact",
                 title=f"{artifact.type.value} artifact",
                 status=artifact.type.value,
-                summary=artifact.uri,
+                summary=redact_uri(artifact.uri),
                 run_id=artifact.run_id,
                 node_id=artifact.producer_node_id,
                 artifact_id=artifact.id,
                 payload={
-                    "metadata": artifact.metadata,
+                    "metadata": redact_value(artifact.metadata),
                     "source_artifact_ids": artifact.source_artifact_ids,
                 },
             )
@@ -582,7 +584,7 @@ def build_run_timeline(
                 run_id=evaluation.run_id,
                 evaluation_id=evaluation.id,
                 artifact_id=evaluation.target_artifact_id,
-                payload={"checks": evaluation.checks},
+                payload={"checks": redact_value(evaluation.checks)},
             )
         )
 

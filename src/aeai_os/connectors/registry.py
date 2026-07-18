@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Literal
 
-from aeai_os.settings import AppSettings
+from aeai_os.settings import AppSettings, get_env_secret
 
 ConnectorStatus = Literal["ok", "not_configured"]
 
@@ -282,4 +282,4 @@ def _github_token_keys(env: Mapping[str, str]) -> tuple[str, ...]:
 def _has_env_value(env: Mapping[str, str], key: str) -> bool:
     if " or " in key:
         return any(_has_env_value(env, part.strip()) for part in key.split(" or "))
-    return bool(str(env.get(key, "")).strip())
+    return bool(get_env_secret(key, env=env))

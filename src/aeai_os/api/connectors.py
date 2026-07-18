@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from aeai_os.api.auth import RunReader
 from aeai_os.connectors import ConnectorHealth, ConnectorRegistry
+from aeai_os.security.redaction import redact_text, redact_value
 
 
 class ConnectorResponse(BaseModel):
@@ -74,8 +75,8 @@ def build_connectors_router(registry: ConnectorRegistry) -> APIRouter:
 def _health_to_response(health: ConnectorHealth) -> ConnectorHealthResponse:
     return ConnectorHealthResponse(
         connector_id=health.connector_id,
-        status=health.status,
-        message=health.message,
-        checked_at=health.checked_at,
-        details=health.details,
-    )
+            status=health.status,
+            message=redact_text(health.message) or "",
+            checked_at=health.checked_at,
+            details=redact_value(health.details),
+        )
