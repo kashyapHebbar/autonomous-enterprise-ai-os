@@ -1,6 +1,6 @@
 PYTHON ?= $(shell if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3.11; fi)
 
-.PHONY: install test lint format smoke demo k8s-validate db-upgrade db-validate dev up down
+.PHONY: install test lint format smoke demo k8s-validate cloud-validate db-upgrade db-validate dev up down
 
 install:
 	$(PYTHON) -m pip install -e ".[dev]"
@@ -25,6 +25,9 @@ k8s-validate:
 	$(PYTHON) scripts/validate_kubernetes_manifests.py deploy/kubernetes/overlays/local
 	$(PYTHON) scripts/validate_kubernetes_manifests.py deploy/kubernetes/overlays/staging
 	$(PYTHON) scripts/validate_kubernetes_manifests.py deploy/kubernetes/overlays/production
+
+cloud-validate:
+	$(PYTHON) scripts/validate_cloud_deployment.py --target aws
 
 db-upgrade:
 	PYTHONPATH=src $(PYTHON) scripts/manage_database.py upgrade

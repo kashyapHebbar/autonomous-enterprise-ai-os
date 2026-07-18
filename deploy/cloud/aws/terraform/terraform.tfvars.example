@@ -1,0 +1,15 @@
+aws_region                 = "us-east-1"
+environment                = "staging"
+project_name               = "aeai-os"
+vpc_cidr                   = "10.42.0.0/16"
+public_subnet_cidrs        = ["10.42.0.0/24", "10.42.1.0/24"]
+private_subnet_cidrs       = ["10.42.10.0/24", "10.42.11.0/24"]
+kubernetes_version         = "1.30"
+node_instance_types        = ["t3.large"]
+node_desired_size          = 2
+node_min_size              = 2
+node_max_size              = 4
+database_instance_class    = "db.t4g.medium"
+database_allocated_storage_gb = 50
+redis_node_type            = "cache.t4g.small"
+admin_cidr_blocks          = ["203.0.113.10/32"]
