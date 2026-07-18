@@ -9,6 +9,13 @@ from uuid import uuid4
 from aeai_os.runs.models import AgentEventRecord, ArtifactRecord, WorkflowJobRecord
 from aeai_os.runs.repository import InMemoryRunRepository, utc_now
 from aeai_os.schemas.enums import AgentEventType, ArtifactType, RunStatus, WorkflowJobStatus
+from aeai_os.security import (
+    PolicyEvaluationContext,
+    ToolPermissionRegistry,
+    ToolPolicyDecision,
+    ToolPolicyDecisionStatus,
+    default_tool_permission_registry,
+)
 
 DEPLOYMENT_WORKFLOW_NAME = "deployment"
 DEPLOYMENT_NODE_ID = "deployment"
@@ -33,6 +40,7 @@ def request_deployment_approval(
     requested_by: str | None = None,
     rationale: str | None = None,
     metadata: dict[str, Any] | None = None,
+    policy_registry: ToolPermissionRegistry | None = None,
 ) -> WorkflowJobRecord:
     run = repository.get_run(run_id)
     if run.status == RunStatus.FAILED:
@@ -40,6 +48,16 @@ def request_deployment_approval(
 
     normalized_artifact_ids = _validate_artifact_ids(repository, run_id, artifact_ids)
     normalized_destination = _normalize_required(destination, "Deployment destination is required.")
+    policy_decision = _evaluate_deployment_policy(
+        repository=repository,
+        run_id=run_id,
+        artifact_ids=normalized_artifact_ids,
+        destination=normalized_destination,
+        requested_by=requested_by,
+        policy_registry=policy_registry or default_tool_permission_registry(),
+    )
+    if policy_decision.decision == ToolPolicyDecisionStatus.BLOCK:
+        raise DeploymentApprovalError(policy_decision.reason)
     now = utc_now()
     payload = {
         "workflow": DEPLOYMENT_WORKFLOW_NAME,
@@ -51,6 +69,7 @@ def request_deployment_approval(
         "request_rationale": _normalize_optional(rationale),
         "requested_at": now.isoformat(),
         "metadata": deepcopy(metadata or {}),
+        "policy_decision": policy_decision.model_dump(mode="json"),
     }
     job = repository.enqueue_workflow_job(
         run_id=run_id,
@@ -75,6 +94,9 @@ def request_deployment_approval(
                 "requested_by": payload["requested_by"],
                 "rationale": payload["request_rationale"],
                 "decision": "pending",
+                "policy_decision": policy_decision.model_dump(mode="json"),
+                "policy_rule_id": policy_decision.policy_rule_id,
+                "escalation_target": policy_decision.escalation_target,
                 "timestamp": now.isoformat(),
             },
             created_at=now,
@@ -201,6 +223,51 @@ def _validate_artifact_ids(
     if not normalized_artifact_ids:
         raise DeploymentApprovalError("At least one artifact is required for deployment.")
     return normalized_artifact_ids
+
+
+def _evaluate_deployment_policy(
+    *,
+    repository: InMemoryRunRepository,
+    run_id: str,
+    artifact_ids: Sequence[str],
+    destination: str,
+    requested_by: str | None,
+    policy_registry: ToolPermissionRegistry,
+) -> ToolPolicyDecision:
+    artifacts = [repository.get_artifact(run_id, artifact_id) for artifact_id in artifact_ids]
+    metadata = {
+        "artifact_ids": list(artifact_ids),
+        "artifact_types": [artifact.type.value for artifact in artifacts],
+        "requested_by": _normalize_optional(requested_by) or "system",
+        "sensitive": any(_artifact_is_sensitive(artifact) for artifact in artifacts),
+    }
+    input_summary = (
+        f"deploy {len(artifact_ids)} artifact(s) to {destination}; "
+        f"requested_by={metadata['requested_by']}"
+    )
+    return policy_registry.evaluate(
+        "deploy_artifact",
+        input_summary=input_summary,
+        context=PolicyEvaluationContext(
+            input_summary=input_summary,
+            run_id=run_id,
+            destination=destination,
+            artifact_type=",".join(sorted(set(metadata["artifact_types"]))),
+            artifact_sensitive=bool(metadata["sensitive"]),
+            metadata=metadata,
+        ),
+    )
+
+
+def _artifact_is_sensitive(artifact: ArtifactRecord) -> bool:
+    metadata = artifact.metadata
+    for key in ("sensitive", "pii", "contains_pii", "secret", "credential_profile_id"):
+        value = metadata.get(key)
+        if value is True:
+            return True
+        if isinstance(value, str) and value.strip().lower() in {"1", "true", "yes"}:
+            return True
+    return False
 
 
 def _normalize_required(value: str, message: str) -> str:

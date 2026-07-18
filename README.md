@@ -447,6 +447,42 @@ Open Grafana at [http://127.0.0.1:3000](http://127.0.0.1:3000) with `admin` /
 - **Agent Node State** for planner/data/analytics/visualization/report/evaluation progress
 - **Artifacts by Type** for dataset, KPI, chart, dashboard, report, code, and deployment outputs
 
+## Governance Policy Engine
+
+Workflow graph execution evaluates each node's required tools before an agent runs. The default
+policy registry classifies tools by permission level, risk, and explicit governance rules:
+
+- Read-only dataset/profile/evaluation tools are allowed.
+- Deployment promotion requires approval.
+- External connector access, such as Snowflake or external HTTP, is escalated to
+  `platform-security`.
+- Sensitive artifacts marked with metadata such as `sensitive`, `pii`, `contains_pii`, or `secret`
+  require approval before reader tools execute.
+- Destructive tools such as `delete_artifact` and `shell_exec` are denied.
+
+Policy decisions are recorded as `tool_call` events with `policy_rule_id`, decision, reason,
+escalation target, approval state, and policy context. Run Inspector shows these decisions in
+**Decision History** next to approval requests and deployment approvals.
+
+Custom rules can be registered programmatically:
+
+```python
+from aeai_os.security import PolicyRule, ToolPolicyDecisionStatus, build_policy_registry_from_rules
+
+policy_registry = build_policy_registry_from_rules(
+    [
+        PolicyRule(
+            id="retry-warehouse-maintenance",
+            description="Retry Snowflake work during maintenance.",
+            decision=ToolPolicyDecisionStatus.RETRY,
+            reason="Warehouse maintenance window is active.",
+            tool_patterns=["snowflake_query"],
+            retry_after_seconds=60,
+        )
+    ]
+)
+```
+
 ## Current Limitations
 
 - The platform is an actively developed prototype, not a production workflow control plane.

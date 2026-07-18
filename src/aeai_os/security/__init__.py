@@ -11,12 +11,15 @@ from aeai_os.security.auth import (
     parse_token_profiles,
 )
 from aeai_os.security.policy import (
+    PolicyEvaluationContext,
+    PolicyRule,
     ToolPermission,
     ToolPermissionLevel,
     ToolPermissionRegistry,
     ToolPolicyDecision,
     ToolPolicyDecisionStatus,
     ToolRiskLevel,
+    build_policy_registry_from_rules,
     default_tool_permission_registry,
 )
 
@@ -25,6 +28,8 @@ __all__ = [
     "AuthenticatedUser",
     "AuthenticationError",
     "AuthorizationError",
+    "PolicyEvaluationContext",
+    "PolicyRule",
     "ToolPermission",
     "ToolPermissionLevel",
     "ToolPermissionRegistry",
@@ -33,6 +38,7 @@ __all__ = [
     "ToolRiskLevel",
     "UserRole",
     "authenticated_user_from_headers",
+    "build_policy_registry_from_rules",
     "default_tool_permission_registry",
     "ensure_permission",
     "local_development_user",

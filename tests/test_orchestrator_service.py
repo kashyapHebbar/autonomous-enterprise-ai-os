@@ -5,7 +5,8 @@ from aeai_os.agents.registry import build_default_registry
 from aeai_os.orchestration.graph import ExecutionGraph, ExecutionNode
 from aeai_os.orchestration.service import OrchestratorService, RetryPolicy
 from aeai_os.runs.repository import InMemoryRunRepository
-from aeai_os.schemas.enums import AgentEventType, GraphNodeStatus, RunStatus
+from aeai_os.schemas.enums import AgentEventType, ArtifactType, GraphNodeStatus, RunStatus
+from aeai_os.security import PolicyRule, ToolPolicyDecisionStatus, build_policy_registry_from_rules
 
 
 class StaticAgent:
@@ -248,6 +249,7 @@ def test_orchestrator_security_gate_pauses_high_risk_tool_before_agent_execution
     assert tool_event.payload["agent"] == "deployment"
     assert tool_event.payload["tool"] == "deploy_artifact"
     assert tool_event.payload["decision"] == "approval_required"
+    assert tool_event.payload["policy_rule_id"] == "deployment-promotion-approval"
     assert tool_event.payload["input_summary"].startswith("agent=deployment")
     assert tool_event.payload["timestamp"]
 
@@ -295,6 +297,146 @@ def test_orchestrator_security_gate_blocks_destructive_tool_before_agent_executi
     assert tool_event.payload["tool"] == "delete_artifact"
     assert tool_event.payload["decision"] == "block"
     assert tool_event.payload["destructive"] is True
+    assert tool_event.payload["policy_rule_id"] == "destructive-action-deny"
     assert repository.get_checkpoint(run.id).state["errors"] == {
-        "delete": ["delete_artifact: Tool is blocked by policy because it is destructive."]
+        "delete": ["delete_artifact: Destructive tool use is denied by governance policy."]
     }
+
+
+def test_orchestrator_security_gate_escalates_external_connector_access():
+    repository = InMemoryRunRepository()
+    run = repository.create_run("Profile Snowflake procurement data.")
+    data_agent = StaticAgent("data_retrieval", "schema_profile")
+    service = OrchestratorService(
+        repository=repository,
+        registry=build_default_registry(),
+        agents={"data_retrieval": data_agent},
+    )
+    graph = ExecutionGraph(
+        run_id=run.id,
+        nodes=[
+            ExecutionNode(
+                id="snowflake_profile",
+                agent="data_retrieval",
+                task="Profile Snowflake table",
+                required_tools=["snowflake_query"],
+                risk="high",
+            )
+        ],
+    )
+
+    paused = service.execute_run(run.id, graph)
+    tool_event = next(
+        event for event in repository.list_events(run.id)
+        if event.event_type == AgentEventType.TOOL_CALL
+    )
+    approval_request = next(
+        event for event in repository.list_events(run.id)
+        if event.event_type == AgentEventType.APPROVAL_REQUEST
+        and "escalation_targets" in event.payload
+    )
+
+    assert paused.status == RunStatus.WAITING_FOR_APPROVAL
+    assert data_agent.inputs == []
+    assert tool_event.payload["decision"] == "escalate"
+    assert tool_event.payload["policy_rule_id"] == "external-connector-escalation"
+    assert tool_event.payload["escalation_target"] == "platform-security"
+    assert approval_request.payload["escalation_targets"] == ["platform-security"]
+
+    resumed = service.approve_node(
+        run.id,
+        "snowflake_profile",
+        approved=True,
+        comment="Approved external connector access.",
+    )
+
+    assert resumed.status == RunStatus.COMPLETED
+    assert len(data_agent.inputs) == 1
+
+
+def test_orchestrator_security_gate_requires_approval_for_sensitive_artifact_access():
+    repository = InMemoryRunRepository()
+    run = repository.create_run("Generate report from sensitive dataset.")
+    repository.add_artifact(
+        run_id=run.id,
+        artifact_type=ArtifactType.DATASET,
+        uri="s3://secure/procurement.csv",
+        metadata={"format": "csv", "sensitive": True},
+    )
+    report_agent = StaticAgent("report", "report_final")
+    service = OrchestratorService(
+        repository=repository,
+        registry=build_default_registry(),
+        agents={"report": report_agent},
+    )
+    graph = ExecutionGraph(
+        run_id=run.id,
+        nodes=[
+            ExecutionNode(
+                id="report",
+                agent="report",
+                task="Write executive report",
+                required_tools=["artifact_reader", "markdown_report_writer"],
+            )
+        ],
+    )
+
+    paused = service.execute_run(run.id, graph)
+    tool_event = next(
+        event for event in repository.list_events(run.id)
+        if event.event_type == AgentEventType.TOOL_CALL
+        and event.payload["tool"] == "artifact_reader"
+    )
+
+    assert paused.status == RunStatus.WAITING_FOR_APPROVAL
+    assert report_agent.inputs == []
+    assert tool_event.payload["decision"] == "approval_required"
+    assert tool_event.payload["policy_rule_id"] == "sensitive-artifact-approval"
+    assert tool_event.payload["policy_context"]["artifact_sensitive"] is True
+
+
+def test_orchestrator_security_gate_can_request_retry_before_agent_execution():
+    repository = InMemoryRunRepository()
+    run = repository.create_run("Query temporarily unavailable warehouse.")
+    data_agent = StaticAgent("data_retrieval", "schema_profile")
+    policy_registry = build_policy_registry_from_rules(
+        [
+            PolicyRule(
+                id="retry-warehouse-maintenance",
+                description="Retry Snowflake work during maintenance.",
+                decision=ToolPolicyDecisionStatus.RETRY,
+                reason="Warehouse maintenance window is active.",
+                tool_patterns=["snowflake_query"],
+                retry_after_seconds=60,
+            )
+        ]
+    )
+    service = OrchestratorService(
+        repository=repository,
+        registry=build_default_registry(),
+        agents={"data_retrieval": data_agent},
+        retry_policy=RetryPolicy(max_attempts=1),
+        tool_permissions=policy_registry,
+    )
+    graph = ExecutionGraph(
+        run_id=run.id,
+        nodes=[
+            ExecutionNode(
+                id="snowflake_profile",
+                agent="data_retrieval",
+                task="Profile Snowflake table",
+                required_tools=["snowflake_query"],
+            )
+        ],
+    )
+
+    result = service.execute_run(run.id, graph)
+    tool_event = next(
+        event for event in repository.list_events(run.id)
+        if event.event_type == AgentEventType.TOOL_CALL
+    )
+
+    assert result.status == RunStatus.FAILED
+    assert data_agent.inputs == []
+    assert tool_event.payload["decision"] == "retry"
+    assert tool_event.payload["retry_after_seconds"] == 60
