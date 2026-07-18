@@ -19,12 +19,14 @@ from aeai_os.orchestration.state import (
 )
 from aeai_os.runs.models import AgentEventRecord, GraphNodeRecord
 from aeai_os.runs.repository import (
+    ArtifactNotFoundError,
     InMemoryRunRepository,
     RunCheckpointNotFoundError,
     utc_now,
 )
 from aeai_os.schemas.enums import AgentEventType, GraphNodeStatus, RunStatus
 from aeai_os.security import (
+    PolicyEvaluationContext,
     ToolPermissionRegistry,
     ToolPolicyDecision,
     ToolPolicyDecisionStatus,
@@ -290,6 +292,17 @@ class OrchestratorService:
 
             security_output = self._authorize_node_tools(running, state)
             if security_output is not None:
+                for event in security_output.events:
+                    self._record_event(
+                        run_id=node.run_id,
+                        node_id=node.id,
+                        event_type=str(event.get("event_type", AgentEventType.LOG)),
+                        payload={
+                            key: value
+                            for key, value in event.items()
+                            if key != "event_type"
+                        },
+                    )
                 if security_output.status == "waiting_for_approval":
                     outcome = self._pause_for_approval(running, state, security_output)
                 else:
@@ -351,6 +364,13 @@ class OrchestratorService:
                 tool,
                 input_summary=input_summary,
                 approved=approved,
+                context=self._policy_context_for_tool(
+                    tool=tool,
+                    node=node,
+                    state=state,
+                    input_summary=input_summary,
+                    approved=approved,
+                ),
             )
             for tool in node.required_tools
         ]
@@ -375,19 +395,61 @@ class OrchestratorService:
         approval_required = [
             decision
             for decision in decisions
-            if decision.decision == ToolPolicyDecisionStatus.APPROVAL_REQUIRED
+            if decision.decision
+            in {
+                ToolPolicyDecisionStatus.APPROVAL_REQUIRED,
+                ToolPolicyDecisionStatus.ESCALATE,
+            }
         ]
         if approval_required:
+            escalations = [
+                decision
+                for decision in approval_required
+                if decision.decision == ToolPolicyDecisionStatus.ESCALATE
+            ]
             return AgentOutput(
                 status="waiting_for_approval",
-                summary="Security approval is required for high-risk tool calls.",
+                summary=(
+                    "Security escalation is required for governed tool calls."
+                    if escalations
+                    else "Security approval is required for high-risk tool calls."
+                ),
                 events=[
                     {
                         "event_type": AgentEventType.APPROVAL_REQUEST,
-                        "message": "Tool permission policy requires approval.",
+                        "message": (
+                            "Tool permission policy requires escalation."
+                            if escalations
+                            else "Tool permission policy requires approval."
+                        ),
                         "tools": [decision.tool for decision in approval_required],
+                        "policy_rule_ids": [
+                            decision.policy_rule_id
+                            for decision in approval_required
+                            if decision.policy_rule_id
+                        ],
+                        "escalation_targets": [
+                            decision.escalation_target
+                            for decision in approval_required
+                            if decision.escalation_target
+                        ],
                     }
                 ],
+                metrics={
+                    "tool_policy_decisions": [decision.model_dump() for decision in decisions]
+                },
+            )
+
+        retry_required = [
+            decision
+            for decision in decisions
+            if decision.decision == ToolPolicyDecisionStatus.RETRY
+        ]
+        if retry_required:
+            return AgentOutput(
+                status="failed",
+                summary="Security policy requested retry before executing one or more tools.",
+                errors=[f"{decision.tool}: {decision.reason}" for decision in retry_required],
                 metrics={
                     "tool_policy_decisions": [decision.model_dump() for decision in decisions]
                 },
@@ -409,8 +471,10 @@ class OrchestratorService:
                 "tool.name": decision.tool,
                 "tool.risk": decision.risk.value,
                 "tool.decision": decision.decision.value,
+                "tool.policy_rule_id": decision.policy_rule_id,
                 "tool.approval_required": decision.approval_required,
                 "tool.destructive": decision.destructive,
+                "tool.escalation_target": decision.escalation_target,
             },
         ):
             self._record_event(
@@ -420,6 +484,7 @@ class OrchestratorService:
                 payload={
                     "agent": node.agent_type,
                     "tool": decision.tool,
+                    "policy_rule_id": decision.policy_rule_id,
                     "permission_level": (
                         decision.permission_level.value if decision.permission_level else None
                     ),
@@ -430,9 +495,59 @@ class OrchestratorService:
                     "approval_required": decision.approval_required,
                     "approved": decision.approved,
                     "destructive": decision.destructive,
+                    "escalation_target": decision.escalation_target,
+                    "retry_after_seconds": decision.retry_after_seconds,
+                    "policy_context": decision.context,
                     "timestamp": utc_now().isoformat(),
                 },
             )
+
+    def _policy_context_for_tool(
+        self,
+        *,
+        tool: str,
+        node: GraphNodeRecord,
+        state: LangGraphRunState,
+        input_summary: str,
+        approved: bool,
+    ) -> PolicyEvaluationContext:
+        artifact_ids = self._known_artifacts(state)
+        run = self._repository.get_run(node.run_id)
+        if run.dataset_artifact_id and run.dataset_artifact_id not in artifact_ids:
+            artifact_ids.append(run.dataset_artifact_id)
+        artifacts = []
+        for artifact_id in artifact_ids:
+            try:
+                artifacts.append(self._repository.get_artifact(node.run_id, artifact_id))
+            except ArtifactNotFoundError:
+                continue
+        artifact_metadata: dict[str, Any] = {"required_tools": list(node.required_tools)}
+        artifact_types = sorted({artifact.type.value for artifact in artifacts})
+        sensitive = False
+        connector_id = None
+        credential_profile_id = None
+        for artifact in artifacts:
+            artifact_metadata.update(artifact.metadata)
+            connector_id = connector_id or artifact.metadata.get("connector_id")
+            credential_profile_id = credential_profile_id or artifact.metadata.get(
+                "credential_profile_id"
+            )
+            if _metadata_is_sensitive(artifact.metadata):
+                sensitive = True
+        return PolicyEvaluationContext(
+            input_summary=input_summary,
+            approved=approved,
+            agent_type=node.agent_type,
+            node_id=node.id,
+            run_id=node.run_id,
+            connector_id=str(connector_id) if connector_id else None,
+            credential_profile_id=str(credential_profile_id)
+            if credential_profile_id
+            else None,
+            artifact_type=",".join(artifact_types) if artifact_types else None,
+            artifact_sensitive=sensitive,
+            metadata=artifact_metadata,
+        )
 
     def _complete_node(
         self,
@@ -657,3 +772,13 @@ def _summarize_tool_input(node: GraphNodeRecord, task: str) -> str:
     if len(summary) <= 240:
         return summary
     return summary[:237] + "..."
+
+
+def _metadata_is_sensitive(metadata: dict[str, Any]) -> bool:
+    for key in ("sensitive", "pii", "contains_pii", "secret"):
+        value = metadata.get(key)
+        if value is True:
+            return True
+        if isinstance(value, str) and value.strip().lower() in {"1", "true", "yes"}:
+            return True
+    return False

@@ -290,6 +290,9 @@ def test_run_inspector_script_exposes_detail_approval_and_retry_controls(tmp_pat
     assert "/artifacts/${encodeURIComponent(artifact.id)}/lineage" in response.text
     assert "renderApprovalHistory" in response.text
     assert "renderDeploymentHistory" in response.text
+    assert '"tool_call"' in response.text
+    assert "policy_rule_id" in response.text
+    assert "escalation_target" in response.text
     assert "mlflow_status" in response.text
     assert "Source artifacts" in response.text
 
@@ -771,9 +774,15 @@ def test_create_deployment_request_waits_for_approval_and_records_audit_event(tm
     assert body["status"] == WorkflowJobStatus.WAITING_FOR_APPROVAL
     assert body["payload"]["artifact_ids"] == [report.id]
     assert body["payload"]["deployment_status"] == "waiting_for_approval"
+    assert body["payload"]["policy_decision"]["decision"] == "approval_required"
+    assert (
+        body["payload"]["policy_decision"]["policy_rule_id"]
+        == "deployment-promotion-approval"
+    )
     assert repository.get_run(run.id).status == RunStatus.WAITING_FOR_APPROVAL
     assert approval_events[0].payload["decision"] == "pending"
     assert approval_events[0].payload["requested_by"] == "analytics-lead"
+    assert approval_events[0].payload["policy_rule_id"] == "deployment-promotion-approval"
     assert any(
         item["workflow_job_id"] == body["id"]
         and item["status"] == WorkflowJobStatus.WAITING_FOR_APPROVAL

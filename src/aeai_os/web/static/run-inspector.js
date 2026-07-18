@@ -137,7 +137,7 @@ function artifactElementId(artifactId) {
 
 function approvalEvents() {
   return state.data.events.filter((event) =>
-    ["approval_request", "approval_decision"].includes(event.event_type)
+    ["approval_request", "approval_decision", "tool_call"].includes(event.event_type)
   );
 }
 
@@ -397,8 +397,16 @@ function renderApprovalHistory() {
         .slice()
         .reverse()
         .map((event) => {
-          const decision = event.payload.decision || (event.event_type === "approval_request" ? "pending" : "");
+          const decision =
+            event.payload.decision || (event.event_type === "approval_request" ? "pending" : "");
           const actor = event.payload.approver || event.payload.requested_by || "system";
+          const policyBits = [
+            event.payload.tool ? `tool ${event.payload.tool}` : null,
+            event.payload.policy_rule_id ? `rule ${event.payload.policy_rule_id}` : null,
+            event.payload.escalation_target
+              ? `escalate to ${event.payload.escalation_target}`
+              : null,
+          ];
           return `
             <article class="compact-item">
               <div class="compact-main">
@@ -413,6 +421,8 @@ function renderApprovalHistory() {
                 event.payload.workflow_job_id ? `job ${event.payload.workflow_job_id}` : null,
                 formatDate(event.created_at),
               ])}
+              ${policyBits.some(Boolean) ? renderMeta(policyBits) : ""}
+              ${event.payload.reason ? renderMeta([event.payload.reason]) : ""}
               ${event.payload.rationale ? renderMeta([event.payload.rationale]) : ""}
             </article>`;
         })
