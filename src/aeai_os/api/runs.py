@@ -3,9 +3,10 @@ from __future__ import annotations
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Annotated, Any
+from urllib.parse import urlparse
 from uuid import uuid4
 
-from fastapi import APIRouter, Body, File, HTTPException, Response, UploadFile, status
+from fastapi import APIRouter, Body, File, HTTPException, Query, Response, UploadFile, status
 
 from aeai_os.api.auth import RunApprover, RunReader, RunWriter
 from aeai_os.api.run_schemas import (
@@ -70,7 +71,7 @@ from aeai_os.runs.repository import (
 )
 from aeai_os.schemas.enums import AgentEventType, ArtifactType
 from aeai_os.security.auth import AuthenticatedUser
-from aeai_os.storage import ArtifactStore
+from aeai_os.storage import ArtifactStorageError, ArtifactStore
 from aeai_os.workflows import (
     ProcurementWorkflowError,
     build_procurement_orchestrator,
@@ -80,6 +81,17 @@ from aeai_os.workflows.queue import WorkflowQueueBackend
 from aeai_os.workflows.worker import enqueue_procurement_workflow
 
 ALLOWED_UPLOAD_EXTENSIONS = {".csv", ".tsv", ".json", ".parquet"}
+PREVIEWABLE_ARTIFACT_TYPES = {
+    ArtifactType.SCHEMA_PROFILE,
+    ArtifactType.QUALITY_REPORT,
+    ArtifactType.KPI_TABLE,
+    ArtifactType.CHART,
+    ArtifactType.DASHBOARD,
+    ArtifactType.REPORT,
+    ArtifactType.CODE,
+    ArtifactType.EVALUATION,
+    ArtifactType.DEPLOYMENT,
+}
 WorkflowJobControlBody = Annotated[
     WorkflowJobControlRequest,
     Body(default_factory=WorkflowJobControlRequest),
@@ -585,6 +597,43 @@ def build_runs_router(
         artifact = _get_artifact_or_404(repository, run_id, artifact_id)
         return artifact_to_response(artifact)
 
+    @router.get("/{run_id}/artifacts/{artifact_id}/content")
+    def get_artifact_content(
+        run_id: str,
+        artifact_id: str,
+        user: RunReader,
+        download: Annotated[bool, Query()] = False,
+    ) -> Response:
+        artifact = _get_artifact_or_404(repository, run_id, artifact_id)
+        if artifact.type not in PREVIEWABLE_ARTIFACT_TYPES:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    "Artifact type is not available for browser preview: "
+                    f"{artifact.type.value}."
+                ),
+            )
+        try:
+            payload = artifact_store.read_bytes(artifact.uri)
+        except (ArtifactStorageError, OSError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Artifact payload is unavailable: {artifact.id}.",
+            ) from exc
+        headers = {
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+        }
+        if download:
+            headers["Content-Disposition"] = (
+                f'attachment; filename="{_artifact_download_filename(artifact)}"'
+            )
+        return Response(
+            content=payload,
+            media_type=_artifact_media_type(artifact),
+            headers=headers,
+        )
+
     @router.get(
         "/{run_id}/artifacts/{artifact_id}/lineage",
         response_model=ArtifactLineageResponse,
@@ -843,3 +892,31 @@ def _validate_upload_filename(filename: str) -> str:
 
 def allowed_upload_extensions() -> Iterable[str]:
     return sorted(ALLOWED_UPLOAD_EXTENSIONS)
+
+
+def _artifact_media_type(artifact) -> str:
+    content_type = artifact.content_type or artifact.metadata.get("content_type")
+    if content_type:
+        return str(content_type)
+    if artifact.type in {ArtifactType.CHART, ArtifactType.DASHBOARD}:
+        return "text/html; charset=utf-8"
+    if artifact.type == ArtifactType.REPORT:
+        return "text/markdown; charset=utf-8"
+    if artifact.type == ArtifactType.CODE:
+        return "text/plain; charset=utf-8"
+    return "application/json"
+
+
+def _artifact_download_filename(artifact) -> str:
+    storage_key = artifact.storage_key or artifact.metadata.get("storage_key") or artifact.uri
+    parsed = urlparse(str(storage_key))
+    candidate = Path(parsed.path).name if parsed.path else Path(str(storage_key)).name
+    if candidate:
+        return candidate.replace('"', "")
+    suffix = {
+        ArtifactType.CHART: ".html",
+        ArtifactType.DASHBOARD: ".html",
+        ArtifactType.REPORT: ".md",
+        ArtifactType.CODE: ".txt",
+    }.get(artifact.type, ".json")
+    return f"{artifact.id}{suffix}"

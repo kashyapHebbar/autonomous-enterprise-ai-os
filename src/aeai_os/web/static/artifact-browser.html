@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Artifacts | Autonomous Enterprise AI OS</title>
+    <link rel="stylesheet" href="/app/artifact-browser.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <a class="brand" href="/app">Autonomous Enterprise AI OS</a>
+        <nav class="app-nav" aria-label="Primary">
+          <a href="/app">Runs</a>
+          <a href="/app/artifacts" aria-current="page">Artifacts</a>
+          <a href="/docs">API Docs</a>
+        </nav>
+      </header>
+
+      <section class="intro-band" aria-labelledby="pageTitle">
+        <div>
+          <p class="eyebrow">Control plane</p>
+          <h1 id="pageTitle">Artifacts</h1>
+        </div>
+        <div class="toolbar">
+          <label class="select-field">
+            <span>Run</span>
+            <select id="runSelect"></select>
+          </label>
+          <button class="icon-button" id="refreshArtifacts" type="button" title="Refresh artifacts">
+            <span aria-hidden="true">R</span>
+            <span class="sr-only">Refresh</span>
+          </button>
+        </div>
+      </section>
+
+      <section class="artifact-grid">
+        <section class="panel browser-panel" aria-labelledby="artifactListTitle">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Generated outputs</p>
+              <h2 id="artifactListTitle">Browser</h2>
+            </div>
+            <span class="status-pill" id="artifactCount">--</span>
+          </div>
+          <div class="artifact-groups" id="artifactGroups"></div>
+        </section>
+
+        <section class="panel preview-panel" aria-labelledby="previewTitle">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Preview</p>
+              <h2 id="previewTitle">Artifact</h2>
+            </div>
+            <span class="status-pill" id="previewType">Idle</span>
+          </div>
+          <div class="preview-actions" id="previewActions"></div>
+          <div class="preview-surface" id="previewSurface">
+            <p class="empty">Select an artifact to inspect it.</p>
+          </div>
+          <section class="lineage-panel" aria-labelledby="lineageTitle">
+            <h3 id="lineageTitle">Lineage</h3>
+            <div id="lineageView"></div>
+          </section>
+        </section>
+      </section>
+    </main>
+    <script src="/app/artifact-browser.js" defer></script>
+  </body>
+</html>
