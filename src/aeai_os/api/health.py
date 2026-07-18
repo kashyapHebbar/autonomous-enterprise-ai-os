@@ -29,5 +29,9 @@ def build_health_payload(settings: AppSettings | None = None) -> dict:
                 "name": "connector_registry",
                 "status": "ok",
             },
+            {
+                "name": "data_source_registry",
+                "status": "ok",
+            },
         ],
     }

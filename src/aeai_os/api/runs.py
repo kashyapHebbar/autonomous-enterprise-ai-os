@@ -40,6 +40,11 @@ from aeai_os.api.run_schemas import (
     workflow_job_to_response,
 )
 from aeai_os.artifacts import ArtifactLineageService
+from aeai_os.data.sources import (
+    DataSourceNotFoundError,
+    DataSourceRegistry,
+    DataSourceValidationError,
+)
 from aeai_os.deployments import (
     DeploymentApprovalError,
     decide_deployment_approval,
@@ -87,6 +92,7 @@ def build_runs_router(
     workflow_queue: WorkflowQueueBackend | None = None,
     workflow_execution_mode: str = "sync",
     procurement_workflow_max_attempts: int = 3,
+    data_source_registry: DataSourceRegistry | None = None,
 ):
     router = APIRouter(prefix="/runs", tags=["runs"])
     lineage_service = ArtifactLineageService(repository)
@@ -101,13 +107,64 @@ def build_runs_router(
         request: Annotated[CreateRunRequest, Body(...)],
         actor: RunWriter,
     ) -> RunDetailResponse:
-        run = repository.create_run(task=request.task, metadata=request.metadata)
+        if request.dataset_uri and request.data_source_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Use either dataset_uri or data_source_id when creating a run, not both.",
+            )
+        data_source = None
+        if request.data_source_id:
+            if data_source_registry is None:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Data source registry is not configured.",
+                )
+            try:
+                data_source = data_source_registry.validate_for_execution(
+                    request.data_source_id
+                )
+            except DataSourceNotFoundError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=str(exc),
+                ) from exc
+            except DataSourceValidationError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail={
+                        "status": exc.result.status,
+                        "message": exc.result.message,
+                        "details": exc.result.details,
+                    },
+                ) from exc
+
+        run_metadata = dict(request.metadata)
+        if data_source is not None:
+            run_metadata.update(
+                {
+                    "data_source_id": data_source.id,
+                    "data_source_name": data_source.name,
+                    "data_source_type": data_source.source_type,
+                    "connector_id": data_source.connector_id,
+                    "credential_profile_id": data_source.credential_profile_id,
+                }
+            )
+
+        run = repository.create_run(task=request.task, metadata=run_metadata)
         if request.dataset_uri:
             repository.add_artifact(
                 run_id=run.id,
                 artifact_type=ArtifactType.DATASET,
                 uri=request.dataset_uri,
                 metadata={"source": "reference", **request.metadata},
+            )
+            run = repository.get_run(run.id)
+        if data_source is not None:
+            repository.add_artifact(
+                run_id=run.id,
+                artifact_type=ArtifactType.DATASET,
+                uri=data_source.dataset_uri,
+                metadata=data_source.dataset_metadata(),
             )
             run = repository.get_run(run.id)
         _record_audit_event(
@@ -117,7 +174,8 @@ def build_runs_router(
             action="run.create",
             details={
                 "dataset_uri": request.dataset_uri,
-                "metadata_keys": sorted(request.metadata),
+                "data_source_id": request.data_source_id,
+                "metadata_keys": sorted(run_metadata),
             },
         )
         return run_to_detail_response(

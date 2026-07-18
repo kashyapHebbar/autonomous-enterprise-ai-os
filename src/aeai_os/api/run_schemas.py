@@ -21,6 +21,7 @@ class CreateRunRequest(BaseModel):
     task: str = Field(..., max_length=4000)
     metadata: dict[str, Any] = Field(default_factory=dict)
     dataset_uri: str | None = Field(default=None, max_length=2048)
+    data_source_id: str | None = Field(default=None, max_length=100)
 
     @field_validator("task")
     @classmethod
@@ -29,6 +30,14 @@ class CreateRunRequest(BaseModel):
         if len(normalized) < 3:
             raise ValueError("Task must contain at least 3 non-whitespace characters.")
         return normalized
+
+    @field_validator("data_source_id")
+    @classmethod
+    def validate_data_source_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
 
 
 class ImportRunArchiveRequest(BaseModel):
