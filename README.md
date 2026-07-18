@@ -133,9 +133,29 @@ detail responses and is also available at `/runs/{run_id}/audit-events`.
 | `POST /runs/{run_id}/graph-nodes/{node_id}/retry` | Retry a failed graph node |
 | `GET /runs/{run_id}/evaluations` | List evaluation results for a run |
 | `GET /run-inspector/runs/{run_id}` | Browser run inspector UI |
+| `GET /connectors` | List registered enterprise connectors and current status |
+| `GET /connectors/credential-profiles` | List sanitized credential profile references |
+| `GET /connectors/{connector_id}/health` | Inspect connector configuration health |
 | `GET /metrics` | Prometheus-compatible run and agent metrics |
 | `GET /health` | Service health |
 | `GET /docs` | Interactive OpenAPI documentation |
+
+## Connector Registry
+
+The platform exposes first-class connector metadata for warehouse, object storage, and source-control
+integrations. Credential profiles are environment-backed references, not secret payloads. API
+responses only show configured/missing environment keys and never return secret values.
+
+Default connector IDs:
+
+- `sqlite-local` for local SQLite warehouse references
+- `snowflake-default` for Snowflake warehouse access
+- `artifact-store` for local or S3-compatible artifact storage
+- `github-default` for GitHub metadata, issue, and PR integrations
+
+Warehouse dataset metadata can include `credential_profile` or `credential_profile_id` to bind a
+dataset reference to a profile such as `snowflake-default` without storing credentials in artifact
+metadata.
 
 ## Warehouse Dataset References
 

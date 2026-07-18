@@ -25,5 +25,9 @@ def build_health_payload(settings: AppSettings | None = None) -> dict:
                 "backend": settings.run_repository_backend,
                 "create_schema": settings.run_repository_create_schema,
             },
+            {
+                "name": "connector_registry",
+                "status": "ok",
+            },
         ],
     }

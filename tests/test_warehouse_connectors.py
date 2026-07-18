@@ -181,9 +181,23 @@ def test_dataset_reference_helpers_parse_snowflake_uri():
 
     assert info.kind == "warehouse"
     assert info.warehouse.source == "snowflake"
+    assert info.warehouse.credential_profile_id == "snowflake-default"
     assert info.warehouse.database == "ANALYTICS"
     assert info.warehouse.schema == "PUBLIC"
     assert info.warehouse.table == "PROCUREMENT"
+
+
+def test_dataset_reference_helpers_accept_connector_profile_metadata():
+    info = dataset_reference_from_metadata(
+        "snowflake://ANALYTICS/PUBLIC/PROCUREMENT",
+        {
+            "source": "warehouse",
+            "credential_profile": "finance-snowflake",
+        },
+    )
+
+    assert info.kind == "warehouse"
+    assert info.warehouse.credential_profile_id == "finance-snowflake"
 
 
 def test_dataset_reference_helpers_parse_query_parameters():

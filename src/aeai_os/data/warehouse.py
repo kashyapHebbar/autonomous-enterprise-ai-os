@@ -46,6 +46,7 @@ class WarehouseDatasetReference:
     schema: str | None = None
     database_path: str | None = None
     uri: str | None = None
+    credential_profile_id: str | None = None
     metadata: Mapping[str, Any] = field(default_factory=dict)
     parameters: Mapping[str, Any] = field(default_factory=dict)
 
@@ -547,6 +548,12 @@ def warehouse_reference_from_metadata(
     database = _metadata_value(metadata, "database", "warehouse_database")
     schema = _metadata_value(metadata, "schema", "warehouse_schema")
     database_path = _metadata_value(metadata, "database_path", "sqlite_path")
+    credential_profile_id = _metadata_value(
+        metadata,
+        "credential_profile_id",
+        "credential_profile",
+        "connector_profile",
+    )
 
     if source == "sqlite" and parsed.scheme.lower() == "sqlite":
         database_path = database_path or _sqlite_path_from_uri(parsed)
@@ -568,6 +575,7 @@ def warehouse_reference_from_metadata(
         schema=schema,
         database_path=database_path,
         uri=uri,
+        credential_profile_id=credential_profile_id or _default_credential_profile(source),
         metadata=metadata,
         parameters=_metadata_parameters(metadata),
     )
@@ -618,6 +626,14 @@ def _metadata_parameters(metadata: Mapping[str, Any]) -> dict[str, Any]:
             raise WarehouseConnectorError(f"Warehouse metadata {key} must be a mapping.")
         return dict(value)
     return {}
+
+
+def _default_credential_profile(source: str) -> str | None:
+    if source == "snowflake":
+        return "snowflake-default"
+    if source == "sqlite":
+        return "local-filesystem"
+    return None
 
 
 def _normalize_source(source: str) -> str:

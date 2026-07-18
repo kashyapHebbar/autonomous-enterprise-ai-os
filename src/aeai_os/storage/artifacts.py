@@ -111,7 +111,7 @@ class LocalArtifactStore(ArtifactStore):
                 key=relative_path.as_posix(),
                 size_bytes=len(payload),
                 content_type=content_type,
-                extra=metadata,
+                extra={"credential_profile_id": "local-filesystem", **dict(metadata or {})},
             ),
         )
 
@@ -182,6 +182,7 @@ class S3ArtifactStore(ArtifactStore):
                 size_bytes=len(payload),
                 content_type=content_type,
                 extra={
+                    "credential_profile_id": "artifact-s3-default",
                     "bucket": self.bucket,
                     "endpoint_url": self.endpoint_url,
                     **dict(metadata or {}),
