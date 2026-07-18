@@ -106,6 +106,7 @@ def create_app(
             "metrics": "/metrics",
             "connectors": "/connectors",
             "data_sources": "/data-sources",
+            "artifact_browser": "/app/artifacts",
             "run_inspector": "/run-inspector",
         }
 
@@ -132,9 +133,15 @@ def create_app(
     def control_plane_page() -> FileResponse:
         return FileResponse(static_root / "control-plane.html")
 
+    @app.get("/app/artifacts", include_in_schema=False)
+    def artifact_browser_page() -> FileResponse:
+        return FileResponse(static_root / "artifact-browser.html")
+
     @app.get("/app/{asset_name}", include_in_schema=False)
     def control_plane_asset(asset_name: str) -> FileResponse:
         allowed_assets = {
+            "artifact-browser.css",
+            "artifact-browser.js",
             "control-plane.css",
             "control-plane.js",
         }

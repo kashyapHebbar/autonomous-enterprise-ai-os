@@ -275,19 +275,30 @@ def test_control_plane_page_and_assets_are_served(tmp_path):
 
     root_response = client.get("/")
     page_response = client.get("/app")
+    artifact_page_response = client.get("/app/artifacts")
     script_response = client.get("/app/control-plane.js")
     style_response = client.get("/app/control-plane.css")
+    artifact_script_response = client.get("/app/artifact-browser.js")
+    artifact_style_response = client.get("/app/artifact-browser.css")
     missing_response = client.get("/app/unknown.js")
 
     assert root_response.status_code == 200
     assert root_response.json()["control_plane"] == "/app"
+    assert root_response.json()["artifact_browser"] == "/app/artifacts"
     assert page_response.status_code == 200
     assert "Control Plane" in page_response.text
     assert 'id="createRunForm"' in page_response.text
     assert 'id="runsList"' in page_response.text
     assert "/app/control-plane.js" in page_response.text
+    assert artifact_page_response.status_code == 200
+    assert "Artifacts" in artifact_page_response.text
+    assert 'id="artifactGroups"' in artifact_page_response.text
+    assert 'id="previewSurface"' in artifact_page_response.text
+    assert "/app/artifact-browser.js" in artifact_page_response.text
     assert script_response.status_code == 200
     assert style_response.status_code == 200
+    assert artifact_script_response.status_code == 200
+    assert artifact_style_response.status_code == 200
     assert missing_response.status_code == 404
 
 
@@ -303,6 +314,83 @@ def test_control_plane_script_creates_and_links_runs(tmp_path):
     assert "data_source_id" in response.text
     assert "dataset_uri" in response.text
     assert "/run-inspector/runs/${encodeURIComponent(runId)}" in response.text
+
+
+def test_artifact_browser_script_previews_downloads_and_links_lineage(tmp_path):
+    client = build_client(tmp_path)
+
+    response = client.get("/app/artifact-browser.js")
+
+    assert response.status_code == 200
+    assert "/artifacts/${artifactId}/content" in response.text
+    assert "download=true" in response.text
+    assert "sandbox=\"\"" in response.text
+    assert "renderMarkdown" in response.text
+    assert "/lineage" in response.text
+    assert "navigator.clipboard.writeText" in response.text
+    assert "Artifact type ${escapeHtml(artifact.type)} is not available" in response.text
+
+
+def test_artifact_content_endpoint_serves_previewable_payloads_and_blocks_datasets(tmp_path):
+    repository = InMemoryRunRepository()
+    artifact_root = tmp_path / "artifacts"
+    dashboard_path = tmp_path / "dashboard.html"
+    report_path = tmp_path / "report.md"
+    dataset_path = tmp_path / "raw.csv"
+    dashboard_path.write_text("<main>Dashboard</main>", encoding="utf-8")
+    report_path.write_text("# Report\n\n- Finding", encoding="utf-8")
+    dataset_path.write_text("supplier,spend\nAcme,100\n", encoding="utf-8")
+    app = create_app(repository=repository, artifact_root=artifact_root)
+    client = TestClient(app)
+    run = repository.create_run("Analyze procurement spend.")
+    dashboard = repository.add_artifact(
+        run_id=run.id,
+        artifact_type=ArtifactType.DASHBOARD,
+        uri=str(dashboard_path),
+        metadata={"title": "Procurement Dashboard"},
+        content_type="text/html; charset=utf-8",
+        producer_node_id="visualization",
+    )
+    report = repository.add_artifact(
+        run_id=run.id,
+        artifact_type=ArtifactType.REPORT,
+        uri=str(report_path),
+        metadata={"title": "Procurement Report"},
+        source_artifact_ids=[dashboard.id],
+        content_type="text/markdown; charset=utf-8",
+        producer_node_id="report",
+    )
+    dataset = repository.add_artifact(
+        run_id=run.id,
+        artifact_type=ArtifactType.DATASET,
+        uri=str(dataset_path),
+        metadata={"format": "csv"},
+    )
+    missing = repository.add_artifact(
+        run_id=run.id,
+        artifact_type=ArtifactType.REPORT,
+        uri=str(tmp_path / "missing.md"),
+        metadata={"title": "Missing Report"},
+    )
+
+    dashboard_response = client.get(f"/runs/{run.id}/artifacts/{dashboard.id}/content")
+    report_response = client.get(
+        f"/runs/{run.id}/artifacts/{report.id}/content?download=true"
+    )
+    dataset_response = client.get(f"/runs/{run.id}/artifacts/{dataset.id}/content")
+    missing_response = client.get(f"/runs/{run.id}/artifacts/{missing.id}/content")
+
+    assert dashboard_response.status_code == 200
+    assert dashboard_response.text == "<main>Dashboard</main>"
+    assert dashboard_response.headers["cache-control"] == "no-store"
+    assert dashboard_response.headers["x-content-type-options"] == "nosniff"
+    assert report_response.status_code == 200
+    assert "# Report" in report_response.text
+    assert "attachment" in report_response.headers["content-disposition"]
+    assert dataset_response.status_code == 403
+    assert "not available for browser preview" in dataset_response.json()["detail"]
+    assert missing_response.status_code == 404
+    assert "payload is unavailable" in missing_response.json()["detail"]
 
 
 def test_run_inspector_script_exposes_detail_approval_and_retry_controls(tmp_path):
