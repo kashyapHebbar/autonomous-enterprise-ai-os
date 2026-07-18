@@ -506,8 +506,13 @@ def test_metrics_endpoint_exposes_run_artifact_and_evaluation_metrics(tmp_path):
     assert "aeai_runs_total 1" in response.text
     assert 'aeai_runs_by_status{status="pending"} 1' in response.text
     assert "aeai_artifacts_total 1" in response.text
+    assert 'aeai_artifacts_by_type{type="report"} 1' in response.text
     assert "aeai_evaluations_total 1" in response.text
+    assert 'aeai_evaluations_by_result{result="passed"} 1' in response.text
     assert "aeai_evaluation_score_average 0.900000" in response.text
+    assert "# TYPE aeai_run_duration_seconds histogram" in response.text
+    assert "aeai_run_duration_seconds_bucket" in response.text
+    assert 'aeai_workflow_jobs_total{workflow="procurement",status="queued"} 0' in response.text
 
 
 def test_execute_procurement_workflow_from_api(tmp_path):
