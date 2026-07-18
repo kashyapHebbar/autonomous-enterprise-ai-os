@@ -13,6 +13,7 @@ from aeai_os.data.warehouse import (
     default_warehouse_registry,
     warehouse_reference_from_metadata,
 )
+from aeai_os.observability.tracing import start_span
 
 DataSourceType = Literal["local_file", "sqlite", "snowflake"]
 ValidationStatus = Literal["ok", "invalid"]
@@ -171,16 +172,31 @@ class DataSourceRegistry:
         self,
         source: DataSourceRecord,
     ) -> DataSourceValidationResult:
-        if source.source_type == "local_file":
-            return _validate_local_file_source(source)
-        if source.source_type == "sqlite":
-            return _validate_sqlite_source(source)
-        if source.source_type == "snowflake":
-            return self._validate_snowflake_source(source)
-        return _invalid(
-            f"Unsupported data source type: {source.source_type}.",
-            {"source_type": source.source_type},
-        )
+        with start_span(
+            "connector.data_source.validate",
+            {
+                "data_source.id": source.id,
+                "data_source.type": source.source_type,
+                "connector.id": source.connector_id,
+                "credential_profile.id": source.credential_profile_id,
+            },
+        ) as span:
+            if source.source_type == "local_file":
+                result = _validate_local_file_source(source)
+            elif source.source_type == "sqlite":
+                result = _validate_sqlite_source(source)
+            elif source.source_type == "snowflake":
+                result = self._validate_snowflake_source(source)
+            else:
+                result = _invalid(
+                    f"Unsupported data source type: {source.source_type}.",
+                    {"source_type": source.source_type},
+                )
+            span.set_attribute("validation.status", result.status)
+            span.set_attribute("validation.message", result.message)
+            if result.status == "invalid":
+                span.set_attribute("error", True)
+            return result
 
     def _validate_snowflake_source(
         self,

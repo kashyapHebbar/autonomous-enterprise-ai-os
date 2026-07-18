@@ -391,6 +391,28 @@ to print spans during development, or use `AEAI_TRACE_EXPORTER=otlp_http` /
 `AEAI_TRACE_EXPORTER=otlp_grpc` with `AEAI_OTEL_EXPORTER_OTLP_ENDPOINT` in deployed environments.
 Install `.[observability]` when exporting to an OTLP collector, MLflow, or LangSmith.
 
+Local OTLP/HTTP collector smoke setup:
+
+```bash
+docker run --rm -p 4318:4318 -p 4317:4317 \
+  -v "$PWD/deploy/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+  otel/opentelemetry-collector-contrib:latest \
+  --config=/etc/otelcol-contrib/config.yaml
+
+AEAI_TRACE_EXPORTER=otlp_http \
+AEAI_OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318/v1/traces \
+PYTHONPATH=src .venv/bin/python -m uvicorn aeai_os.api.app:create_app \
+  --factory --host 127.0.0.1 --port 8000
+```
+
+Major spans include API requests, workflow enqueue/process steps, procurement execution, planner
+graph creation, agent nodes, policy decisions, warehouse queries, data-source validation, artifact
+reads/writes, and evaluation logging. Correlation attributes include `run.id`, `run.trace_id`,
+`workflow.name`, `workflow.job.id`, `graph.node.id`, `agent.type`, `connector.id`,
+`credential_profile.id`, and artifact storage metadata. API responses expose `x-trace-id`; run
+records keep a durable `trace_id`, and emitted run events store that durable ID plus the active
+request/worker `otel_trace_id`.
+
 MLflow tracking is disabled by default. Set `AEAI_MLFLOW_TRACKING_ENABLED=true` and
 `AEAI_MLFLOW_TRACKING_URI` to mirror evaluation scores, pass/fail state, check metrics, run IDs, and
 trace IDs into an MLflow experiment.

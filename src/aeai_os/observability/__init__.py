@@ -22,9 +22,12 @@ from aeai_os.observability.tracing import (
     TracingExporterResolution,
     build_tracing_config,
     configure_tracing,
+    current_correlation_attributes,
     current_trace_id,
     ensure_trace_id,
     resolve_span_processor,
+    start_span,
+    trace_context,
 )
 
 __all__ = [
@@ -43,6 +46,7 @@ __all__ = [
     "build_mlflow_tracking_config",
     "build_tracing_config",
     "configure_tracing",
+    "current_correlation_attributes",
     "current_trace_id",
     "ensure_trace_id",
     "log_agent_event_to_langsmith",
@@ -50,4 +54,6 @@ __all__ = [
     "log_evaluation_to_mlflow",
     "render_prometheus_metrics",
     "resolve_span_processor",
+    "start_span",
+    "trace_context",
 ]

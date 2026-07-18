@@ -14,8 +14,10 @@ def test_health_payload_has_expected_shape():
         "orchestrator",
         "agent_registry",
         "connector_registry",
+        "data_source_registry",
         "artifact_store",
         "run_repository",
+        "tracing",
     } <= component_names
 
     run_repository = next(
@@ -25,3 +27,11 @@ def test_health_payload_has_expected_shape():
     )
     assert run_repository["backend"] == "memory"
     assert run_repository["create_schema"] is True
+
+    tracing = next(
+        component
+        for component in payload["components"]
+        if component["name"] == "tracing"
+    )
+    assert tracing["exporter"] == "none"
+    assert tracing["status"] == "not_configured"

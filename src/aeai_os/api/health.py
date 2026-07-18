@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from aeai_os.observability.tracing import build_tracing_config, resolve_span_processor
 from aeai_os.settings import AppSettings, get_settings
 
 
 def build_health_payload(settings: AppSettings | None = None) -> dict:
     settings = settings or get_settings()
+    tracing_config = build_tracing_config(service_name=settings.service_name)
+    tracing_resolution = resolve_span_processor(tracing_config)
 
     return {
         "service": settings.service_name,
@@ -32,6 +35,13 @@ def build_health_payload(settings: AppSettings | None = None) -> dict:
             {
                 "name": "data_source_registry",
                 "status": "ok",
+            },
+            {
+                "name": "tracing",
+                "status": tracing_resolution.status,
+                "exporter": tracing_config.exporter,
+                "endpoint_configured": bool(tracing_config.otlp_endpoint),
+                "message": tracing_resolution.message,
             },
         ],
     }
