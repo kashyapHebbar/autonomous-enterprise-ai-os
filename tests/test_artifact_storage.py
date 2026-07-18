@@ -65,6 +65,7 @@ def test_local_artifact_store_writes_reads_and_reports_metadata(tmp_path):
     assert stored.metadata["storage_backend"] == "local"
     assert stored.metadata["storage_key"] == "run_123/data_profile/schema.json"
     assert stored.metadata["content_type"] == "application/json"
+    assert stored.metadata["credential_profile_id"] == "local-filesystem"
 
 
 def test_s3_artifact_store_uses_stable_s3_uris_and_mock_client(tmp_path):
@@ -89,6 +90,7 @@ def test_s3_artifact_store_uses_stable_s3_uris_and_mock_client(tmp_path):
     assert stored.uri == "s3://aeai-artifacts/prod/runs/run_123/report_final/report.md"
     assert stored.metadata["storage_backend"] == "s3"
     assert stored.metadata["bucket"] == "aeai-artifacts"
+    assert stored.metadata["credential_profile_id"] == "artifact-s3-default"
     assert stored.metadata["storage_key"] == "prod/runs/run_123/report_final/report.md"
     assert store.read_text(stored.uri) == "# Report"
     assert store.local_path(stored.uri).read_text(encoding="utf-8") == "# Report"
@@ -146,6 +148,10 @@ def test_procurement_workflow_writes_generated_artifacts_to_s3_store(tmp_path):
         for artifact in generated_artifacts
     )
     assert all(artifact.metadata["storage_backend"] == "s3" for artifact in generated_artifacts)
+    assert all(
+        artifact.metadata["credential_profile_id"] == "artifact-s3-default"
+        for artifact in generated_artifacts
+    )
     assert all(artifact.storage_backend == "s3" for artifact in generated_artifacts)
     assert all(artifact.storage_key for artifact in generated_artifacts)
     assert all(artifact.content_type for artifact in generated_artifacts)

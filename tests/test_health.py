@@ -13,6 +13,7 @@ def test_health_payload_has_expected_shape():
         "api",
         "orchestrator",
         "agent_registry",
+        "connector_registry",
         "artifact_store",
         "run_repository",
     } <= component_names
