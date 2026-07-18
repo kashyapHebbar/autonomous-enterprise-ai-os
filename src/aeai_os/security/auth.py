@@ -10,6 +10,7 @@ from typing import Any
 class UserRole(StrEnum):
     VIEWER = "viewer"
     OPERATOR = "operator"
+    REVIEWER = "reviewer"
     APPROVER = "approver"
     ADMIN = "admin"
 
@@ -24,6 +25,7 @@ class AuthPermission(StrEnum):
 ROLE_PERMISSIONS: dict[UserRole, frozenset[AuthPermission]] = {
     UserRole.VIEWER: frozenset({AuthPermission.READ_RUNS}),
     UserRole.OPERATOR: frozenset({AuthPermission.READ_RUNS, AuthPermission.MUTATE_RUNS}),
+    UserRole.REVIEWER: frozenset({AuthPermission.READ_RUNS, AuthPermission.APPROVE_RUNS}),
     UserRole.APPROVER: frozenset({AuthPermission.READ_RUNS, AuthPermission.APPROVE_RUNS}),
     UserRole.ADMIN: frozenset(
         {

@@ -195,6 +195,18 @@ class AgentEventResponse(BaseModel):
     created_at: datetime
 
 
+class AuditEventResponse(BaseModel):
+    id: str
+    run_id: str
+    trace_id: str | None
+    action: str
+    actor: dict[str, Any]
+    target: dict[str, Any]
+    details: dict[str, Any]
+    timestamp: datetime
+    created_at: datetime
+
+
 class RunResponse(BaseModel):
     id: str
     task: str
@@ -210,6 +222,7 @@ class RunResponse(BaseModel):
 class RunDetailResponse(RunResponse):
     artifacts: list[ArtifactResponse]
     evaluations: list[EvaluationResponse]
+    audit_events: list[AuditEventResponse] = Field(default_factory=list)
 
 
 class RunExecutionResponse(RunDetailResponse):
@@ -324,6 +337,29 @@ def agent_event_to_response(event: AgentEventRecord) -> AgentEventResponse:
     )
 
 
+def audit_event_to_response(event: AgentEventRecord) -> AuditEventResponse | None:
+    if event.event_type != "audit" or not event.payload.get("audit"):
+        return None
+    timestamp = event.payload.get("timestamp")
+    if isinstance(timestamp, datetime):
+        parsed_timestamp = timestamp
+    elif isinstance(timestamp, str):
+        parsed_timestamp = datetime.fromisoformat(timestamp)
+    else:
+        parsed_timestamp = event.created_at
+    return AuditEventResponse(
+        id=event.id,
+        run_id=str(event.payload.get("run_id") or event.run_id),
+        trace_id=event.payload.get("trace_id"),
+        action=str(event.payload.get("action") or "unknown"),
+        actor=dict(event.payload.get("actor") or {}),
+        target=dict(event.payload.get("target") or {}),
+        details=dict(event.payload.get("details") or {}),
+        timestamp=parsed_timestamp,
+        created_at=event.created_at,
+    )
+
+
 def run_to_response(run: RunRecord) -> RunResponse:
     return RunResponse(
         id=run.id,
@@ -342,12 +378,19 @@ def run_to_detail_response(
     run: RunRecord,
     artifacts: list[ArtifactRecord],
     evaluations: list[EvaluationResultRecord] | None = None,
+    events: list[AgentEventRecord] | None = None,
 ) -> RunDetailResponse:
     base = run_to_response(run)
+    audit_events = [
+        audit_event
+        for event in events or []
+        if (audit_event := audit_event_to_response(event)) is not None
+    ]
     return RunDetailResponse(
         **base.model_dump(),
         artifacts=[artifact_to_response(artifact) for artifact in artifacts],
         evaluations=[evaluation_to_response(evaluation) for evaluation in evaluations or []],
+        audit_events=audit_events,
     )
 
 
@@ -355,11 +398,12 @@ def run_to_execution_response(
     run: RunRecord,
     artifacts: list[ArtifactRecord],
     evaluations: list[EvaluationResultRecord],
+    events: list[AgentEventRecord],
     completed_node_ids: list[str],
     failed_node_ids: list[str],
     waiting_for_approval_node_id: str | None,
 ) -> RunExecutionResponse:
-    detail = run_to_detail_response(run, artifacts, evaluations)
+    detail = run_to_detail_response(run, artifacts, evaluations, events)
     return RunExecutionResponse(
         **detail.model_dump(),
         completed_node_ids=completed_node_ids,
