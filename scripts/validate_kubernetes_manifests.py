@@ -27,7 +27,19 @@ REQUIRED_CONFIG_KEYS = {
     "AEAI_SERVICE_NAME",
     "AEAI_API_PORT",
     "AEAI_ARTIFACT_ROOT",
+    "AEAI_ARTIFACT_STORAGE_BACKEND",
+    "AEAI_ARTIFACT_S3_BUCKET",
+    "AEAI_ARTIFACT_S3_PREFIX",
+    "AEAI_ARTIFACT_S3_ENDPOINT_URL",
+    "AEAI_ARTIFACT_S3_REGION",
     "AEAI_RUN_REPOSITORY_BACKEND",
+    "AEAI_RUN_REPOSITORY_CREATE_SCHEMA",
+    "AEAI_WORKFLOW_EXECUTION_MODE",
+    "AEAI_WORKFLOW_QUEUE_BACKEND",
+    "AEAI_WORKFLOW_QUEUE_TIMEOUT_SECONDS",
+    "AEAI_WORKFLOW_QUEUE_KEY_PREFIX",
+    "AEAI_REDIS_URL",
+    "AEAI_AUTH_ENABLED",
     "AEAI_TRACING_ENABLED",
     "AEAI_TRACE_EXPORTER",
     "AEAI_OTEL_EXPORTER_OTLP_ENDPOINT",
@@ -44,6 +56,9 @@ REQUIRED_CONFIG_KEYS = {
 
 REQUIRED_SECRET_KEYS = {
     "AEAI_DATABASE_URL",
+    "AEAI_AUTH_TOKEN_PROFILES",
+    "AEAI_ARTIFACT_S3_ACCESS_KEY_ID",
+    "AEAI_ARTIFACT_S3_SECRET_ACCESS_KEY",
     "POSTGRES_PASSWORD",
     "MINIO_ACCESS_KEY",
     "MINIO_SECRET_KEY",
@@ -77,13 +92,8 @@ def validate_manifest_dir(manifest_dir: Path) -> list[str]:
     if not isinstance(resources, list) or not resources:
         return ["kustomization.yaml must include a non-empty resources list."]
 
-    documents: list[dict[str, Any]] = []
-    for resource in resources:
-        resource_path = manifest_dir / str(resource)
-        if not resource_path.exists():
-            errors.append(f"kustomization resource is missing: {resource}")
-            continue
-        documents.extend(_load_yaml_documents(resource_path))
+    documents, load_errors = _load_kustomized_documents(manifest_dir)
+    errors.extend(load_errors)
 
     resource_map = {
         (str(document.get("kind")), str(document.get("metadata", {}).get("name"))): document
@@ -155,6 +165,12 @@ def _validate_deployment(deployment: dict[str, Any]) -> list[str]:
         if "requests" not in resources or "limits" not in resources:
             errors.append(f"Deployment/{name} container {container_name} missing resources.")
     if name in {"aeai-api", "aeai-worker"}:
+        init_containers = template.get("spec", {}).get("initContainers", [])
+        if not any(
+            container.get("name") == "validate-runtime-config"
+            for container in init_containers
+        ):
+            errors.append(f"Deployment/{name} must define validate-runtime-config initContainer.")
         env_sources = containers[0].get("envFrom", [])
         refs = {
             source.get("configMapRef", {}).get("name")
@@ -165,7 +181,107 @@ def _validate_deployment(deployment: dict[str, Any]) -> list[str]:
             errors.append(f"Deployment/{name} must load ConfigMap aeai-config.")
         if "aeai-secrets" not in refs:
             errors.append(f"Deployment/{name} must load Secret aeai-secrets.")
+        if "startupProbe" not in containers[0]:
+            errors.append(f"Deployment/{name} must define a startupProbe.")
     return errors
+
+
+def _load_kustomized_documents(manifest_dir: Path) -> tuple[list[dict[str, Any]], list[str]]:
+    errors: list[str] = []
+    try:
+        documents = _collect_kustomization_documents(manifest_dir, seen=set())
+    except ValueError as exc:
+        return [], [str(exc)]
+    return documents, errors
+
+
+def _collect_kustomization_documents(
+    manifest_dir: Path,
+    *,
+    seen: set[Path],
+) -> list[dict[str, Any]]:
+    resolved_dir = manifest_dir.resolve()
+    if resolved_dir in seen:
+        raise ValueError(f"kustomization recursion detected: {manifest_dir}")
+    seen.add(resolved_dir)
+
+    kustomization = _load_yaml_file(manifest_dir / "kustomization.yaml")
+    resources = kustomization.get("resources")
+    if not isinstance(resources, list) or not resources:
+        raise ValueError(f"{manifest_dir}/kustomization.yaml must include resources.")
+
+    documents: list[dict[str, Any]] = []
+    for resource in resources:
+        resource_path = manifest_dir / str(resource)
+        if not resource_path.exists():
+            raise ValueError(f"kustomization resource is missing: {resource_path}")
+        if resource_path.is_dir():
+            documents.extend(_collect_kustomization_documents(resource_path, seen=seen))
+        else:
+            documents.extend(_load_yaml_documents(resource_path))
+
+    for patch_path in kustomization.get("patchesStrategicMerge") or []:
+        for patch in _load_yaml_documents(manifest_dir / str(patch_path)):
+            _apply_strategic_merge_patch(documents, patch)
+
+    return documents
+
+
+def _apply_strategic_merge_patch(
+    documents: list[dict[str, Any]],
+    patch: dict[str, Any],
+) -> None:
+    patch_kind = patch.get("kind")
+    patch_metadata = patch.get("metadata", {})
+    patch_name = patch_metadata.get("name")
+    patch_namespace = patch_metadata.get("namespace")
+    matches = [
+        document
+        for document in documents
+        if document.get("kind") == patch_kind
+        and document.get("metadata", {}).get("name") == patch_name
+        and (
+            patch_namespace is None
+            or document.get("metadata", {}).get("namespace") == patch_namespace
+        )
+    ]
+    if len(matches) != 1:
+        raise ValueError(
+            f"Expected one patch target for {patch_kind}/{patch_name}, found {len(matches)}."
+        )
+    _merge_mapping(matches[0], patch)
+
+
+def _merge_mapping(target: dict[str, Any], patch: dict[str, Any]) -> None:
+    for key, value in patch.items():
+        if key == "$patch":
+            continue
+        if isinstance(value, dict) and isinstance(target.get(key), dict):
+            _merge_mapping(target[key], value)
+            continue
+        if isinstance(value, list) and isinstance(target.get(key), list):
+            target[key] = _merge_list(target[key], value)
+            continue
+        target[key] = value
+
+
+def _merge_list(target: list[Any], patch: list[Any]) -> list[Any]:
+    if all(isinstance(item, dict) and "name" in item for item in patch):
+        merged = list(target)
+        for patch_item in patch:
+            for index, target_item in enumerate(merged):
+                if (
+                    isinstance(target_item, dict)
+                    and target_item.get("name") == patch_item["name"]
+                ):
+                    updated = dict(target_item)
+                    _merge_mapping(updated, patch_item)
+                    merged[index] = updated
+                    break
+            else:
+                merged.append(patch_item)
+        return merged
+    return patch
 
 
 def _validate_service(service: dict[str, Any]) -> list[str]:

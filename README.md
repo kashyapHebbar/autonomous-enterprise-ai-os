@@ -347,9 +347,9 @@ make k8s-validate
 ```
 
 The baseline in `deploy/kubernetes/` includes the API, workflow worker, Postgres, Redis, MinIO,
-config, secrets, services, health probes, and observability environment variables. See
-[deploy/kubernetes/README.md](deploy/kubernetes/README.md) for kind/minikube deployment and teardown
-steps.
+config, secrets, services, health probes, observability environment variables, and local/staging/
+production-style overlays. See [deploy/kubernetes/README.md](deploy/kubernetes/README.md) for
+kind/minikube deployment, staging apply, production configuration, and teardown steps.
 
 With authentication enabled, include a configured bearer token:
 

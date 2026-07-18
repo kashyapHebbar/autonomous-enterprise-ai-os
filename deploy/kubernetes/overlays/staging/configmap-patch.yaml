@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aeai-config
+  namespace: aeai-os
+data:
+  AEAI_ENV: "staging"
+  AEAI_AUTH_ENABLED: "true"
+  AEAI_RUN_REPOSITORY_CREATE_SCHEMA: "true"
+  AEAI_WORKFLOW_EXECUTION_MODE: "async"
+  AEAI_WORKFLOW_QUEUE_BACKEND: "redis"
+  AEAI_ARTIFACT_STORAGE_BACKEND: "minio"
+  AEAI_TRACE_EXPORTER: "otlp_http"
+  AEAI_OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector.observability.svc.cluster.local:4318/v1/traces"
+  AEAI_OTEL_EXPORTER_OTLP_INSECURE: "true"

@@ -22,6 +22,9 @@ demo:
 
 k8s-validate:
 	$(PYTHON) scripts/validate_kubernetes_manifests.py deploy/kubernetes
+	$(PYTHON) scripts/validate_kubernetes_manifests.py deploy/kubernetes/overlays/local
+	$(PYTHON) scripts/validate_kubernetes_manifests.py deploy/kubernetes/overlays/staging
+	$(PYTHON) scripts/validate_kubernetes_manifests.py deploy/kubernetes/overlays/production
 
 db-upgrade:
 	PYTHONPATH=src $(PYTHON) scripts/manage_database.py upgrade
