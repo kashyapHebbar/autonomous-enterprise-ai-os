@@ -68,6 +68,8 @@ Open:
 - API docs: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 - Health: [http://127.0.0.1:8000/health](http://127.0.0.1:8000/health)
 - Metrics: [http://127.0.0.1:8000/metrics](http://127.0.0.1:8000/metrics)
+- Prometheus: [http://127.0.0.1:9090](http://127.0.0.1:9090)
+- Grafana: [http://127.0.0.1:3000](http://127.0.0.1:3000)
 
 ## Procurement Demo
 
@@ -421,6 +423,29 @@ LangSmith trace review is disabled by default. Set `AEAI_LANGSMITH_TRACING_ENABL
 `AEAI_LANGSMITH_API_KEY`, and optionally `AEAI_LANGSMITH_PROJECT` to mirror agent events and
 evaluation results into LangSmith with run IDs, trace IDs, graph node IDs, agent names, and artifact
 IDs in metadata.
+
+### Operational Dashboards
+
+Prometheus and Grafana are packaged for local demos through Docker Compose:
+
+```bash
+docker compose up api workflow-worker prometheus grafana
+```
+
+Prometheus loads `deploy/prometheus/prometheus.yml` and scrapes `/metrics` from the API service. The
+API metrics include workflow job status, attempts, and duration, so worker progress is visible even
+though workers do not expose a separate HTTP server. Grafana provisions Prometheus as the default
+data source and loads `deploy/grafana/provisioning/dashboards/aeai-operational-dashboard.json`.
+
+Open Grafana at [http://127.0.0.1:3000](http://127.0.0.1:3000) with `admin` /
+`aeai_grafana`, then open **Autonomous Enterprise AI OS Operations**. During demos, inspect:
+
+- **Run Status** for pending/running/completed/failed workflow state
+- **Run Latency** for average and p95 lifecycle duration
+- **Workflow Jobs** and **Workflow Job Latency** for queued/running/dead-letter worker activity
+- **Evaluation Score** and pass/fail counts for output quality
+- **Agent Node State** for planner/data/analytics/visualization/report/evaluation progress
+- **Artifacts by Type** for dataset, KPI, chart, dashboard, report, code, and deployment outputs
 
 ## Current Limitations
 

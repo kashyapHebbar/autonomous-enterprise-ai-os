@@ -91,6 +91,16 @@ Expose the API:
 kubectl -n aeai-os port-forward service/aeai-api 8000:8000
 ```
 
+## Prometheus and Grafana
+
+The local Docker Compose stack includes Prometheus and Grafana for demo dashboards. For Kubernetes,
+reuse `deploy/prometheus/prometheus.yml` as the scrape baseline and point the API scrape target at
+`aeai-api.aeai-os.svc.cluster.local:8000`. The exported API metrics include workflow job status,
+attempts, and duration, so worker progress appears in Prometheus without a separate worker scrape
+endpoint. Import or provision
+`deploy/grafana/provisioning/dashboards/aeai-operational-dashboard.json` to inspect run throughput,
+failures, latency, evaluation quality, agent state, workflow jobs, and artifact counts.
+
 ## Configuration Notes
 
 For production-like environments, replace the local development secret values before applying:
