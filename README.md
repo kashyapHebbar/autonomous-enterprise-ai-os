@@ -134,6 +134,7 @@ detail responses and is also available at `/runs/{run_id}/audit-events`.
 | `POST /runs/{run_id}/graph-nodes/{node_id}/approval` | Approve or deny a waiting graph node |
 | `POST /runs/{run_id}/graph-nodes/{node_id}/retry` | Retry a failed graph node |
 | `GET /runs/{run_id}/evaluations` | List evaluation results for a run |
+| `GET /app` | Browser control plane for creating and browsing runs |
 | `GET /run-inspector/runs/{run_id}` | Browser run inspector UI |
 | `GET /connectors` | List registered enterprise connectors and current status |
 | `GET /connectors/credential-profiles` | List sanitized credential profile references |
@@ -295,6 +296,9 @@ curl -X POST "http://127.0.0.1:8000/runs/${RUN_ID}/execute/procurement"
 curl "http://127.0.0.1:8000/runs/${RUN_ID}/workflow-jobs"
 curl "http://127.0.0.1:8000/runs/${RUN_ID}"
 ```
+
+Open `http://127.0.0.1:8000/app` to create a run from the browser, choose a registered data source
+or dataset URI, browse recent runs, and open any run directly in Run Inspector.
 
 Open `http://127.0.0.1:8000/run-inspector/runs/${RUN_ID}` to inspect graph nodes,
 events, artifact lineage, approval history, evaluation/MLflow status, deployment history, and

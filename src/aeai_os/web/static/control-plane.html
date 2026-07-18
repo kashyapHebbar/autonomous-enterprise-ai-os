@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Control Plane | Autonomous Enterprise AI OS</title>
+    <link rel="stylesheet" href="/app/control-plane.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <a class="brand" href="/app">Autonomous Enterprise AI OS</a>
+        <nav class="app-nav" aria-label="Primary">
+          <a href="/app" aria-current="page">Runs</a>
+          <a href="/docs">API Docs</a>
+        </nav>
+      </header>
+
+      <section class="intro-band" aria-labelledby="pageTitle">
+        <div>
+          <p class="eyebrow">Control plane</p>
+          <h1 id="pageTitle">Runs</h1>
+        </div>
+        <button class="icon-button" id="refreshRuns" type="button" title="Refresh runs">
+          <span aria-hidden="true">R</span>
+          <span class="sr-only">Refresh</span>
+        </button>
+      </section>
+
+      <section class="control-grid">
+        <section class="panel create-panel" aria-labelledby="createRunTitle">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">New workflow</p>
+              <h2 id="createRunTitle">Create Run</h2>
+            </div>
+            <span class="status-pill" id="sourceStatus">Loading sources</span>
+          </div>
+
+          <form id="createRunForm" class="run-form">
+            <label class="field">
+              <span>Task</span>
+              <textarea
+                id="taskInput"
+                name="task"
+                rows="5"
+                required
+                minlength="3"
+                maxlength="4000"
+                placeholder="Analyze procurement spend and create a dashboard."
+              ></textarea>
+            </label>
+
+            <fieldset class="segmented-field">
+              <legend>Dataset</legend>
+              <label>
+                <input type="radio" name="datasetMode" value="none" checked />
+                <span>None</span>
+              </label>
+              <label>
+                <input type="radio" name="datasetMode" value="source" />
+                <span>Source</span>
+              </label>
+              <label>
+                <input type="radio" name="datasetMode" value="uri" />
+                <span>URI</span>
+              </label>
+            </fieldset>
+
+            <label class="field" id="sourceField" hidden>
+              <span>Data Source</span>
+              <select id="dataSourceSelect" name="dataSourceId"></select>
+            </label>
+
+            <label class="field" id="uriField" hidden>
+              <span>Dataset URI</span>
+              <input
+                id="datasetUriInput"
+                name="datasetUri"
+                type="text"
+                maxlength="2048"
+                placeholder="s3://bucket/procurement.csv"
+              />
+            </label>
+
+            <div class="form-actions">
+              <button class="primary-button" id="createRunButton" type="submit">
+                Create Run
+              </button>
+              <p class="action-text" id="formStatus" aria-live="polite"></p>
+            </div>
+          </form>
+
+          <div class="created-run" id="createdRun" hidden></div>
+        </section>
+
+        <section class="panel runs-panel" aria-labelledby="runsListTitle">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Recent activity</p>
+              <h2 id="runsListTitle">Run Queue</h2>
+            </div>
+            <span class="status-pill" id="runCount">--</span>
+          </div>
+          <div class="run-list" id="runsList"></div>
+        </section>
+      </section>
+    </main>
+    <script src="/app/control-plane.js" defer></script>
+  </body>
+</html>

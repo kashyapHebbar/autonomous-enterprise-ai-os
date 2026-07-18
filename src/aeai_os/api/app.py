@@ -100,6 +100,7 @@ def create_app(
     def root() -> dict[str, str]:
         return {
             "service": "autonomous-enterprise-ai-os",
+            "control_plane": "/app",
             "docs": "/docs",
             "health": "/health",
             "metrics": "/metrics",
@@ -126,6 +127,22 @@ def create_app(
     app.include_router(build_metrics_router(run_repository))
     app.include_router(build_connectors_router(connector_registry))
     app.include_router(build_data_sources_router(data_source_registry))
+
+    @app.get("/app", include_in_schema=False)
+    def control_plane_page() -> FileResponse:
+        return FileResponse(static_root / "control-plane.html")
+
+    @app.get("/app/{asset_name}", include_in_schema=False)
+    def control_plane_asset(asset_name: str) -> FileResponse:
+        allowed_assets = {
+            "control-plane.css",
+            "control-plane.js",
+        }
+        if asset_name not in allowed_assets:
+            from fastapi import HTTPException, status
+
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+        return FileResponse(static_root / asset_name)
 
     @app.get("/run-inspector/runs/{run_id}", include_in_schema=False)
     def run_inspector_page(run_id: str) -> FileResponse:
