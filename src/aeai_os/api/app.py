@@ -88,6 +88,7 @@ def create_app(
             run_artifact_root,
             artifact_store,
             workflow_queue,
+            workflow_execution_mode=settings.workflow_execution_mode,
         )
     )
     app.include_router(build_metrics_router(run_repository))

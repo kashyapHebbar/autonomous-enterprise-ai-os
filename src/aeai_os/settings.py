@@ -20,6 +20,7 @@ class AppSettings:
     run_repository_backend: str = "memory"
     database_url: str = "postgresql+psycopg://aeai:aeai_password@postgres:5432/aeai_os"
     workflow_queue_backend: str = "repository"
+    workflow_execution_mode: str = "sync"
     workflow_queue_timeout_seconds: int = 300
     workflow_queue_key_prefix: str = "aeai:workflow"
     redis_url: str = "redis://redis:6379/0"
@@ -66,6 +67,7 @@ def get_settings() -> AppSettings:
             "postgresql+psycopg://aeai:aeai_password@postgres:5432/aeai_os",
         ),
         workflow_queue_backend=os.getenv("AEAI_WORKFLOW_QUEUE_BACKEND", "repository"),
+        workflow_execution_mode=os.getenv("AEAI_WORKFLOW_EXECUTION_MODE", "sync"),
         workflow_queue_timeout_seconds=int(
             os.getenv("AEAI_WORKFLOW_QUEUE_TIMEOUT_SECONDS", "300")
         ),

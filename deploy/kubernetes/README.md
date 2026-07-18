@@ -107,6 +107,10 @@ To send traces to an OTLP collector, set these config map values:
 - `AEAI_OTEL_EXPORTER_OTLP_HEADERS`
 - `AEAI_OTEL_EXPORTER_OTLP_INSECURE`
 
+The baseline sets `AEAI_WORKFLOW_EXECUTION_MODE=async` and `AEAI_WORKFLOW_QUEUE_BACKEND=redis`.
+Execution requests enqueue workflow jobs through the API, and the `aeai-worker` deployment claims
+and completes them outside the request lifecycle.
+
 The included Postgres, Redis, and MinIO deployments use `emptyDir` volumes and are intended for local
 development only. Use managed services or persistent storage classes for production.
 

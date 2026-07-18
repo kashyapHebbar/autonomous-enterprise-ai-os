@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Annotated, Any
 from uuid import uuid4
 
-from fastapi import APIRouter, Body, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Body, File, HTTPException, Response, UploadFile, status
 
 from aeai_os.api.auth import RunApprover, RunReader, RunWriter
 from aeai_os.api.run_schemas import (
@@ -79,9 +79,15 @@ def build_runs_router(
     artifact_root: Path,
     artifact_store: ArtifactStore,
     workflow_queue: WorkflowQueueBackend | None = None,
+    workflow_execution_mode: str = "sync",
 ):
     router = APIRouter(prefix="/runs", tags=["runs"])
     lineage_service = ArtifactLineageService(repository)
+    primary_execution_mode = workflow_execution_mode.strip().lower()
+    if primary_execution_mode not in {"sync", "async"}:
+        raise ValueError(
+            "workflow_execution_mode must be either 'sync' or 'async'."
+        )
 
     @router.post("", response_model=RunDetailResponse, status_code=status.HTTP_201_CREATED)
     def create_run(
@@ -163,8 +169,24 @@ def build_runs_router(
             repository.list_events(run_id),
         )
 
-    @router.post("/{run_id}/execute/procurement", response_model=RunExecutionResponse)
-    def execute_procurement(run_id: str, actor: RunWriter) -> RunExecutionResponse:
+    @router.post(
+        "/{run_id}/execute/procurement",
+        response_model=RunExecutionResponse | WorkflowJobResponse,
+    )
+    def execute_procurement(
+        run_id: str,
+        actor: RunWriter,
+        response: Response,
+    ) -> RunExecutionResponse | WorkflowJobResponse:
+        if primary_execution_mode == "async":
+            response.status_code = status.HTTP_202_ACCEPTED
+            return _enqueue_procurement_or_400(
+                repository=repository,
+                run_id=run_id,
+                actor=actor,
+                queue=workflow_queue,
+            )
+
         _get_run_or_404(repository, run_id)
         _record_audit_event(
             repository,
@@ -194,28 +216,12 @@ def build_runs_router(
         status_code=status.HTTP_202_ACCEPTED,
     )
     def enqueue_procurement_execution(run_id: str, actor: RunWriter) -> WorkflowJobResponse:
-        run = _get_run_or_404(repository, run_id)
-        if not run.dataset_artifact_id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=(
-                    "A dataset artifact must be attached before enqueueing "
-                    "the procurement workflow."
-                ),
-            )
-        job = enqueue_procurement_workflow(
+        return _enqueue_procurement_or_400(
             repository=repository,
             run_id=run_id,
+            actor=actor,
             queue=workflow_queue,
         )
-        _record_audit_event(
-            repository,
-            run_id,
-            actor,
-            action="workflow.enqueue_procurement",
-            target={"run_id": run_id, "workflow_job_id": job.id},
-        )
-        return workflow_job_to_response(job)
 
     @router.get("/{run_id}/workflow-jobs", response_model=list[WorkflowJobResponse])
     def list_workflow_jobs(run_id: str, user: RunReader) -> list[WorkflowJobResponse]:
@@ -584,6 +590,37 @@ def _record_audit_event(
             created_at=created_at,
         )
     )
+
+
+def _enqueue_procurement_or_400(
+    *,
+    repository: InMemoryRunRepository,
+    run_id: str,
+    actor: AuthenticatedUser,
+    queue: WorkflowQueueBackend | None,
+) -> WorkflowJobResponse:
+    run = _get_run_or_404(repository, run_id)
+    if not run.dataset_artifact_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "A dataset artifact must be attached before enqueueing "
+                "the procurement workflow."
+            ),
+        )
+    job = enqueue_procurement_workflow(
+        repository=repository,
+        run_id=run_id,
+        queue=queue,
+    )
+    _record_audit_event(
+        repository,
+        run_id,
+        actor,
+        action="workflow.enqueue_procurement",
+        target={"run_id": run_id, "workflow_job_id": job.id},
+    )
+    return workflow_job_to_response(job)
 
 
 def _get_run_or_404(repository: InMemoryRunRepository, run_id: str):

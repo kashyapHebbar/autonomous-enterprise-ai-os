@@ -119,8 +119,8 @@ detail responses and is also available at `/runs/{run_id}/audit-events`.
 | `GET /runs/{run_id}/audit-events` | Inspect structured audit history for protected actions |
 | `POST /runs/{run_id}/datasets/reference` | Attach an external dataset reference |
 | `POST /runs/{run_id}/datasets/upload` | Upload a local dataset file |
-| `POST /runs/{run_id}/execute/procurement` | Execute the procurement workflow synchronously |
-| `POST /runs/{run_id}/execute/procurement/async` | Queue the procurement workflow |
+| `POST /runs/{run_id}/execute/procurement` | Execute synchronously in local mode or enqueue when `AEAI_WORKFLOW_EXECUTION_MODE=async` |
+| `POST /runs/{run_id}/execute/procurement/async` | Queue the procurement workflow explicitly |
 | `GET /runs/{run_id}/workflow-jobs` | Inspect queued workflow jobs |
 | `POST /runs/{run_id}/deployments` | Request approval to promote artifacts |
 | `POST /runs/{run_id}/deployments/{job_id}/approval` | Approve or deny a deployment request |
@@ -203,6 +203,8 @@ docker compose up --build
 
 The local stack includes the API, Postgres, Redis, and MinIO.
 It also includes a `workflow-worker` service that continuously claims queued procurement jobs.
+Docker Compose sets `AEAI_WORKFLOW_EXECUTION_MODE=async`, so the primary execute endpoint returns a
+queued job immediately and the worker completes it in the background.
 
 Run the procurement workflow through the local API:
 
@@ -213,6 +215,7 @@ RUN_ID=$(curl -s -X POST http://127.0.0.1:8000/runs \
   | python -c 'import json,sys; print(json.load(sys.stdin)["id"])')
 
 curl -X POST "http://127.0.0.1:8000/runs/${RUN_ID}/execute/procurement"
+curl "http://127.0.0.1:8000/runs/${RUN_ID}/workflow-jobs"
 curl "http://127.0.0.1:8000/runs/${RUN_ID}"
 ```
 
@@ -253,20 +256,22 @@ config, secrets, services, health probes, and observability environment variable
 [deploy/kubernetes/README.md](deploy/kubernetes/README.md) for kind/minikube deployment and teardown
 steps.
 
-With RBAC enabled, include an actor and role header:
+With authentication enabled, include a configured bearer token:
 
 ```bash
 curl -X POST http://127.0.0.1:8000/runs \
   -H "Content-Type: application/json" \
-  -H "X-AEAI-User-Id: operator-1" \
-  -H "X-AEAI-Roles: operator" \
+  -H "Authorization: Bearer operator-token" \
   -d '{"task":"Analyze this procurement dataset and create a dashboard report."}'
 ```
 
-Queued workflow execution defaults to the repository-backed queue. Set
-`AEAI_WORKFLOW_QUEUE_BACKEND=redis` to use Redis as the pending-job broker while keeping the run
-repository as the authoritative execution guard. Workers heartbeat claimed jobs, recover timed-out
-claims, retry according to `max_attempts`, and move exhausted jobs to `dead_letter`.
+`AEAI_WORKFLOW_EXECUTION_MODE=sync` keeps one-process local demos simple. Set
+`AEAI_WORKFLOW_EXECUTION_MODE=async` for production-like API behavior where execution requests
+enqueue workflow jobs and workers process them separately. Queued workflow execution defaults to the
+repository-backed queue. Set `AEAI_WORKFLOW_QUEUE_BACKEND=redis` to use Redis as the pending-job
+broker while keeping the run repository as the authoritative execution guard. Workers heartbeat
+claimed jobs, recover timed-out claims, retry according to `max_attempts`, and move exhausted jobs to
+`dead_letter`.
 
 ## Database Migrations
 
