@@ -18,6 +18,28 @@ spec:
         app.kubernetes.io/part-of: autonomous-enterprise-ai-os
     spec:
       terminationGracePeriodSeconds: 30
+      initContainers:
+        - name: validate-runtime-config
+          image: ghcr.io/kashyaphebbar/autonomous-enterprise-ai-os:latest
+          imagePullPolicy: IfNotPresent
+          command:
+            - python
+          args:
+            - scripts/validate_runtime_config.py
+            - --component
+            - api
+          envFrom:
+            - configMapRef:
+                name: aeai-config
+            - secretRef:
+                name: aeai-secrets
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
       containers:
         - name: api
           image: ghcr.io/kashyaphebbar/autonomous-enterprise-ai-os:latest
