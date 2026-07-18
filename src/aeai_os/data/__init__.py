@@ -7,6 +7,15 @@ from aeai_os.data.profiling import (
     profile_csv_dataset,
     profile_tabular_rows,
 )
+from aeai_os.data.sources import (
+    DataSourceAlreadyExistsError,
+    DataSourceNotFoundError,
+    DataSourceRecord,
+    DataSourceRegistry,
+    DataSourceType,
+    DataSourceValidationError,
+    DataSourceValidationResult,
+)
 from aeai_os.data.warehouse import (
     DatasetReferenceInfo,
     SnowflakeSettings,
@@ -30,6 +39,13 @@ __all__ = [
     "CsvDatasetAdapter",
     "CsvDatasetProfile",
     "DataIngestionError",
+    "DataSourceAlreadyExistsError",
+    "DataSourceNotFoundError",
+    "DataSourceRecord",
+    "DataSourceRegistry",
+    "DataSourceType",
+    "DataSourceValidationError",
+    "DataSourceValidationResult",
     "DatasetQueryAdapter",
     "DatasetReferenceInfo",
     "SnowflakeSettings",

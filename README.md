@@ -136,6 +136,10 @@ detail responses and is also available at `/runs/{run_id}/audit-events`.
 | `GET /connectors` | List registered enterprise connectors and current status |
 | `GET /connectors/credential-profiles` | List sanitized credential profile references |
 | `GET /connectors/{connector_id}/health` | Inspect connector configuration health |
+| `POST /data-sources` | Register and validate a reusable enterprise dataset source |
+| `GET /data-sources` | List registered dataset sources |
+| `GET /data-sources/{data_source_id}` | Inspect a registered dataset source |
+| `POST /data-sources/{data_source_id}/validate` | Re-check source reachability before execution |
 | `GET /metrics` | Prometheus-compatible run and agent metrics |
 | `GET /health` | Service health |
 | `GET /docs` | Interactive OpenAPI documentation |
@@ -148,6 +152,7 @@ responses only show configured/missing environment keys and never return secret 
 
 Default connector IDs:
 
+- `local-file` for local CSV, TSV, JSON, and Parquet dataset files
 - `sqlite-local` for local SQLite warehouse references
 - `snowflake-default` for Snowflake warehouse access
 - `artifact-store` for local or S3-compatible artifact storage
@@ -156,6 +161,43 @@ Default connector IDs:
 Warehouse dataset metadata can include `credential_profile` or `credential_profile_id` to bind a
 dataset reference to a profile such as `snowflake-default` without storing credentials in artifact
 metadata.
+
+## Data Source Onboarding
+
+Register reusable dataset sources through `/data-sources` so users can start workflow runs without
+hard-coding file paths or warehouse relation metadata into application code. A source stores its type,
+connector ID, credential profile reference, dataset URI, owner, and non-secret metadata. The API
+validates local files and SQLite references for reachability, and checks Snowflake profile
+configuration before accepting Snowflake-backed sources.
+
+Example local source:
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/data-sources \
+  -H 'content-type: application/json' \
+  -d '{
+    "id": "procurement-local",
+    "name": "Procurement Local CSV",
+    "source_type": "local_file",
+    "dataset_uri": "examples/procurement_demo.csv",
+    "owner": "finance-ops",
+    "metadata": {"domain": "procurement"}
+  }'
+```
+
+Create a run from the registered source:
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/runs \
+  -H 'content-type: application/json' \
+  -d '{
+    "task": "Analyze procurement spend and create a dashboard report.",
+    "data_source_id": "procurement-local"
+  }'
+```
+
+The run metadata and dataset artifact metadata both record `data_source_id`, `connector_id`, and
+`credential_profile_id` for auditability.
 
 ## Warehouse Dataset References
 

@@ -149,6 +149,15 @@ def build_default_connector_registry(
     )
     connectors = [
         ConnectorDefinition(
+            id="local-file",
+            name="Local file datasets",
+            provider="local",
+            kind="file",
+            credential_profile_id="local-filesystem",
+            capabilities=("preview", "profile", "read_dataset"),
+            metadata={"configuration": "dataset_uri"},
+        ),
+        ConnectorDefinition(
             id="sqlite-local",
             name="SQLite warehouse references",
             provider="sqlite",
