@@ -395,6 +395,7 @@ PYTHONPATH=src .venv/bin/python scripts/manage_database.py \
 - Architecture: [docs/architecture.md](docs/architecture.md)
 - Development guide: [docs/development.md](docs/development.md)
 - Kubernetes baseline: [deploy/kubernetes/README.md](deploy/kubernetes/README.md)
+- AWS deployment path: [deploy/cloud/aws/README.md](deploy/cloud/aws/README.md)
 
 ## Tests
 
@@ -404,6 +405,7 @@ make test
 make smoke
 make demo
 make k8s-validate
+make cloud-validate
 ```
 
 GitHub Actions runs this same validation sequence on pull requests and pushes to `main` after

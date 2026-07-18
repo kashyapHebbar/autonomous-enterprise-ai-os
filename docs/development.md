@@ -27,6 +27,7 @@ make test
 make smoke
 make demo
 make k8s-validate
+make cloud-validate
 ```
 
 `make smoke` only uses the Python standard library and verifies the scaffold shape plus the health payload.
@@ -34,7 +35,7 @@ make k8s-validate
 `artifacts/procurement_demo/<run_id>/`.
 
 GitHub Actions runs the same validation sequence on every pull request and push to `main`.
-The CI workflow installs the development dependencies with `make install` and runs the five checks
+The CI workflow installs the development dependencies with `make install` and runs the checks
 above.
 
 ## Database Migrations
@@ -267,6 +268,25 @@ It includes API and workflow worker deployments, local Postgres/Redis/MinIO depe
 config, a local-development secret template, ClusterIP services, health probes, and observability
 environment variables. See `deploy/kubernetes/README.md` for kind/minikube image loading,
 rollout checks, port-forwarding, and teardown commands.
+
+## AWS Deployment Path
+
+The first cloud deployment path lives in `deploy/cloud/aws/`. It uses Terraform to provision EKS,
+RDS PostgreSQL, ElastiCache Redis, S3 artifact storage, Secrets Manager runtime configuration, and
+VPC networking. The application still deploys through the Kubernetes production overlay, keeping
+cloud infrastructure separate from local development:
+
+```bash
+make cloud-validate
+cd deploy/cloud/aws/terraform
+terraform init
+terraform plan -out=tfplan
+terraform apply tfplan
+kubectl apply -k deploy/kubernetes/overlays/production
+```
+
+See `deploy/cloud/aws/README.md` for required AWS permissions, Terraform variables, secret sync,
+database migration, rollout, and deployed API/UI smoke checks.
 
 ## Orchestrator Kernel
 

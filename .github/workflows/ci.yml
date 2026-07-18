@@ -42,3 +42,6 @@ jobs:
 
       - name: Kubernetes manifest validation
         run: make k8s-validate
+
+      - name: Cloud deployment validation
+        run: make cloud-validate
