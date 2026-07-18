@@ -535,6 +535,7 @@ class InMemoryRunRepository:
     ) -> ArtifactRecord:
         with self._lock:
             run = self.get_run(run_id)
+            resolved_artifact_id = artifact_id or self.next_artifact_id()
             normalized_metadata = dict(metadata or {})
             storage_metadata = _artifact_storage_metadata(
                 normalized_metadata,
@@ -543,28 +544,41 @@ class InMemoryRunRepository:
                 storage_key=storage_key,
                 size_bytes=size_bytes,
             )
-            artifact = ArtifactRecord(
-                id=artifact_id or self.next_artifact_id(),
-                run_id=run_id,
-                producer_node_id=producer_node_id,
-                type=artifact_type,
-                uri=uri,
-                metadata=normalized_metadata,
-                source_artifact_ids=list(source_artifact_ids or []),
-                created_at=utc_now(),
-                content_type=storage_metadata["content_type"],
-                storage_backend=storage_metadata["storage_backend"],
-                storage_key=storage_metadata["storage_key"],
-                size_bytes=storage_metadata["size_bytes"],
-            )
-            self._artifacts[run_id].append(artifact)
-            if artifact.type == ArtifactType.DATASET:
-                self._runs[run_id] = replace(
-                    run,
-                    dataset_artifact_id=artifact.id,
-                    updated_at=utc_now(),
+            with start_span(
+                "artifact.record",
+                {
+                    "run.id": run_id,
+                    "run.trace_id": run.trace_id,
+                    "graph.node.id": producer_node_id,
+                    "artifact.id": resolved_artifact_id,
+                    "artifact.type": artifact_type.value,
+                    "artifact.storage_backend": storage_metadata["storage_backend"],
+                    "artifact.storage_key": storage_metadata["storage_key"],
+                    "artifact.source_count": len(source_artifact_ids or []),
+                },
+            ):
+                artifact = ArtifactRecord(
+                    id=resolved_artifact_id,
+                    run_id=run_id,
+                    producer_node_id=producer_node_id,
+                    type=artifact_type,
+                    uri=uri,
+                    metadata=normalized_metadata,
+                    source_artifact_ids=list(source_artifact_ids or []),
+                    created_at=utc_now(),
+                    content_type=storage_metadata["content_type"],
+                    storage_backend=storage_metadata["storage_backend"],
+                    storage_key=storage_metadata["storage_key"],
+                    size_bytes=storage_metadata["size_bytes"],
                 )
-            return artifact
+                self._artifacts[run_id].append(artifact)
+                if artifact.type == ArtifactType.DATASET:
+                    self._runs[run_id] = replace(
+                        run,
+                        dataset_artifact_id=artifact.id,
+                        updated_at=utc_now(),
+                    )
+                return artifact
 
     def list_artifacts(self, run_id: str) -> list[ArtifactRecord]:
         with self._lock:

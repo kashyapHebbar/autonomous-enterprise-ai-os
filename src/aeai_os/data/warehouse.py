@@ -10,6 +10,7 @@ from typing import Any, Literal, Protocol
 from urllib.parse import parse_qs, unquote, urlparse
 
 from aeai_os.data.profiling import DataIngestionError
+from aeai_os.observability.tracing import start_span
 
 ParameterSet = Sequence[Any] | Mapping[str, Any] | None
 SnowflakeConnectionFactory = Callable[..., Any]
@@ -192,20 +193,33 @@ class SqliteWarehouseConnector:
         return {str(row["group_key"]): float(row["total"] or 0.0) for row in rows}
 
     def execute_query(self, query: str, parameters: ParameterSet = None) -> WarehouseQueryResult:
-        if not self.database_path.exists():
-            raise WarehouseConnectorError(
-                f"SQLite warehouse database does not exist: {self.database_path}"
-            )
+        with start_span(
+            "connector.sqlite.query",
+            {
+                "connector.provider": self.source,
+                "connector.operation": "execute_query",
+                "db.system": "sqlite",
+                "db.statement.length": len(query),
+                "db.parameters.count": _parameter_count(parameters),
+            },
+        ) as span:
+            if not self.database_path.exists():
+                span.set_attribute("error", True)
+                raise WarehouseConnectorError(
+                    f"SQLite warehouse database does not exist: {self.database_path}"
+                )
 
-        with sqlite3.connect(self.database_path) as connection:
-            connection.row_factory = sqlite3.Row
-            cursor = connection.execute(query, parameters or {})
-            rows = [dict(row) for row in cursor.fetchall()]
-            columns = [
-                WarehouseColumn(name=str(column[0]), data_type="unknown", nullable=None)
-                for column in (cursor.description or [])
-            ]
-        return WarehouseQueryResult(rows=rows, columns=columns)
+            with sqlite3.connect(self.database_path) as connection:
+                connection.row_factory = sqlite3.Row
+                cursor = connection.execute(query, parameters or {})
+                rows = [dict(row) for row in cursor.fetchall()]
+                columns = [
+                    WarehouseColumn(name=str(column[0]), data_type="unknown", nullable=None)
+                    for column in (cursor.description or [])
+                ]
+            span.set_attribute("db.rows_returned", len(rows))
+            span.set_attribute("db.columns_returned", len(columns))
+            return WarehouseQueryResult(rows=rows, columns=columns)
 
     def _source_sql(self, reference: WarehouseDatasetReference) -> str:
         _assert_source(reference, self.source)
@@ -359,43 +373,63 @@ class SnowflakeWarehouseConnector:
 
     def execute_query(self, query: str, parameters: ParameterSet = None) -> WarehouseQueryResult:
         statement = _snowflake_statement(query)
-        connection = None
-        cursor = None
-        try:
-            if self._connection_factory:
-                connection = self._connection_factory(**self._connection_kwargs())
-                cursor = connection.cursor()
-            else:
-                try:
-                    import snowflake.connector
-                    from snowflake.connector import DictCursor
-                except ImportError as exc:
-                    raise WarehouseConfigurationError(
-                        "Snowflake connector package is not installed. Install "
-                        "snowflake-connector-python before executing Snowflake-backed datasets."
-                    ) from exc
+        with start_span(
+            "connector.snowflake.query",
+            {
+                "connector.provider": self.source,
+                "connector.operation": "execute_query",
+                "credential_profile.id": "snowflake-default",
+                "db.system": "snowflake",
+                "db.name": self.settings.database,
+                "db.schema": self.settings.schema,
+                "db.statement.length": len(statement),
+                "db.parameters.count": _parameter_count(parameters),
+            },
+        ) as span:
+            connection = None
+            cursor = None
+            try:
+                if self._connection_factory:
+                    connection = self._connection_factory(**self._connection_kwargs())
+                    cursor = connection.cursor()
+                else:
+                    try:
+                        import snowflake.connector
+                        from snowflake.connector import DictCursor
+                    except ImportError as exc:
+                        span.set_attribute("error", True)
+                        raise WarehouseConfigurationError(
+                            "Snowflake connector package is not installed. Install "
+                            "snowflake-connector-python before executing Snowflake-backed "
+                            "datasets."
+                        ) from exc
 
-                connection = snowflake.connector.connect(**self._connection_kwargs())
-                cursor = connection.cursor(DictCursor)
+                    connection = snowflake.connector.connect(**self._connection_kwargs())
+                    cursor = connection.cursor(DictCursor)
 
-            cursor.execute(
-                statement,
-                parameters or None,
-                timeout=self.settings.query_timeout_seconds,
-            )
-            rows = [dict(row) for row in cursor.fetchall()]
-            columns = [
-                WarehouseColumn(name=str(column[0]), data_type=str(column[1]), nullable=None)
-                for column in (cursor.description or [])
-            ]
-            return WarehouseQueryResult(rows=rows, columns=columns)
-        except WarehouseConnectorError:
-            raise
-        except Exception as exc:
-            raise WarehouseConnectorError(f"Snowflake query execution failed: {exc}") from exc
-        finally:
-            _close_resource(cursor)
-            _close_resource(connection)
+                cursor.execute(
+                    statement,
+                    parameters or None,
+                    timeout=self.settings.query_timeout_seconds,
+                )
+                rows = [dict(row) for row in cursor.fetchall()]
+                columns = [
+                    WarehouseColumn(name=str(column[0]), data_type=str(column[1]), nullable=None)
+                    for column in (cursor.description or [])
+                ]
+                span.set_attribute("db.rows_returned", len(rows))
+                span.set_attribute("db.columns_returned", len(columns))
+                return WarehouseQueryResult(rows=rows, columns=columns)
+            except WarehouseConnectorError:
+                span.set_attribute("error", True)
+                raise
+            except Exception as exc:
+                span.record_exception(exc)
+                span.set_attribute("error", True)
+                raise WarehouseConnectorError(f"Snowflake query execution failed: {exc}") from exc
+            finally:
+                _close_resource(cursor)
+                _close_resource(connection)
 
     def _source_sql(self, reference: WarehouseDatasetReference) -> str:
         _assert_source(reference, self.source)
@@ -664,6 +698,12 @@ def _merge_parameters(
         )
     merged.update(extra_parameters)
     return merged
+
+
+def _parameter_count(parameters: ParameterSet) -> int:
+    if parameters is None:
+        return 0
+    return len(parameters)
 
 
 def _select_query(query: str | None) -> str:

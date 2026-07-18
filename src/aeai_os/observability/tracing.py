@@ -12,6 +12,10 @@ _CONFIGURED = False
 _CONFIGURED_RESULT: TracingConfigurationResult | None = None
 _TRACER_NAME = "aeai_os"
 _CURRENT_TRACE_ID: ContextVar[str | None] = ContextVar("aeai_trace_id", default=None)
+_CURRENT_CORRELATION_ATTRIBUTES: ContextVar[dict[str, Any] | None] = ContextVar(
+    "aeai_trace_correlation_attributes",
+    default=None,
+)
 
 
 @dataclass(frozen=True)
@@ -226,16 +230,35 @@ def ensure_trace_id(trace_id: str | None = None) -> str:
 
 
 @contextmanager
+def trace_context(attributes: Mapping[str, Any] | None = None) -> Iterator[dict[str, Any]]:
+    current = dict(_CURRENT_CORRELATION_ATTRIBUTES.get() or {})
+    merged = {**current, **_normalize_attributes(attributes or {})}
+    token = _CURRENT_CORRELATION_ATTRIBUTES.set(merged)
+    try:
+        yield merged
+    finally:
+        _CURRENT_CORRELATION_ATTRIBUTES.reset(token)
+
+
+def current_correlation_attributes() -> dict[str, Any]:
+    return dict(_CURRENT_CORRELATION_ATTRIBUTES.get() or {})
+
+
+@contextmanager
 def start_span(
     name: str,
     attributes: Mapping[str, Any] | None = None,
 ) -> Iterator[Any]:
     configuration = configure_tracing()
+    span_attributes = {
+        **current_correlation_attributes(),
+        **_normalize_attributes(attributes or {}),
+    }
     if configuration.exporter_status in {"disabled", "not_configured"}:
-        trace_id = uuid4().hex
+        trace_id = current_trace_id() or uuid4().hex
         token = _CURRENT_TRACE_ID.set(trace_id)
         try:
-            yield _NoopSpan(trace_id=trace_id)
+            yield _NoopSpan(trace_id=trace_id, attributes=dict(span_attributes))
         finally:
             _CURRENT_TRACE_ID.reset(token)
         return
@@ -245,17 +268,36 @@ def start_span(
     tracer = trace.get_tracer(_TRACER_NAME)
     with tracer.start_as_current_span(
         name,
-        attributes=_normalize_attributes(attributes or {}),
+        attributes=span_attributes,
     ) as span:
         yield span
 
 
-@dataclass(frozen=True)
+@dataclass
 class _NoopSpan:
     trace_id: str
+    attributes: dict[str, Any] = field(default_factory=dict)
+    events: list[dict[str, Any]] = field(default_factory=list)
+    exceptions: list[str] = field(default_factory=list)
 
     def set_attribute(self, key: str, value: Any) -> None:
-        return None
+        normalized = _normalize_attributes({key: value})
+        self.attributes.update(normalized)
+
+    def add_event(
+        self,
+        name: str,
+        attributes: Mapping[str, Any] | None = None,
+    ) -> None:
+        self.events.append(
+            {
+                "name": name,
+                "attributes": _normalize_attributes(attributes or {}),
+            }
+        )
+
+    def record_exception(self, exception: BaseException) -> None:
+        self.exceptions.append(f"{type(exception).__name__}: {exception}")
 
 
 def _normalize_attributes(attributes: Mapping[str, Any]) -> dict[str, Any]:

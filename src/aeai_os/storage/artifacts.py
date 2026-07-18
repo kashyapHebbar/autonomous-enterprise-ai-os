@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any, Protocol
 from urllib.parse import urlparse
 
+from aeai_os.observability.tracing import start_span
+
 
 class ArtifactStorageError(RuntimeError):
     """Raised when artifact payload storage cannot read or write content."""
@@ -100,23 +102,39 @@ class LocalArtifactStore(ArtifactStore):
         content_type: str | None = None,
         metadata: Mapping[str, Any] | None = None,
     ) -> StoredArtifact:
-        relative_path = _payload_relative_path(run_id, node_id, filename)
-        path = self.root / relative_path
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(payload)
-        return StoredArtifact(
-            uri=str(path),
-            metadata=_storage_metadata(
+        with start_span(
+            "artifact.write",
+            _artifact_span_attributes(
                 backend=self.backend,
-                key=relative_path.as_posix(),
+                run_id=run_id,
+                node_id=node_id,
+                filename=filename,
                 size_bytes=len(payload),
                 content_type=content_type,
-                extra={"credential_profile_id": "local-filesystem", **dict(metadata or {})},
+                credential_profile_id="local-filesystem",
             ),
-        )
+        ):
+            relative_path = _payload_relative_path(run_id, node_id, filename)
+            path = self.root / relative_path
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(payload)
+            return StoredArtifact(
+                uri=str(path),
+                metadata=_storage_metadata(
+                    backend=self.backend,
+                    key=relative_path.as_posix(),
+                    size_bytes=len(payload),
+                    content_type=content_type,
+                    extra={"credential_profile_id": "local-filesystem", **dict(metadata or {})},
+                ),
+            )
 
     def read_bytes(self, uri: str) -> bytes:
-        return self.local_path(uri).read_bytes()
+        with start_span(
+            "artifact.read",
+            {"artifact.storage_backend": self.backend, "artifact.uri.scheme": _uri_scheme(uri)},
+        ):
+            return self.local_path(uri).read_bytes()
 
     def local_path(self, uri: str) -> Path:
         parsed = urlparse(uri)
@@ -165,42 +183,59 @@ class S3ArtifactStore(ArtifactStore):
         metadata: Mapping[str, Any] | None = None,
     ) -> StoredArtifact:
         key = self._key(run_id, node_id, filename)
-        request: dict[str, Any] = {
-            "Bucket": self.bucket,
-            "Key": key,
-            "Body": payload,
-            "Metadata": _object_metadata(metadata),
-        }
-        if content_type:
-            request["ContentType"] = content_type
-        self._client.put_object(**request)
-        return StoredArtifact(
-            uri=f"s3://{self.bucket}/{key}",
-            metadata=_storage_metadata(
+        with start_span(
+            "artifact.write",
+            _artifact_span_attributes(
                 backend=self.backend,
-                key=key,
+                run_id=run_id,
+                node_id=node_id,
+                filename=filename,
                 size_bytes=len(payload),
                 content_type=content_type,
-                extra={
-                    "credential_profile_id": "artifact-s3-default",
-                    "bucket": self.bucket,
-                    "endpoint_url": self.endpoint_url,
-                    **dict(metadata or {}),
-                },
+                credential_profile_id="artifact-s3-default",
+                storage_key=key,
             ),
-        )
+        ):
+            request: dict[str, Any] = {
+                "Bucket": self.bucket,
+                "Key": key,
+                "Body": payload,
+                "Metadata": _object_metadata(metadata),
+            }
+            if content_type:
+                request["ContentType"] = content_type
+            self._client.put_object(**request)
+            return StoredArtifact(
+                uri=f"s3://{self.bucket}/{key}",
+                metadata=_storage_metadata(
+                    backend=self.backend,
+                    key=key,
+                    size_bytes=len(payload),
+                    content_type=content_type,
+                    extra={
+                        "credential_profile_id": "artifact-s3-default",
+                        "bucket": self.bucket,
+                        "endpoint_url": self.endpoint_url,
+                        **dict(metadata or {}),
+                    },
+                ),
+            )
 
     def read_bytes(self, uri: str) -> bytes:
-        parsed = urlparse(uri)
-        if parsed.scheme in {"", "file"}:
-            return Path(parsed.path if parsed.scheme == "file" else uri).read_bytes()
-        if parsed.scheme != "s3":
-            raise ArtifactStorageError(f"S3 artifact store cannot read URI: {uri}")
-        bucket = parsed.netloc
-        key = parsed.path.lstrip("/")
-        response = self._client.get_object(Bucket=bucket, Key=key)
-        body = response["Body"]
-        return body.read() if hasattr(body, "read") else bytes(body)
+        with start_span(
+            "artifact.read",
+            {"artifact.storage_backend": self.backend, "artifact.uri.scheme": _uri_scheme(uri)},
+        ):
+            parsed = urlparse(uri)
+            if parsed.scheme in {"", "file"}:
+                return Path(parsed.path if parsed.scheme == "file" else uri).read_bytes()
+            if parsed.scheme != "s3":
+                raise ArtifactStorageError(f"S3 artifact store cannot read URI: {uri}")
+            bucket = parsed.netloc
+            key = parsed.path.lstrip("/")
+            response = self._client.get_object(Bucket=bucket, Key=key)
+            body = response["Body"]
+            return body.read() if hasattr(body, "read") else bytes(body)
 
     def local_path(self, uri: str) -> Path:
         parsed = urlparse(uri)
@@ -268,6 +303,33 @@ def _storage_metadata(
         metadata["content_type"] = content_type
     metadata.update(dict(extra or {}))
     return metadata
+
+
+def _artifact_span_attributes(
+    *,
+    backend: str,
+    run_id: str,
+    node_id: str,
+    filename: str,
+    size_bytes: int,
+    content_type: str | None,
+    credential_profile_id: str,
+    storage_key: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "run.id": run_id,
+        "graph.node.id": node_id,
+        "artifact.storage_backend": backend,
+        "artifact.filename": Path(filename).name,
+        "artifact.size_bytes": size_bytes,
+        "artifact.content_type": content_type,
+        "credential_profile.id": credential_profile_id,
+        "artifact.storage_key": storage_key,
+    }
+
+
+def _uri_scheme(uri: str) -> str:
+    return urlparse(uri).scheme or "file"
 
 
 def _object_metadata(metadata: Mapping[str, Any] | None = None) -> dict[str, str]:

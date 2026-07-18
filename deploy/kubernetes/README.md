@@ -107,6 +107,11 @@ To send traces to an OTLP collector, set these config map values:
 - `AEAI_OTEL_EXPORTER_OTLP_HEADERS`
 - `AEAI_OTEL_EXPORTER_OTLP_INSECURE`
 
+For local collector testing, start a collector with `deploy/otel-collector-config.yaml` and point
+`AEAI_OTEL_EXPORTER_OTLP_ENDPOINT` at its HTTP endpoint, for example
+`http://otel-collector:4318/v1/traces` inside a cluster or `http://127.0.0.1:4318/v1/traces` from a
+local API process.
+
 The baseline sets `AEAI_WORKFLOW_EXECUTION_MODE=async` and `AEAI_WORKFLOW_QUEUE_BACKEND=redis`.
 Execution requests enqueue workflow jobs through the API, and the `aeai-worker` deployment claims
 and completes them outside the request lifecycle.

@@ -50,6 +50,7 @@ from aeai_os.deployments import (
     decide_deployment_approval,
     request_deployment_approval,
 )
+from aeai_os.observability.tracing import current_trace_id
 from aeai_os.orchestration.service import OrchestrationError, OrchestrationResult
 from aeai_os.runs.archive import (
     RunArchiveConflictError,
@@ -717,6 +718,9 @@ def _record_audit_event(
     }
     if details:
         payload["details"] = details
+    active_trace_id = current_trace_id()
+    if active_trace_id:
+        payload["otel_trace_id"] = active_trace_id
     return repository.add_event(
         AgentEventRecord(
             id=f"event_{uuid4().hex}",
