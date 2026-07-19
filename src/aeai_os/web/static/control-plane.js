@@ -169,12 +169,12 @@ async function loadRuns() {
   renderRuns();
   try {
     state.runs = await requestJson("/runs");
-    renderRuns();
   } catch (error) {
     els.runCount.textContent = "Error";
     els.runsList.innerHTML = `<p class="error-panel">${escapeHtml(error.message)}</p>`;
   } finally {
     state.loadingRuns = false;
+    renderRuns();
     els.refreshRuns.disabled = false;
   }
 }

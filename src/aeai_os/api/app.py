@@ -159,6 +159,7 @@ def create_app(
     @app.get("/app/{asset_name}", include_in_schema=False)
     def control_plane_asset(asset_name: str) -> FileResponse:
         allowed_assets = {
+            "app-shell.css",
             "admin.css",
             "admin.js",
             "artifact-browser.css",

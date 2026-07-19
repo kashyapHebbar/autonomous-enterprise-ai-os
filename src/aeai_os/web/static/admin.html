@@ -4,116 +4,137 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Admin | Autonomous Enterprise AI OS</title>
-    <link rel="stylesheet" href="/app/admin.css" />
+    <link rel="stylesheet" href="/app/admin.css?v=product-ui" />
+    <link rel="stylesheet" href="/app/app-shell.css?v=product-ui" />
   </head>
   <body>
-    <main class="shell">
-      <header class="topbar">
-        <a class="brand" href="/app">Autonomous Enterprise AI OS</a>
+    <main class="shell product-shell">
+      <aside class="sidebar" aria-label="Application navigation">
+        <a class="brand" href="/app">
+          <span class="brand-mark" aria-hidden="true">AE</span>
+          <span class="brand-copy">
+            <strong>Enterprise AI OS</strong>
+            <span>Autonomous control plane</span>
+          </span>
+        </a>
         <nav class="app-nav" aria-label="Primary">
-          <a href="/app">Runs</a>
-          <a href="/app/artifacts">Artifacts</a>
-          <a href="/app/admin" aria-current="page">Admin</a>
-          <a href="/docs">API Docs</a>
+          <a href="/app"><span class="nav-icon" aria-hidden="true">R</span><span>Runs</span></a>
+          <a href="/app/artifacts"><span class="nav-icon" aria-hidden="true">A</span><span>Artifacts</span></a>
+          <a href="/app/admin" aria-current="page"><span class="nav-icon" aria-hidden="true">G</span><span>Governance</span></a>
+          <a href="/docs"><span class="nav-icon" aria-hidden="true">D</span><span>API Docs</span></a>
         </nav>
-      </header>
-
-      <section class="intro-band" aria-labelledby="pageTitle">
-        <div>
-          <p class="eyebrow">Control plane</p>
-          <h1 id="pageTitle">Admin</h1>
+        <div class="sidebar-footer">
+          <div class="system-chip"><span>Mode</span><strong>Local</strong></div>
+          <div class="system-chip"><span>Release</span><strong>v1.0</strong></div>
         </div>
-        <button class="icon-button" id="refreshAdmin" type="button" title="Refresh admin data">
-          <span aria-hidden="true">R</span>
-          <span class="sr-only">Refresh</span>
-        </button>
-      </section>
+      </aside>
 
-      <section class="summary-grid" aria-label="Admin summary">
-        <article class="metric">
-          <span>Agents</span>
-          <strong id="agentCount">--</strong>
-        </article>
-        <article class="metric">
-          <span>Connectors</span>
-          <strong id="connectorCount">--</strong>
-        </article>
-        <article class="metric">
-          <span>Policy Rules</span>
-          <strong id="policyRuleCount">--</strong>
-        </article>
-        <article class="metric">
-          <span>Affected Runs</span>
-          <strong id="affectedRunCount">--</strong>
-        </article>
-      </section>
-
-      <section class="admin-grid">
-        <section class="panel agents-panel" aria-labelledby="agentsTitle">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Registry</p>
-              <h2 id="agentsTitle">Agents</h2>
-            </div>
-            <span class="status-pill" id="agentStatus">Loading</span>
+      <div class="workspace-shell">
+        <section class="intro-band" aria-labelledby="pageTitle">
+          <div>
+            <p class="eyebrow">Governance</p>
+            <h1 id="pageTitle">Admin</h1>
           </div>
-          <div class="item-list" id="agentsList"></div>
-        </section>
-
-        <section class="panel connectors-panel" aria-labelledby="connectorsTitle">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Integrations</p>
-              <h2 id="connectorsTitle">Connectors</h2>
-            </div>
-            <span class="status-pill" id="connectorStatus">Loading</span>
-          </div>
-          <div class="item-list" id="connectorsList"></div>
-        </section>
-
-        <section class="panel profiles-panel" aria-labelledby="profilesTitle">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Credentials</p>
-              <h2 id="profilesTitle">Profiles</h2>
-            </div>
-            <span class="status-pill" id="profileStatus">Loading</span>
-          </div>
-          <div class="item-list compact-list" id="profilesList"></div>
-        </section>
-
-        <section class="panel policies-panel" aria-labelledby="policiesTitle">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Governance</p>
-              <h2 id="policiesTitle">Policies</h2>
-            </div>
-            <span class="status-pill" id="policyStatus">Loading</span>
-          </div>
-          <div class="policy-layout">
-            <div>
-              <h3>Permissions</h3>
-              <div class="item-list compact-list" id="permissionsList"></div>
-            </div>
-            <div>
-              <h3>Rules</h3>
-              <div class="item-list compact-list" id="rulesList"></div>
-            </div>
+          <div class="page-actions">
+            <span class="status-pill">Policy registry</span>
+            <button class="icon-button" id="refreshAdmin" type="button" title="Refresh admin data">
+              <svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M20 6v5h-5" />
+                <path d="M4 18v-5h5" />
+                <path d="M18.2 9A7 7 0 0 0 6.4 6.4L4 8.8" />
+                <path d="M5.8 15A7 7 0 0 0 17.6 17.6L20 15.2" />
+              </svg>
+              <span class="sr-only">Refresh</span>
+            </button>
           </div>
         </section>
 
-        <section class="panel affected-panel" aria-labelledby="affectedTitle">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Operations</p>
-              <h2 id="affectedTitle">Affected Runs</h2>
-            </div>
-            <span class="status-pill" id="affectedStatus">Loading</span>
-          </div>
-          <div class="item-list compact-list" id="affectedRunsList"></div>
+        <section class="summary-grid" aria-label="Admin summary">
+          <article class="metric">
+            <span>Agents</span>
+            <strong id="agentCount">--</strong>
+          </article>
+          <article class="metric">
+            <span>Connectors</span>
+            <strong id="connectorCount">--</strong>
+          </article>
+          <article class="metric">
+            <span>Policy Rules</span>
+            <strong id="policyRuleCount">--</strong>
+          </article>
+          <article class="metric">
+            <span>Affected Runs</span>
+            <strong id="affectedRunCount">--</strong>
+          </article>
         </section>
-      </section>
+
+        <section class="admin-grid">
+          <section class="panel agents-panel" aria-labelledby="agentsTitle">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Registry</p>
+                <h2 id="agentsTitle">Agents</h2>
+              </div>
+              <span class="status-pill" id="agentStatus">Loading</span>
+            </div>
+            <div class="item-list" id="agentsList"></div>
+          </section>
+
+          <section class="panel connectors-panel" aria-labelledby="connectorsTitle">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Integrations</p>
+                <h2 id="connectorsTitle">Connectors</h2>
+              </div>
+              <span class="status-pill" id="connectorStatus">Loading</span>
+            </div>
+            <div class="item-list" id="connectorsList"></div>
+          </section>
+
+          <section class="panel profiles-panel" aria-labelledby="profilesTitle">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Credentials</p>
+                <h2 id="profilesTitle">Profiles</h2>
+              </div>
+              <span class="status-pill" id="profileStatus">Loading</span>
+            </div>
+            <div class="item-list compact-list" id="profilesList"></div>
+          </section>
+
+          <section class="panel policies-panel" aria-labelledby="policiesTitle">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Controls</p>
+                <h2 id="policiesTitle">Policies</h2>
+              </div>
+              <span class="status-pill" id="policyStatus">Loading</span>
+            </div>
+            <div class="policy-layout">
+              <div>
+                <h3>Permissions</h3>
+                <div class="item-list compact-list" id="permissionsList"></div>
+              </div>
+              <div>
+                <h3>Rules</h3>
+                <div class="item-list compact-list" id="rulesList"></div>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel affected-panel" aria-labelledby="affectedTitle">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Operations</p>
+                <h2 id="affectedTitle">Affected Runs</h2>
+              </div>
+              <span class="status-pill" id="affectedStatus">Loading</span>
+            </div>
+            <div class="item-list compact-list" id="affectedRunsList"></div>
+          </section>
+        </section>
+      </div>
     </main>
-    <script src="/app/admin.js" defer></script>
+    <script src="/app/admin.js?v=product-ui" defer></script>
   </body>
 </html>
