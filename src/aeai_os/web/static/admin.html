@@ -3,9 +3,9 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Admin | Autonomous Enterprise AI OS</title>
-    <link rel="stylesheet" href="/app/admin.css?v=visual-polish-2" />
-    <link rel="stylesheet" href="/app/app-shell.css?v=visual-polish-2" />
+    <title>Governance | Autonomous Enterprise AI OS</title>
+    <link rel="stylesheet" href="/app/admin.css?v=governance-center-1" />
+    <link rel="stylesheet" href="/app/app-shell.css?v=product-system-1" />
   </head>
   <body>
     <main class="shell product-shell">
@@ -18,10 +18,10 @@
           </span>
         </a>
         <nav class="app-nav" aria-label="Primary">
-          <a href="/app"><span class="nav-icon" aria-hidden="true">R</span><span>Runs</span></a>
-          <a href="/app/artifacts"><span class="nav-icon" aria-hidden="true">A</span><span>Artifacts</span></a>
+          <a href="/app"><span class="nav-icon" aria-hidden="true">W</span><span>Workflows</span></a>
+          <a href="/app/artifacts"><span class="nav-icon" aria-hidden="true">O</span><span>Outputs</span></a>
           <a href="/app/admin" aria-current="page"><span class="nav-icon" aria-hidden="true">G</span><span>Governance</span></a>
-          <a href="/docs"><span class="nav-icon" aria-hidden="true">D</span><span>API Docs</span></a>
+          <a href="/docs"><span class="nav-icon" aria-hidden="true">{ }</span><span>API Reference</span></a>
         </nav>
         <div class="sidebar-footer">
           <div class="system-chip"><span>Mode</span><strong>Local</strong></div>
@@ -32,8 +32,8 @@
       <div class="workspace-shell">
         <section class="intro-band" aria-labelledby="pageTitle">
           <div>
-            <p class="eyebrow">Governance</p>
-            <h1 id="pageTitle">Admin</h1>
+            <p class="eyebrow">Risk, policy, and access</p>
+            <h1 id="pageTitle">Governance Center</h1>
           </div>
           <div class="page-actions">
             <span class="status-pill">Policy registry</span>
@@ -63,50 +63,50 @@
             <strong id="policyRuleCount">--</strong>
           </article>
           <article class="metric">
-            <span>Affected Runs</span>
+            <span>Attention Items</span>
             <strong id="affectedRunCount">--</strong>
           </article>
         </section>
 
         <section class="admin-grid">
-          <section class="panel agents-panel" aria-labelledby="agentsTitle">
+          <section class="panel agents-panel" id="agents" aria-labelledby="agentsTitle">
             <div class="section-heading">
               <div>
                 <p class="eyebrow">Registry</p>
-                <h2 id="agentsTitle">Agents</h2>
+                <h2 id="agentsTitle">Agent Registry</h2>
               </div>
               <span class="status-pill" id="agentStatus">Loading</span>
             </div>
             <div class="item-list" id="agentsList"></div>
           </section>
 
-          <section class="panel connectors-panel" aria-labelledby="connectorsTitle">
+          <section class="panel connectors-panel" id="connections" aria-labelledby="connectorsTitle">
             <div class="section-heading">
               <div>
                 <p class="eyebrow">Integrations</p>
-                <h2 id="connectorsTitle">Connectors</h2>
+                <h2 id="connectorsTitle">Connection Health</h2>
               </div>
               <span class="status-pill" id="connectorStatus">Loading</span>
             </div>
             <div class="item-list" id="connectorsList"></div>
           </section>
 
-          <section class="panel profiles-panel" aria-labelledby="profilesTitle">
+          <section class="panel profiles-panel" id="credentials" aria-labelledby="profilesTitle">
             <div class="section-heading">
               <div>
                 <p class="eyebrow">Credentials</p>
-                <h2 id="profilesTitle">Profiles</h2>
+                <h2 id="profilesTitle">Credential Profiles</h2>
               </div>
               <span class="status-pill" id="profileStatus">Loading</span>
             </div>
             <div class="item-list compact-list" id="profilesList"></div>
           </section>
 
-          <section class="panel policies-panel" aria-labelledby="policiesTitle">
+          <section class="panel policies-panel" id="policies" aria-labelledby="policiesTitle">
             <div class="section-heading">
               <div>
                 <p class="eyebrow">Controls</p>
-                <h2 id="policiesTitle">Policies</h2>
+                <h2 id="policiesTitle">Policy Controls</h2>
               </div>
               <span class="status-pill" id="policyStatus">Loading</span>
             </div>
@@ -122,11 +122,11 @@
             </div>
           </section>
 
-          <section class="panel affected-panel" aria-labelledby="affectedTitle">
+          <section class="panel affected-panel" id="attention" aria-labelledby="affectedTitle">
             <div class="section-heading">
               <div>
                 <p class="eyebrow">Operations</p>
-                <h2 id="affectedTitle">Affected Runs</h2>
+                <h2 id="affectedTitle">Runs Requiring Attention</h2>
               </div>
               <span class="status-pill" id="affectedStatus">Loading</span>
             </div>
@@ -135,6 +135,6 @@
         </section>
       </div>
     </main>
-    <script src="/app/admin.js?v=visual-polish-2" defer></script>
+    <script src="/app/admin.js?v=governance-center-1" defer></script>
   </body>
 </html>

@@ -86,6 +86,8 @@ def test_visualization_agent_registers_chart_and_dashboard_artifacts(tmp_path):
         set(dashboard_artifact.source_artifact_ids)
     )
     assert "Procurement Dashboard" in dashboard_html
+    assert "Executive procurement intelligence" in dashboard_html
+    assert "Executive Insights" in dashboard_html
     assert kpi_artifact.id in dashboard_html
 
     chart_titles = {artifact.metadata["title"] for artifact in chart_artifacts}

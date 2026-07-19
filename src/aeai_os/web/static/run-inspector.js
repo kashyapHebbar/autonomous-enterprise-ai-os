@@ -2,6 +2,7 @@ const state = {
   runId: runIdFromLocation(),
   data: null,
   pendingAction: null,
+  selectedNodeId: null,
 };
 
 const els = {
@@ -14,6 +15,9 @@ const els = {
   taskText: document.querySelector("#taskText"),
   actionText: document.querySelector("#actionText"),
   errorText: document.querySelector("#errorText"),
+  flowSteps: document.querySelector("#flowSteps"),
+  flowDetail: document.querySelector("#flowDetail"),
+  flowSummary: document.querySelector("#flowSummary"),
   graphNodes: document.querySelector("#graphNodes"),
   workflowJobs: document.querySelector("#workflowJobs"),
   timeline: document.querySelector("#timeline"),
@@ -99,6 +103,25 @@ function titleLabel(value) {
     .join(" ");
 }
 
+function shortId(value) {
+  const text = String(value || "");
+  return text.length > 16 ? `${text.slice(0, 8)}...${text.slice(-5)}` : text;
+}
+
+function workflowTitle(task) {
+  const text = String(task || "Workflow").trim().replace(/[.]+$/, "");
+  return text.length > 76 ? `${text.slice(0, 73).trimEnd()}...` : text;
+}
+
+function datasetDisplayName(run) {
+  const artifact = run.artifacts.find((item) => item.id === run.dataset_artifact_id);
+  if (!artifact) {
+    return "No dataset";
+  }
+  const uri = String(artifact.uri || "");
+  return artifact.metadata?.title || artifact.metadata?.filename || uri.split("/").pop() || "Dataset";
+}
+
 function pillClass(status) {
   return `mini-pill status-${String(status || "")
     .toLowerCase()
@@ -140,10 +163,31 @@ function renderIdChips(ids, emptyLabel = "none", linkArtifacts = false) {
   return `<span class="chip-row">${ids
     .map((id) =>
       linkArtifacts
-        ? `<a class="id-chip" href="#${artifactElementId(id)}">${escapeHtml(id)}</a>`
+        ? `<a class="id-chip" href="${artifactBrowserPath(id)}" title="Open ${escapeHtml(
+            titleLabel(artifactById(id)?.type || "artifact")
+          )}">${escapeHtml(artifactDisplayName(id))}</a>`
         : `<code class="id-chip">${escapeHtml(id)}</code>`
     )
     .join("")}</span>`;
+}
+
+function artifactById(artifactId) {
+  return state.data?.run.artifacts.find((artifact) => artifact.id === artifactId) || null;
+}
+
+function artifactDisplayName(artifactId) {
+  const artifact = artifactById(artifactId);
+  return artifact ? artifactTitle(artifact) : artifactId;
+}
+
+function artifactTitle(artifact) {
+  return artifact.metadata?.title || artifact.metadata?.filename || titleLabel(artifact.type);
+}
+
+function artifactBrowserPath(artifactId) {
+  return `/app/artifacts?run_id=${encodeURIComponent(state.runId)}&artifact_id=${encodeURIComponent(
+    artifactId
+  )}`;
 }
 
 function formatDetailValue(value) {
@@ -192,16 +236,22 @@ function setActionStatus(message, kind = "idle") {
 
 function renderRun() {
   const { run } = state.data;
-  document.title = `${run.id} | Run Inspector`;
-  els.runTitle.textContent = run.id;
+  document.title = `${workflowTitle(run.task)} | Workflow`;
+  els.runTitle.textContent = workflowTitle(run.task);
   els.runStatus.textContent = titleLabel(run.status);
   els.runStatus.className = `status-pill status-${run.status}`;
-  els.traceId.textContent = run.trace_id || "--";
-  els.datasetId.textContent = run.dataset_artifact_id || "--";
+  els.traceId.textContent = shortId(run.id);
+  els.traceId.title = run.id;
+  els.datasetId.textContent = datasetDisplayName(run);
+  els.datasetId.title = run.dataset_artifact_id || "";
   els.updatedAt.textContent = formatDate(run.updated_at);
   els.artifactCount.textContent = String(run.artifacts.length);
   els.taskText.textContent = run.task;
   els.errorText.textContent = run.error_summary || "";
+  const passedEvaluations = run.evaluations.filter((evaluation) => evaluation.passed).length;
+  els.flowSummary.textContent = `${state.data.graphNodes.length} agent stages · ${
+    run.artifacts.length
+  } outputs · ${passedEvaluations} quality gate${passedEvaluations === 1 ? "" : "s"} passed`;
 }
 
 function renderNodeActions(node) {
@@ -309,7 +359,9 @@ function renderNodes() {
     ? nodes
         .map(
           (node) => `
-            <article class="node-item">
+            <article class="node-item${
+              node.id === state.selectedNodeId ? " is-selected" : ""
+            }" data-flow-node-id="${escapeHtml(node.id)}">
               <div class="node-main">
                 <strong>${escapeHtml(titleLabel(node.id))}</strong>
                 <span class="${pillClass(node.status)}">${escapeHtml(titleLabel(node.status))}</span>
@@ -329,6 +381,139 @@ function renderNodes() {
         )
         .join("")
     : renderEmpty("No graph nodes recorded.");
+}
+
+const nodeDescriptions = {
+  data_profile: {
+    purpose: "Read the dataset and check whether it is trustworthy enough to analyze.",
+    activity: "Inspected the columns, data types, missing values, and duplicate rows.",
+  },
+  analytics: {
+    purpose: "Turn the procurement records into business metrics and findings.",
+    activity: "Calculated spend totals, supplier concentration, category trends, anomalies, and savings opportunities.",
+  },
+  visualization: {
+    purpose: "Translate the analysis into charts that an executive can scan quickly.",
+    activity: "Built KPI, supplier, category, monthly trend, anomaly, and dashboard views.",
+  },
+  report: {
+    purpose: "Create a concise decision-ready summary of the analysis.",
+    activity: "Combined the findings, charts, assumptions, and recommendations into a report.",
+  },
+  evaluation: {
+    purpose: "Verify that the requested work is complete and internally consistent.",
+    activity: "Checked artifact completeness, task completion, data consistency, and assumption disclosure.",
+  },
+};
+
+function artifactsForNode(nodeId) {
+  return state.data.run.artifacts.filter((artifact) => artifact.producer_node_id === nodeId);
+}
+
+function nodeCompletionSummary(nodeId) {
+  const event = state.data.events.find(
+    (item) =>
+      item.node_id === nodeId &&
+      item.event_type === "log" &&
+      item.payload.message === "Node execution completed."
+  );
+  return event?.payload?.summary || "This step completed successfully.";
+}
+
+function renderFlowDetail() {
+  const node =
+    state.data.graphNodes.find((item) => item.id === state.selectedNodeId) ||
+    state.data.graphNodes[0];
+  if (!node) {
+    els.flowDetail.innerHTML = renderEmpty("No workflow steps were recorded.");
+    return;
+  }
+
+  state.selectedNodeId = node.id;
+  const copy = nodeDescriptions[node.id] || {
+    purpose: `Complete the ${titleLabel(node.id)} stage of the workflow.`,
+    activity: `Used ${node.required_tools.map(titleLabel).join(", ") || "the configured tools"}.`,
+  };
+  const inputs = node.depends_on.flatMap((dependencyId) => artifactsForNode(dependencyId));
+  const outputs = artifactsForNode(node.id);
+
+  els.flowDetail.innerHTML = `
+    <div class="flow-detail-copy">
+      <div class="flow-detail-title">
+        <span class="flow-step-number">${state.data.graphNodes.indexOf(node) + 1}</span>
+        <div>
+          <p class="eyebrow">${escapeHtml(titleLabel(node.agent_type))} agent</p>
+          <h3>${escapeHtml(titleLabel(node.id))}</h3>
+        </div>
+        <span class="${pillClass(node.status)}">${escapeHtml(titleLabel(node.status))}</span>
+      </div>
+      <p class="flow-purpose">${escapeHtml(copy.purpose)}</p>
+      <p>${escapeHtml(copy.activity)}</p>
+      <div class="flow-result">
+        <span>Result</span>
+        <strong>${escapeHtml(nodeCompletionSummary(node.id))}</strong>
+      </div>
+    </div>
+    <div class="flow-io">
+      <div>
+        <span class="flow-io-label">Received</span>
+        <p>${
+          inputs.length
+            ? [...new Set(inputs.map((artifact) => artifactTitle(artifact)))]
+                .map(escapeHtml)
+                .join(", ")
+            : node.depends_on.length
+              ? node.depends_on.map(titleLabel).join(", ")
+              : "Uploaded dataset"
+        }</p>
+      </div>
+      <div>
+        <span class="flow-io-label">Produced</span>
+        <div class="output-actions">
+          ${
+            outputs.length
+              ? outputs
+                  .map(
+                    (artifact) => `<a class="output-link" href="${artifactBrowserPath(artifact.id)}">
+                      <span>${escapeHtml(artifactTitle(artifact))}</span>
+                      <small>View output</small>
+                    </a>`
+                  )
+                  .join("")
+              : `<span class="detail-empty">No artifact output recorded.</span>`
+          }
+        </div>
+      </div>
+    </div>`;
+}
+
+function renderFlowStory() {
+  const nodes = state.data.graphNodes;
+  if (!nodes.length) {
+    els.flowSteps.innerHTML = renderEmpty("No workflow steps were recorded.");
+    renderFlowDetail();
+    return;
+  }
+  if (!state.selectedNodeId || !nodes.some((node) => node.id === state.selectedNodeId)) {
+    state.selectedNodeId = nodes[0].id;
+  }
+  els.flowSteps.innerHTML = nodes
+    .map(
+      (node, index) => `<button
+        class="flow-step${node.id === state.selectedNodeId ? " is-active" : ""}"
+        type="button"
+        role="tab"
+        aria-selected="${node.id === state.selectedNodeId}"
+        data-flow-node-id="${escapeHtml(node.id)}"
+      >
+        <span class="flow-step-number">${index + 1}</span>
+        <span><strong>${escapeHtml(titleLabel(node.id))}</strong><small>${escapeHtml(
+          titleLabel(node.status)
+        )}</small></span>
+      </button>`
+    )
+    .join("");
+  renderFlowDetail();
 }
 
 function renderJobs() {
@@ -353,11 +538,11 @@ function renderJobs() {
             </article>`
         )
         .join("")
-    : renderEmpty("No workflow jobs recorded.");
+    : renderEmpty("This run executed immediately in local mode, so no Redis worker queue job was created.");
 }
 
 function renderTimeline() {
-  const items = state.data.timeline;
+  const items = state.data.timeline.filter((item) => item.kind !== "agent_event");
   els.timeline.innerHTML = items.length
     ? items
         .map(
@@ -378,7 +563,7 @@ function renderTimeline() {
             </article>`
         )
         .join("")
-    : renderEmpty("No timeline entries recorded.");
+    : renderEmpty("No key milestones recorded. Open Diagnostics to inspect technical events.");
 }
 
 function renderArtifacts() {
@@ -392,14 +577,17 @@ function renderArtifacts() {
             return `
             <article class="compact-item" id="${artifactElementId(artifact.id)}">
               <div class="compact-main">
-                <strong>${escapeHtml(titleLabel(artifact.type))}</strong>
+                <strong>${escapeHtml(artifactTitle(artifact))}</strong>
                 <span class="mini-pill">${escapeHtml(titleLabel(artifact.producer_node_id || "input"))}</span>
               </div>
               ${renderMeta([
-                artifact.id,
                 artifact.uri,
                 `created ${formatDate(artifact.created_at)}`,
               ])}
+              <a class="output-link compact-output-link" href="${artifactBrowserPath(artifact.id)}">
+                <span>Open ${escapeHtml(artifactTitle(artifact))}</span>
+                <small>Preview and inspect lineage</small>
+              </a>
               <div class="detail-block">
                 <strong>Source artifacts</strong>
                 ${renderIdChips(artifact.source_artifact_ids, "none", true)}
@@ -580,6 +768,7 @@ function renderEvents() {
 
 function renderAll() {
   renderRun();
+  renderFlowStory();
   renderNodes();
   renderJobs();
   renderTimeline();
@@ -588,6 +777,17 @@ function renderAll() {
   renderEvaluations();
   renderDeploymentHistory();
   renderEvents();
+}
+
+function handleFlowSelection(event) {
+  const target = event.target.closest("[data-flow-node-id]");
+  if (!target) {
+    return;
+  }
+  state.selectedNodeId = target.dataset.flowNodeId;
+  renderFlowStory();
+  renderNodes();
+  els.flowDetail.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
 async function submitNodeAction(nodeId, action) {
@@ -791,6 +991,8 @@ async function loadArtifactLineage(run) {
 }
 
 els.graphNodes.addEventListener("click", handleNodeAction);
+els.graphNodes.addEventListener("click", handleFlowSelection);
+els.flowSteps.addEventListener("click", handleFlowSelection);
 els.workflowJobs.addEventListener("click", handleDeploymentAction);
 
 loadRun();

@@ -182,6 +182,10 @@ textarea {
   font-weight: 950;
 }
 
+.nav-icon {
+  font-size: 0.68rem;
+}
+
 .button-icon {
   background: transparent;
 }
@@ -470,6 +474,24 @@ textarea {
   border-color: rgba(177, 59, 70, 0.28);
   background: var(--red-soft);
   color: var(--red);
+}
+
+.status-not_configured {
+  border-color: rgba(168, 99, 24, 0.28);
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+
+.status-dataset {
+  border-color: rgba(31, 102, 173, 0.25);
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+
+.status-unavailable {
+  border-color: rgba(168, 99, 24, 0.28);
+  background: var(--amber-soft);
+  color: var(--amber);
 }
 
 .primary-button,
