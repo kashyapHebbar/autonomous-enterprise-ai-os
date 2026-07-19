@@ -1,4 +1,6 @@
-from aeai_os.connectors import build_default_connector_registry
+import pytest
+
+from aeai_os.connectors import ConnectorInstallationError, build_default_connector_registry
 from aeai_os.settings import AppSettings
 
 
@@ -50,3 +52,72 @@ def test_connector_registry_reports_missing_configuration_without_secret_values(
     assert "AEAI_ARTIFACT_S3_SECRET_ACCESS_KEY" in artifact_health.details["missing_env_keys"]
     assert github_profile["configured"] is False
     assert github_profile["missing_env_keys"] == ["GITHUB_TOKEN or GH_TOKEN"]
+
+
+def test_connector_installations_are_tenant_scoped_and_secret_safe():
+    registry = build_default_connector_registry(AppSettings(), env={})
+    installation = registry.create_installation(
+        connector_id="snowflake-default",
+        name="Finance warehouse",
+        organization_id="acme",
+        workspace_id="finance",
+        credential_reference="aws-secrets://acme/snowflake-finance",
+        configuration={
+            "account": "acme.eu-west-1",
+            "warehouse": "COMPUTE_WH",
+            "database": "ANALYTICS",
+            "schema": "PUBLIC",
+        },
+        created_by="admin-1",
+    )
+
+    assert installation.status == "setup_required"
+    assert registry.list_installations("acme") == [installation]
+    assert registry.list_installations("another-org") == []
+
+    with pytest.raises(ConnectorInstallationError, match="Unknown connector configuration"):
+        registry.create_installation(
+            connector_id="snowflake-default",
+            name="Unsafe warehouse",
+            organization_id="acme",
+            workspace_id=None,
+            credential_reference="aws-secrets://acme/snowflake",
+            configuration={"password": "must-not-be-stored"},
+            created_by="admin-1",
+        )
+
+
+def test_connector_installation_test_resolves_credentials_ephemerally():
+    class Resolver:
+        def resolve(self, reference):
+            assert reference == "aws-secrets://acme/snowflake"
+            return {
+                "SNOWFLAKE_USER": "analyst",
+                "SNOWFLAKE_PASSWORD": "secret",
+            }
+
+    registry = build_default_connector_registry(
+        AppSettings(),
+        env={},
+        credential_resolver=Resolver(),
+    )
+    installation = registry.create_installation(
+        connector_id="snowflake-default",
+        name="Finance warehouse",
+        organization_id="acme",
+        workspace_id="finance",
+        credential_reference="aws-secrets://acme/snowflake",
+        configuration={
+            "account": "acct",
+            "warehouse": "COMPUTE_WH",
+            "database": "ANALYTICS",
+            "schema": "PUBLIC",
+        },
+        created_by="admin-1",
+    )
+
+    health = registry.test_installation(installation.id, "acme")
+
+    assert health.status == "ok"
+    assert registry.get_installation(installation.id, "acme").status == "ready"
+    assert "secret" not in str(health.details)

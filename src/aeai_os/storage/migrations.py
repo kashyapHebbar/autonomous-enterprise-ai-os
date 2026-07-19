@@ -18,6 +18,7 @@ EXPECTED_TABLES = {
     "agent_events",
     "run_checkpoints",
     "evaluation_results",
+    "connector_installations",
 }
 
 EXPECTED_INDEXES: Mapping[str, set[str]] = {
@@ -35,6 +36,12 @@ EXPECTED_INDEXES: Mapping[str, set[str]] = {
     },
     "agent_events": {"ix_agent_events_run_id", "ix_agent_events_node_id"},
     "evaluation_results": {"ix_evaluation_results_run_id"},
+    "connector_installations": {
+        "ix_connector_installations_connector_id",
+        "ix_connector_installations_organization_id",
+        "ix_connector_installations_workspace_id",
+        "ix_connector_installations_status",
+    },
 }
 
 EXPECTED_COLUMNS: Mapping[str, set[str]] = {
@@ -46,6 +53,15 @@ EXPECTED_COLUMNS: Mapping[str, set[str]] = {
         "source_artifact_ids",
         "producer_node_id",
         "metadata_json",
+    },
+    "connector_installations": {
+        "connector_id",
+        "organization_id",
+        "workspace_id",
+        "credential_reference",
+        "configuration_json",
+        "status",
+        "created_by",
     },
 }
 

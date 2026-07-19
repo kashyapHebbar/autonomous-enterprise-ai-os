@@ -161,6 +161,9 @@ detail responses and is also available at `/runs/{run_id}/audit-events`.
 | `GET /admin/affected-runs` | List recent connector or policy affected runs with inspector links |
 | `GET /connectors` | List registered enterprise connectors and current status |
 | `GET /connectors/credential-profiles` | List sanitized credential profile references |
+| `POST /connectors/installations` | Save an organization-owned connector installation |
+| `GET /connectors/installations?organization_id=...` | List tenant-scoped installations |
+| `POST /connectors/installations/{installation_id}/test?organization_id=...` | Test a saved installation |
 | `GET /connectors/{connector_id}/health` | Inspect connector configuration health |
 | `POST /data-sources` | Register and validate a reusable enterprise dataset source |
 | `GET /data-sources` | List registered dataset sources |
@@ -198,6 +201,35 @@ Do not place raw passwords, tokens, API keys, private keys, connection strings, 
 data-source metadata, artifact metadata, workflow job payloads, or free-form event payloads. Public
 API serializers and run archives redact common secret-like keys and URI credentials defensively, but
 connectors should pass credential material through environment variables or mounted secret files.
+
+The Governance Center includes a Connector Hub driven by the connector manifests returned from
+`GET /connectors`. Each manifest declares non-secret configuration fields, supported authentication
+methods, capabilities, and whether an opaque credential reference is required. Saved installations
+are scoped to an organization and optional workspace. The installation API rejects unknown fields
+and never accepts raw passwords, tokens, access keys, or private keys as connector configuration.
+
+Credential references use provider-owned identifiers such as
+`aws-secrets://acme/snowflake-finance` or `vault://acme/data-platform`. Resolution of these references
+is deliberately separated from installation metadata so a future Secrets Manager, Key Vault, or
+Vault adapter can rotate credentials without rewriting data sources or workflow definitions.
+
+Install all managed credential providers with:
+
+```bash
+pip install ".[secrets]"
+```
+
+Supported reference formats are:
+
+- `env://SNOWFLAKE_USER/SNOWFLAKE_PASSWORD` for explicit local-development environment keys
+- `aws-secrets://organization/secret-name` for an AWS Secrets Manager JSON secret
+- `azure-key-vault://vault-name/secret-name` for an Azure Key Vault JSON secret
+- `vault://mount/path/to/secret` for a HashiCorp Vault KV v2 secret
+
+Managed secrets must contain a JSON object whose keys match the connector's required environment
+settings. They are resolved only during a connection test or workflow execution and are never added
+to installation API responses. When the SQLAlchemy backend is enabled, connector installations are
+stored in the same PostgreSQL platform database and survive API restarts.
 
 ## Data Source Onboarding
 

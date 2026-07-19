@@ -12,7 +12,7 @@ COPY examples ./examples
 COPY scripts ./scripts
 
 RUN python -m pip install --upgrade pip \
-    && python -m pip install --no-cache-dir -e ".[dev,observability,storage]"
+    && python -m pip install --no-cache-dir -e ".[dev,observability,secrets,storage]"
 
 EXPOSE 8000
 

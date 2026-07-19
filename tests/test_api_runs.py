@@ -312,6 +312,8 @@ def test_control_plane_page_and_assets_are_served(tmp_path):
     assert "Governance Center" in admin_page_response.text
     assert 'id="agentsList"' in admin_page_response.text
     assert 'id="connectorsList"' in admin_page_response.text
+    assert 'id="connectorForm"' in admin_page_response.text
+    assert 'id="installationsList"' in admin_page_response.text
     assert 'id="permissionsList"' in admin_page_response.text
     assert "/app/app-shell.css" in admin_page_response.text
     assert "/app/admin.js" in admin_page_response.text
@@ -369,6 +371,8 @@ def test_admin_script_loads_registries_connectors_and_affected_runs(tmp_path):
     assert 'requestJson("/admin/agents")' in response.text
     assert 'requestJson("/connectors")' in response.text
     assert 'requestJson("/connectors/credential-profiles")' in response.text
+    assert 'requestJson("/connectors/installations"' in response.text
+    assert "test?organization_id=" in response.text
     assert 'requestJson("/admin/policies")' in response.text
     assert 'requestJson("/admin/affected-runs")' in response.text
     assert "run.inspector_url" in response.text
