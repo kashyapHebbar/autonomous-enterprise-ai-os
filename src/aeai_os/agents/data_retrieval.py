@@ -64,7 +64,9 @@ class DataRetrievalAgent:
                 profile = profile_csv_dataset(dataset_path)
                 adapter = CsvDatasetAdapter.from_path(dataset_path)
                 adapter_name = "CsvDatasetAdapter"
-                dataset_kind = "local_file"
+                dataset_kind = (
+                    "public_url" if dataset.uri.lower().startswith("https://") else "local_file"
+                )
 
             schema_artifact_id = self._repository.next_artifact_id()
             quality_artifact_id = self._repository.next_artifact_id()

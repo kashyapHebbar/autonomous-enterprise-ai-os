@@ -352,7 +352,9 @@ function setRuntimeStatus(element, detailElement, value, detail, active) {
 function renderRuntimeContext() {
   const dataset = datasetArtifact();
   const sourceConnector = dataset?.metadata?.connector_id || "local-file";
-  const sourceIsLocal = sourceConnector === "local-file" || dataset?.uri?.startsWith("/");
+  const sourceIsRemote = /^https:\/\//i.test(dataset?.uri || "");
+  const sourceIsLocal =
+    !sourceIsRemote && (sourceConnector === "local-file" || dataset?.uri?.startsWith("/"));
   const storage =
     state.selectedArtifact?.metadata?.storage_backend ||
     connectorById("artifact-store")?.metadata?.backend ||
@@ -365,8 +367,12 @@ function renderRuntimeContext() {
   setRuntimeStatus(
     els.runtimeSource,
     els.runtimeSourceDetail,
-    sourceIsLocal ? "Local file" : titleLabel(sourceConnector),
-    sourceIsLocal ? "CSV on this Mac" : "Warehouse-backed dataset",
+    sourceIsRemote ? "Public URL" : sourceIsLocal ? "Local file" : titleLabel(sourceConnector),
+    sourceIsRemote
+      ? "HTTPS CSV dataset"
+      : sourceIsLocal
+        ? "CSV on this Mac"
+        : "Warehouse-backed dataset",
     true
   );
   setRuntimeStatus(
