@@ -102,6 +102,19 @@ The generated summary records:
 - Evaluation pass/fail score and checks
 - Event count and Prometheus-compatible metrics path
 
+## v1.0 Release Package
+
+The release checklist, demo walkthrough, screenshot/clip plan, and release notes live under
+`docs/release/`. Build the portable portfolio package with:
+
+```bash
+make release-package
+```
+
+The package is written to `artifacts/release/v1.0/` and includes the sample procurement dataset,
+portfolio architecture, release checklist, release notes, demo walkthrough, demo asset plan, and
+deployment docs.
+
 ## API Routes
 
 Authentication is disabled by default for local demos. When `AEAI_AUTH_ENABLED=true`, `/runs`
@@ -396,6 +409,9 @@ PYTHONPATH=src .venv/bin/python scripts/manage_database.py \
 ## Documentation
 
 - Portfolio architecture: [docs/portfolio-architecture.md](docs/portfolio-architecture.md)
+- v1.0 release checklist: [docs/release/v1.0-checklist.md](docs/release/v1.0-checklist.md)
+- v1.0 demo walkthrough: [docs/release/v1.0-demo-walkthrough.md](docs/release/v1.0-demo-walkthrough.md)
+- v1.0 release notes: [docs/release/v1.0-release-notes.md](docs/release/v1.0-release-notes.md)
 - Architecture: [docs/architecture.md](docs/architecture.md)
 - Development guide: [docs/development.md](docs/development.md)
 - Kubernetes baseline: [deploy/kubernetes/README.md](deploy/kubernetes/README.md)
