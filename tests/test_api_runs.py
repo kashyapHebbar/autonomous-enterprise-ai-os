@@ -294,7 +294,7 @@ def test_control_plane_page_and_assets_are_served(tmp_path):
     assert root_response.json()["artifact_browser"] == "/app/artifacts"
     assert root_response.json()["admin"] == "/app/admin"
     assert page_response.status_code == 200
-    assert "Workflow Console" in page_response.text
+    assert "Workflows" in page_response.text
     assert 'id="createRunForm"' in page_response.text
     assert 'id="runsList"' in page_response.text
     assert 'value="demo"' in page_response.text

@@ -148,3 +148,26 @@ def test_chart_specs_validate_required_analysis_sections():
         build_procurement_chart_specs({"kpis": {}})
 
     assert "missing required sections" in str(exc_info.value)
+
+
+def test_chart_specs_render_dataset_currency():
+    analysis = {
+        "dataset": {"currency": "GBP", "currency_symbol": "£"},
+        "kpis": {
+            "total_spend": 3427.96,
+            "supplier_count": 2,
+            "category_count": 2,
+            "outlier_count": 0,
+            "estimated_savings": 100,
+        },
+        "spend_by_supplier": [{"supplier": "Acme", "spend": 3427.96, "share": 1.0}],
+        "spend_by_category": [{"category": "Software", "spend": 3427.96, "share": 1.0}],
+        "spend_trend": [{"month": "2025-03", "spend": 3427.96}],
+        "outliers": [],
+    }
+
+    specs = build_procurement_chart_specs(analysis)
+
+    assert all("$" not in spec.body_html for spec in specs)
+    assert "£3,427.96" in specs[0].body_html
+    assert "£3.4K" in specs[3].body_html

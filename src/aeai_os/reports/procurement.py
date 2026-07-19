@@ -18,21 +18,25 @@ def render_procurement_markdown_report(
     missing_risks = analysis.get("missing_data_risks", [])
     charts = [artifact for artifact in artifacts if artifact.type == ArtifactType.CHART]
     dashboards = [artifact for artifact in artifacts if artifact.type == ArtifactType.DASHBOARD]
+    currency_symbol = analysis.get("dataset", {}).get("currency_symbol", "$")
 
     sections = [
         "# Procurement Analysis Report",
         "## Executive Summary",
-        _executive_summary(kpis, insights),
+        _executive_summary(kpis, insights, currency_symbol),
         "## Key Findings",
         _bullet_list(insights),
         "## Procurement KPIs",
-        _kpi_table(kpis),
+        _kpi_table(kpis, currency_symbol),
         "## Dataset Quality",
         _quality_section(schema_profile=schema_profile, quality_report=quality_report),
         "## Charts And Dashboard",
         _chart_section(charts=charts, dashboards=dashboards),
         "## Recommendations",
-        _recommendations_section(savings_opportunities=savings_opportunities),
+        _recommendations_section(
+            savings_opportunities=savings_opportunities,
+            currency_symbol=currency_symbol,
+        ),
         "## Missing Data Risks",
         _missing_risks_section(missing_risks=missing_risks),
         "## Artifact Lineage",
@@ -66,23 +70,29 @@ def render_procurement_markdown_report(
     return "\n\n".join(sections) + "\n"
 
 
-def _executive_summary(kpis: dict[str, Any], insights: list[str]) -> str:
+def _executive_summary(
+    kpis: dict[str, Any], insights: list[str], currency_symbol: str = "$"
+) -> str:
     first_insight = insights[0] if insights else "No insight narrative was generated."
+    total_spend = _money(kpis["total_spend"], currency_symbol)
     return (
-        f"The workflow analyzed {_money(kpis['total_spend'])} in procurement spend "
+        f"The workflow analyzed {total_spend} in procurement spend "
         f"across {kpis['supplier_count']} supplier(s) and {kpis['category_count']} "
         f"category group(s). {first_insight}"
     )
 
 
-def _kpi_table(kpis: dict[str, Any]) -> str:
+def _kpi_table(kpis: dict[str, Any], currency_symbol: str = "$") -> str:
     rows = [
-        ("Total spend", _money(kpis["total_spend"])),
+        ("Total spend", _money(kpis["total_spend"], currency_symbol)),
         ("Supplier count", str(kpis["supplier_count"])),
         ("Category count", str(kpis["category_count"])),
-        ("Average transaction value", _money(kpis.get("average_transaction_value", 0))),
+        (
+            "Average transaction value",
+            _money(kpis.get("average_transaction_value", 0), currency_symbol),
+        ),
         ("Outlier count", str(kpis["outlier_count"])),
-        ("Estimated savings", _money(kpis["estimated_savings"])),
+        ("Estimated savings", _money(kpis["estimated_savings"], currency_symbol)),
     ]
     return _markdown_table(["Metric", "Value"], rows)
 
@@ -140,13 +150,15 @@ def _chart_section(
     return _markdown_table(["Artifact", "ID", "URI"], rows)
 
 
-def _recommendations_section(savings_opportunities: list[dict[str, Any]]) -> str:
+def _recommendations_section(
+    savings_opportunities: list[dict[str, Any]], currency_symbol: str = "$"
+) -> str:
     if not savings_opportunities:
         return "No savings opportunities were identified."
     recommendations = []
     for item in savings_opportunities:
         kind = str(item.get("type", "opportunity")).replace("_", " ")
-        savings = _money(item.get("estimated_savings", 0))
+        savings = _money(item.get("estimated_savings", 0), currency_symbol)
         rationale = item.get("rationale", "Review this procurement opportunity.")
         recommendations.append(f"{kind.title()}: {rationale} Estimated savings: {savings}.")
     return _bullet_list(recommendations)
@@ -204,5 +216,5 @@ def _number(value: Any) -> float:
         return 0.0
 
 
-def _money(value: Any) -> str:
-    return f"${_number(value):,.2f}"
+def _money(value: Any, currency_symbol: str = "$") -> str:
+    return f"{currency_symbol}{_number(value):,.2f}"

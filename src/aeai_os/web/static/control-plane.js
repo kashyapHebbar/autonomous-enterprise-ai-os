@@ -211,29 +211,31 @@ function renderRuns() {
 }
 
 function renderRunItem(run) {
+  const outputCount = Array.isArray(run.artifacts)
+    ? run.artifacts.length
+    : run.status === "completed"
+      ? "Ready"
+      : "--";
+  const sourceLabel = run.dataset_artifact_id ? "Dataset attached" : "No dataset";
   return `
     <article class="run-item">
-      <div class="run-main">
-        <div class="run-title-group">
-          <a class="workflow-title" href="${inspectorUrl(run.id)}">${escapeHtml(
+      <a class="run-row-link" href="${inspectorUrl(run.id)}">
+        <div class="run-identity">
+          <span class="workflow-title">${escapeHtml(
             workflowTitle(run.task)
-          )}</a>
-          <code title="${escapeHtml(run.id)}">${escapeHtml(shortId(run.id))}</code>
+          )}</span>
+          <span class="run-subline">
+            <code title="${escapeHtml(run.id)}">${escapeHtml(shortId(run.id))}</code>
+            <span>${escapeHtml(sourceLabel)}</span>
+          </span>
         </div>
         <span class="${statusClass(run.status)}">${escapeHtml(titleLabel(run.status))}</span>
-      </div>
-      <div class="meta-line">
-        <span>${escapeHtml(formatDate(run.updated_at))}</span>
-        <span>${
-          Array.isArray(run.artifacts)
-            ? `${run.artifacts.length} outputs`
-            : run.status === "completed"
-              ? "Outputs ready"
-              : "No outputs yet"
-        }</span>
-        <span>${run.dataset_artifact_id ? "Dataset attached" : "No dataset"}</span>
-      </div>
-      <a class="run-link" href="${inspectorUrl(run.id)}">Open workflow</a>
+        <span class="run-output-count">${escapeHtml(outputCount)}</span>
+        <time datetime="${escapeHtml(run.updated_at || "")}">${escapeHtml(
+          formatDate(run.updated_at)
+        )}</time>
+        <span class="row-arrow" aria-hidden="true">&#8594;</span>
+      </a>
     </article>`;
 }
 

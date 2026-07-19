@@ -5,11 +5,13 @@ from pathlib import Path
 
 import pytest
 
+import aeai_os.storage.artifacts as artifact_storage
 from aeai_os.runs.repository import InMemoryRunRepository
 from aeai_os.schemas.enums import ArtifactType, RunStatus
 from aeai_os.settings import AppSettings
 from aeai_os.storage import (
     ArtifactStorageConfigurationError,
+    ArtifactStorageError,
     LocalArtifactStore,
     S3ArtifactStore,
     build_artifact_store,
@@ -32,6 +34,43 @@ class FakeS3Client:
 
     def get_object(self, Bucket: str, Key: str) -> dict:
         return {"Body": BytesIO(self.objects[(Bucket, Key)]["Body"])}
+
+
+class FakeHttpHeaders:
+    def get_content_type(self) -> str:
+        return "text/csv"
+
+
+class FakeHttpResponse:
+    headers = FakeHttpHeaders()
+
+    def __init__(self, uri: str, payload: bytes) -> None:
+        self.uri = uri
+        self.payload = payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args) -> None:
+        return None
+
+    def geturl(self) -> str:
+        return self.uri
+
+    def read(self, _limit: int) -> bytes:
+        return self.payload
+
+
+class FakeHttpOpener:
+    def __init__(self, uri: str, payload: bytes) -> None:
+        self.uri = uri
+        self.payload = payload
+        self.calls = 0
+
+    def open(self, _request, timeout: int):
+        assert timeout == artifact_storage.PUBLIC_DATASET_TIMEOUT_SECONDS
+        self.calls += 1
+        return FakeHttpResponse(self.uri, self.payload)
 
 
 def write_procurement_fixture(path: Path) -> None:
@@ -66,6 +105,54 @@ def test_local_artifact_store_writes_reads_and_reports_metadata(tmp_path):
     assert stored.metadata["storage_key"] == "run_123/data_profile/schema.json"
     assert stored.metadata["content_type"] == "application/json"
     assert stored.metadata["credential_profile_id"] == "local-filesystem"
+
+
+def test_local_artifact_store_downloads_public_https_csv_once(tmp_path, monkeypatch):
+    uri = "https://data.example.com/procurement.csv"
+    payload = b"supplier,spend_amount\nAcme,100\n"
+    opener = FakeHttpOpener(uri, payload)
+    monkeypatch.setattr(
+        artifact_storage.socket,
+        "getaddrinfo",
+        lambda *_args, **_kwargs: [(None, None, None, None, ("93.184.216.34", 443))],
+    )
+    monkeypatch.setattr(artifact_storage, "build_opener", lambda *_handlers: opener)
+    store = LocalArtifactStore(tmp_path / "artifacts")
+
+    first_path = store.local_path(uri)
+    second_path = store.local_path(uri)
+
+    assert first_path == second_path
+    assert first_path.read_bytes() == payload
+    assert opener.calls == 1
+
+
+def test_local_artifact_store_rejects_non_public_dataset_hosts(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        artifact_storage.socket,
+        "getaddrinfo",
+        lambda *_args, **_kwargs: [(None, None, None, None, ("127.0.0.1", 443))],
+    )
+    store = LocalArtifactStore(tmp_path / "artifacts")
+
+    with pytest.raises(ArtifactStorageError, match="non-public network address"):
+        store.local_path("https://localhost/procurement.csv")
+
+
+@pytest.mark.parametrize(
+    ("uri", "message"),
+    [
+        ("http://data.example.com/procurement.csv", "must use HTTPS"),
+        ("https://data.example.com/procurement.json", "must reference a .csv file"),
+    ],
+)
+def test_local_artifact_store_rejects_unsafe_public_dataset_urls(
+    tmp_path, uri, message
+):
+    store = LocalArtifactStore(tmp_path / "artifacts")
+
+    with pytest.raises(ArtifactStorageError, match=message):
+        store.local_path(uri)
 
 
 def test_s3_artifact_store_uses_stable_s3_uris_and_mock_client(tmp_path):

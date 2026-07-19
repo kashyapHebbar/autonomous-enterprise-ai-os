@@ -4,8 +4,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Workflows | Autonomous Enterprise AI OS</title>
-    <link rel="stylesheet" href="/app/control-plane.css?v=workflow-console-2" />
-    <link rel="stylesheet" href="/app/app-shell.css?v=product-system-1" />
+    <link rel="stylesheet" href="/app/app-shell.css?v=product-system-2" />
+    <link rel="stylesheet" href="/app/control-plane.css?v=workflow-console-3" />
   </head>
   <body>
     <main class="shell product-shell">
@@ -14,13 +14,13 @@
           <span class="brand-mark" aria-hidden="true">AE</span>
           <span class="brand-copy">
             <strong>Enterprise AI OS</strong>
-            <span>Autonomous control plane</span>
+            <span>Control plane</span>
           </span>
         </a>
         <nav class="app-nav" aria-label="Primary">
-          <a href="/app" aria-current="page"><span class="nav-icon" aria-hidden="true">W</span><span>Workflows</span></a>
-          <a href="/app/artifacts"><span class="nav-icon" aria-hidden="true">O</span><span>Outputs</span></a>
-          <a href="/app/admin"><span class="nav-icon" aria-hidden="true">G</span><span>Governance</span></a>
+          <a href="/app" aria-current="page"><span class="nav-icon" aria-hidden="true">&#8984;</span><span>Workflows</span></a>
+          <a href="/app/artifacts"><span class="nav-icon" aria-hidden="true">&#9635;</span><span>Outputs</span></a>
+          <a href="/app/admin"><span class="nav-icon" aria-hidden="true">&#9672;</span><span>Governance</span></a>
           <a href="/docs"><span class="nav-icon" aria-hidden="true">{ }</span><span>API Reference</span></a>
         </nav>
         <div class="sidebar-footer">
@@ -32,11 +32,11 @@
       <div class="workspace-shell">
         <section class="intro-band" aria-labelledby="pageTitle">
           <div>
-            <p class="eyebrow">Autonomous operations</p>
-            <h1 id="pageTitle">Workflow Console</h1>
+            <p class="eyebrow">Operations</p>
+            <h1 id="pageTitle">Workflows</h1>
           </div>
           <div class="page-actions">
-            <span class="status-pill status-ok">Orchestrator ready</span>
+            <span class="system-status"><span aria-hidden="true"></span>Orchestrator online</span>
             <button class="icon-button" id="refreshRuns" type="button" title="Refresh runs">
               <svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M20 6v5h-5" />
@@ -50,33 +50,33 @@
         </section>
 
         <section class="workflow-summary" aria-label="Workflow summary">
-          <article><span>Total workflows</span><strong id="totalWorkflowCount">--</strong></article>
-          <article><span>Completed</span><strong id="completedWorkflowCount">--</strong></article>
-          <article><span>In progress</span><strong id="activeWorkflowCount">--</strong></article>
-          <article><span>Needs attention</span><strong id="attentionWorkflowCount">--</strong></article>
+          <article class="summary-total"><span>All workflows</span><strong id="totalWorkflowCount">--</strong></article>
+          <article class="summary-completed"><span>Completed</span><strong id="completedWorkflowCount">--</strong></article>
+          <article class="summary-active"><span>In progress</span><strong id="activeWorkflowCount">--</strong></article>
+          <article class="summary-attention"><span>Needs attention</span><strong id="attentionWorkflowCount">--</strong></article>
         </section>
 
         <section class="control-grid">
           <section class="panel create-panel" aria-labelledby="createRunTitle">
             <div class="section-heading">
               <div>
-                <p class="eyebrow">New analysis</p>
-                <h2 id="createRunTitle">Launch Workflow</h2>
+                <p class="eyebrow">Create</p>
+                <h2 id="createRunTitle">New workflow</h2>
               </div>
               <span class="status-pill" id="sourceStatus">Loading sources</span>
             </div>
 
             <form id="createRunForm" class="run-form">
               <label class="field">
-                <span>Analysis objective</span>
+                <span>Objective</span>
                 <textarea
                   id="taskInput"
                   name="task"
-                  rows="5"
+                  rows="4"
                   required
                   minlength="3"
                   maxlength="4000"
-                  placeholder="Analyze procurement spend and create a dashboard."
+                  placeholder="Analyze procurement spend, identify supplier risk, and prepare an executive dashboard."
                 ></textarea>
               </label>
 
@@ -108,12 +108,13 @@
                   name="datasetUri"
                   type="text"
                   maxlength="2048"
-                  placeholder="/path/procurement.csv or s3://bucket/procurement.csv"
+                  placeholder="https://example.com/procurement.csv"
                 />
               </label>
 
               <div class="form-actions">
                 <button class="primary-button" id="createRunButton" type="submit">
+                  <span class="run-button-icon" aria-hidden="true"></span>
                   Run workflow
                 </button>
                 <p class="action-text" id="formStatus" aria-live="polite"></p>
@@ -126,8 +127,8 @@
           <section class="panel runs-panel" aria-labelledby="runsListTitle">
             <div class="section-heading">
               <div>
-                <p class="eyebrow">Recent activity</p>
-                <h2 id="runsListTitle">Workflow History</h2>
+                <p class="eyebrow">Activity</p>
+                <h2 id="runsListTitle">Recent workflows</h2>
               </div>
               <span class="status-pill" id="runCount">--</span>
             </div>
@@ -147,11 +148,18 @@
                 </select>
               </label>
             </div>
+            <div class="run-table-head" aria-hidden="true">
+              <span>Workflow</span>
+              <span>Status</span>
+              <span>Outputs</span>
+              <span>Updated</span>
+              <span></span>
+            </div>
             <div class="run-list" id="runsList"></div>
           </section>
         </section>
       </div>
     </main>
-    <script src="/app/control-plane.js?v=workflow-console-2" defer></script>
+    <script src="/app/control-plane.js?v=workflow-console-3" defer></script>
   </body>
 </html>

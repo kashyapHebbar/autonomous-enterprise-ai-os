@@ -27,6 +27,7 @@ def build_procurement_chart_specs(analysis: dict[str, Any]) -> list[ProcurementC
     category_spend = list(analysis["spend_by_category"])
     trend = list(analysis["spend_trend"])
     outliers = list(analysis["outliers"])
+    currency_symbol = analysis.get("dataset", {}).get("currency_symbol", "$")
 
     return [
         ProcurementChartSpec(
@@ -41,7 +42,7 @@ def build_procurement_chart_specs(analysis: dict[str, Any]) -> list[ProcurementC
                 {"metric": "Outliers", "value": kpis["outlier_count"]},
                 {"metric": "Estimated savings", "value": kpis["estimated_savings"]},
             ],
-            body_html=_metric_grid(kpis),
+            body_html=_metric_grid(kpis, currency_symbol),
         ),
         ProcurementChartSpec(
             slug="supplier-spend",
@@ -55,6 +56,7 @@ def build_procurement_chart_specs(analysis: dict[str, Any]) -> list[ProcurementC
                 value_key="spend",
                 share_key="share",
                 color="#2563eb",
+                currency_symbol=currency_symbol,
             ),
         ),
         ProcurementChartSpec(
@@ -69,6 +71,7 @@ def build_procurement_chart_specs(analysis: dict[str, Any]) -> list[ProcurementC
                 value_key="spend",
                 share_key="share",
                 color="#0f766e",
+                currency_symbol=currency_symbol,
             ),
         ),
         ProcurementChartSpec(
@@ -77,7 +80,12 @@ def build_procurement_chart_specs(analysis: dict[str, Any]) -> list[ProcurementC
             chart_type="line",
             description="Month-over-month procurement spend trend.",
             data=trend,
-            body_html=_line_chart(rows=trend, label_key="month", value_key="spend"),
+            body_html=_line_chart(
+                rows=trend,
+                label_key="month",
+                value_key="spend",
+                currency_symbol=currency_symbol,
+            ),
         ),
         ProcurementChartSpec(
             slug="anomaly-review",
@@ -85,7 +93,7 @@ def build_procurement_chart_specs(analysis: dict[str, Any]) -> list[ProcurementC
             chart_type="table",
             description="High-value transaction outliers that may require review.",
             data=outliers,
-            body_html=_outlier_table(outliers),
+            body_html=_outlier_table(outliers, currency_symbol),
         ),
     ]
 
@@ -141,6 +149,7 @@ def render_dashboard_document(
     }
     kpis = analysis["kpis"]
     row_count = analysis.get("dataset", {}).get("row_count", 0)
+    currency_symbol = analysis.get("dataset", {}).get("currency_symbol", "$")
 
     return _document_shell(
         title="Procurement Dashboard",
@@ -158,7 +167,7 @@ def render_dashboard_document(
           <section class="dashboard-kpis">
             <div>
               <span>Total spend</span>
-              <strong>{escape(_money(kpis["total_spend"]))}</strong>
+              <strong>{escape(_money(kpis["total_spend"], currency_symbol))}</strong>
             </div>
             <div>
               <span>Suppliers</span>
@@ -170,7 +179,7 @@ def render_dashboard_document(
             </div>
             <div>
               <span>Estimated savings</span>
-              <strong>{escape(_money(kpis["estimated_savings"]))}</strong>
+              <strong>{escape(_money(kpis["estimated_savings"], currency_symbol))}</strong>
             </div>
           </section>
 
@@ -217,13 +226,13 @@ def _validate_analysis_payload(analysis: dict[str, Any]) -> None:
         raise VisualizationError("Analysis KPI payload is missing: " + ", ".join(missing_kpis))
 
 
-def _metric_grid(kpis: dict[str, Any]) -> str:
+def _metric_grid(kpis: dict[str, Any], currency_symbol: str = "$") -> str:
     metrics = [
-        ("Total spend", _money(kpis["total_spend"])),
+        ("Total spend", _money(kpis["total_spend"], currency_symbol)),
         ("Suppliers", str(kpis["supplier_count"])),
         ("Categories", str(kpis["category_count"])),
         ("Outliers", str(kpis["outlier_count"])),
-        ("Estimated savings", _money(kpis["estimated_savings"])),
+        ("Estimated savings", _money(kpis["estimated_savings"], currency_symbol)),
     ]
     items = "\n".join(
         f"""
@@ -243,6 +252,7 @@ def _bar_chart(
     value_key: str,
     share_key: str,
     color: str,
+    currency_symbol: str = "$",
 ) -> str:
     if not rows:
         return '<p class="empty-state">No spend data was available for this view.</p>'
@@ -263,7 +273,7 @@ def _bar_chart(
               <text x="0" y="{y + 16}" class="axis-label">{escape(label)}</text>
               <rect x="180" y="{y}" width="{width:.2f}" height="22" rx="4" fill="{color}" />
               <text x="{190 + width:.2f}" y="{y + 16}" class="value-label">
-                {escape(_money(value))} ({escape(share)})
+                {escape(_money(value, currency_symbol))} ({escape(share)})
               </text>
             </g>
             """
@@ -277,7 +287,12 @@ def _bar_chart(
     """
 
 
-def _line_chart(rows: list[dict[str, Any]], label_key: str, value_key: str) -> str:
+def _line_chart(
+    rows: list[dict[str, Any]],
+    label_key: str,
+    value_key: str,
+    currency_symbol: str = "$",
+) -> str:
     if not rows:
         return '<p class="empty-state">No monthly trend data was available.</p>'
 
@@ -310,7 +325,7 @@ def _line_chart(rows: list[dict[str, Any]], label_key: str, value_key: str) -> s
             {escape(_truncate(labels[index], 12))}
           </text>
           <text x="{x:.2f}" y="{y - 12:.2f}" text-anchor="middle" class="value-label">
-            {escape(_compact_money(values[index]))}
+            {escape(_compact_money(values[index], currency_symbol))}
           </text>
         </g>
         """
@@ -333,7 +348,7 @@ def _line_chart(rows: list[dict[str, Any]], label_key: str, value_key: str) -> s
     """
 
 
-def _outlier_table(outliers: list[dict[str, Any]]) -> str:
+def _outlier_table(outliers: list[dict[str, Any]], currency_symbol: str = "$") -> str:
     if not outliers:
         return '<p class="empty-state">No high-value transaction outliers were detected.</p>'
 
@@ -343,7 +358,7 @@ def _outlier_table(outliers: list[dict[str, Any]]) -> str:
           <td>{escape(str(item.get("row_number", "")))}</td>
           <td>{escape(str(item.get("supplier", "")))}</td>
           <td>{escape(str(item.get("category", "")))}</td>
-          <td>{escape(_money(item.get("amount", 0)))}</td>
+          <td>{escape(_money(item.get("amount", 0), currency_symbol))}</td>
           <td>{escape(str(item.get("reason", "")))}</td>
         </tr>
         """
@@ -560,17 +575,17 @@ def _number(value: Any) -> float:
         return 0.0
 
 
-def _money(value: Any) -> str:
-    return f"${_number(value):,.2f}"
+def _money(value: Any, currency_symbol: str = "$") -> str:
+    return f"{currency_symbol}{_number(value):,.2f}"
 
 
-def _compact_money(value: Any) -> str:
+def _compact_money(value: Any, currency_symbol: str = "$") -> str:
     amount = _number(value)
     if abs(amount) >= 1_000_000:
-        return f"${amount / 1_000_000:.1f}M"
+        return f"{currency_symbol}{amount / 1_000_000:.1f}M"
     if abs(amount) >= 1_000:
-        return f"${amount / 1_000:.1f}K"
-    return f"${amount:.0f}"
+        return f"{currency_symbol}{amount / 1_000:.1f}K"
+    return f"{currency_symbol}{amount:.0f}"
 
 
 def _percent(value: float) -> str:

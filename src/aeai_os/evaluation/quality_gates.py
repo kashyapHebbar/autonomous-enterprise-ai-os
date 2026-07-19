@@ -132,7 +132,8 @@ def _data_consistency_check(
     chart_payloads: list[dict[str, Any]],
 ) -> dict[str, Any]:
     total_spend = _number(analysis["kpis"]["total_spend"])
-    expected_total = _money(total_spend)
+    currency_symbol = analysis.get("dataset", {}).get("currency_symbol", "$")
+    expected_total = _money(total_spend, currency_symbol)
     report_matches = expected_total in report_markdown
     chart_total = _find_chart_metric(chart_payloads, "Total spend")
     chart_matches = chart_total is not None and abs(_number(chart_total) - total_spend) <= 0.0001
@@ -215,5 +216,5 @@ def _number(value: Any) -> float:
         return 0.0
 
 
-def _money(value: Any) -> str:
-    return f"${_number(value):,.2f}"
+def _money(value: Any, currency_symbol: str = "$") -> str:
+    return f"{currency_symbol}{_number(value):,.2f}"

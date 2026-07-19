@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import ipaddress
 import json
+import socket
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from hashlib import sha256
 from pathlib import Path
 from typing import Any, Protocol
 from urllib.parse import urlparse
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from aeai_os.observability.tracing import start_span
 from aeai_os.security.redaction import redact_value
@@ -18,6 +21,16 @@ class ArtifactStorageError(RuntimeError):
 
 class ArtifactStorageConfigurationError(ArtifactStorageError):
     """Raised when a configured artifact storage backend is incomplete."""
+
+
+PUBLIC_DATASET_MAX_BYTES = 10 * 1024 * 1024
+PUBLIC_DATASET_TIMEOUT_SECONDS = 10
+PUBLIC_DATASET_CONTENT_TYPES = {
+    "application/csv",
+    "application/octet-stream",
+    "text/csv",
+    "text/plain",
+}
 
 
 @dataclass(frozen=True)
@@ -141,6 +154,8 @@ class LocalArtifactStore(ArtifactStore):
         parsed = urlparse(uri)
         if parsed.scheme in {"", "file"}:
             return Path(parsed.path if parsed.scheme == "file" else uri)
+        if parsed.scheme in {"http", "https"}:
+            return _download_public_csv(uri, self.root / ".remote-cache")
         raise ArtifactStorageError(f"Local artifact store cannot read URI: {uri}")
 
 
@@ -230,6 +245,8 @@ class S3ArtifactStore(ArtifactStore):
             parsed = urlparse(uri)
             if parsed.scheme in {"", "file"}:
                 return Path(parsed.path if parsed.scheme == "file" else uri).read_bytes()
+            if parsed.scheme in {"http", "https"}:
+                return _download_public_csv(uri, self.local_cache_root).read_bytes()
             if parsed.scheme != "s3":
                 raise ArtifactStorageError(f"S3 artifact store cannot read URI: {uri}")
             bucket = parsed.netloc
@@ -242,6 +259,8 @@ class S3ArtifactStore(ArtifactStore):
         parsed = urlparse(uri)
         if parsed.scheme in {"", "file"}:
             return Path(parsed.path if parsed.scheme == "file" else uri)
+        if parsed.scheme in {"http", "https"}:
+            return _download_public_csv(uri, self.local_cache_root)
         suffix = Path(parsed.path).suffix
         cache_name = sha256(uri.encode("utf-8")).hexdigest() + suffix
         cache_path = self.local_cache_root / cache_name
@@ -270,6 +289,85 @@ def build_artifact_store(settings: Any, artifact_root: str | Path | None = None)
             local_cache_root=Path(local_root) / ".cache",
         )
     raise ArtifactStorageConfigurationError(f"Unsupported artifact storage backend: {backend}")
+
+
+class _PublicHttpsRedirectHandler(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001, ANN201
+        _validate_public_csv_url(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _download_public_csv(uri: str, cache_root: Path) -> Path:
+    _validate_public_csv_url(uri)
+    cache_root.mkdir(parents=True, exist_ok=True)
+    cache_path = cache_root / f"{sha256(uri.encode('utf-8')).hexdigest()}.csv"
+    if cache_path.exists():
+        return cache_path
+
+    request = Request(
+        uri,
+        headers={
+            "Accept": "text/csv,text/plain;q=0.9,application/octet-stream;q=0.5",
+            "User-Agent": "Autonomous-Enterprise-AI-OS/1.0",
+        },
+    )
+    try:
+        with build_opener(_PublicHttpsRedirectHandler()).open(
+            request,
+            timeout=PUBLIC_DATASET_TIMEOUT_SECONDS,
+        ) as response:
+            _validate_public_csv_url(response.geturl())
+            content_type = response.headers.get_content_type().lower()
+            if content_type not in PUBLIC_DATASET_CONTENT_TYPES:
+                raise ArtifactStorageError(
+                    f"Public dataset returned unsupported content type: {content_type}"
+                )
+            payload = response.read(PUBLIC_DATASET_MAX_BYTES + 1)
+    except ArtifactStorageError:
+        raise
+    except OSError as exc:
+        raise ArtifactStorageError(f"Unable to download public dataset: {exc}") from exc
+
+    if len(payload) > PUBLIC_DATASET_MAX_BYTES:
+        limit_mb = PUBLIC_DATASET_MAX_BYTES // (1024 * 1024)
+        raise ArtifactStorageError(f"Public dataset exceeds the {limit_mb} MB limit.")
+    if not payload.strip():
+        raise ArtifactStorageError("Public dataset is empty.")
+
+    temporary_path = cache_path.with_suffix(".tmp")
+    temporary_path.write_bytes(payload)
+    temporary_path.replace(cache_path)
+    return cache_path
+
+
+def _validate_public_csv_url(uri: str) -> None:
+    parsed = urlparse(uri)
+    if parsed.scheme != "https":
+        raise ArtifactStorageError("Public datasets must use HTTPS.")
+    if not parsed.hostname:
+        raise ArtifactStorageError("Public dataset URL must include a hostname.")
+    if Path(parsed.path).suffix.lower() != ".csv":
+        raise ArtifactStorageError("Public dataset URL must reference a .csv file.")
+
+    try:
+        addresses = {
+            item[4][0]
+            for item in socket.getaddrinfo(
+                parsed.hostname,
+                parsed.port or 443,
+                type=socket.SOCK_STREAM,
+            )
+        }
+    except OSError as exc:
+        raise ArtifactStorageError(
+            f"Unable to resolve public dataset host: {parsed.hostname}"
+        ) from exc
+    if not addresses:
+        raise ArtifactStorageError(
+            f"Unable to resolve public dataset host: {parsed.hostname}"
+        )
+    if any(not ipaddress.ip_address(address).is_global for address in addresses):
+        raise ArtifactStorageError("Public dataset URL resolves to a non-public network address.")
 
 
 def _payload_relative_path(run_id: str, node_id: str, filename: str) -> Path:

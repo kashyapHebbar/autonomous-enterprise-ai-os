@@ -107,6 +107,39 @@ def test_procurement_kpis_cover_spend_trends_outliers_savings_and_missing_risks(
     }
 
 
+def test_procurement_kpis_support_common_public_spend_export_columns(tmp_path):
+    csv_path = tmp_path / "public-spend.csv"
+    csv_path.write_text(
+        "\n".join(
+            [
+                "Date,Expense Type,Supplier,Amount (GBP)",
+                '30/03/2025,IT Software,Amazon Business,£699.25',
+                '17/04/2025,Training,DATACAMP INC.,"£2,128.71"',
+                "Jul-25,Cloud subscriptions,Example Cloud,£600",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    analysis = analyze_procurement_dataset(CsvDatasetAdapter.from_path(csv_path)).to_dict()
+
+    assert analysis["kpis"]["total_spend"] == 3427.96
+    assert analysis["dataset"]["currency"] == "GBP"
+    assert analysis["dataset"]["currency_symbol"] == "£"
+    assert analysis["insights"][0] == "Total analyzed procurement spend is £3,427.96."
+    assert analysis["dataset"]["resolved_columns"] == {
+        "supplier": "Supplier",
+        "category": "Expense Type",
+        "amount": "Amount (GBP)",
+        "date": "Date",
+    }
+    assert analysis["spend_trend"] == [
+        {"month": "2025-03", "spend": 699.25},
+        {"month": "2025-04", "spend": 2128.71},
+        {"month": "2025-07", "spend": 600.0},
+    ]
+
+
 def test_analytics_agent_registers_kpi_and_reproducible_code_artifacts(tmp_path):
     repository, run, dataset, agent = build_agent_fixture(tmp_path)
 
