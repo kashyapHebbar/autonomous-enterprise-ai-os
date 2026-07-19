@@ -45,6 +45,25 @@ def test_runtime_config_rejects_missing_worker_queue_configuration():
     assert "Worker requires AEAI_WORKFLOW_QUEUE_BACKEND=redis." in errors
 
 
+def test_runtime_config_accepts_oidc_identity_configuration():
+    env = {
+        "AEAI_ENV": "production",
+        "AEAI_SERVICE_NAME": "autonomous-enterprise-ai-os",
+        "AEAI_API_PORT": "8000",
+        "AEAI_RUN_REPOSITORY_BACKEND": "sqlalchemy",
+        "AEAI_DATABASE_URL": "postgresql+psycopg://aeai:secret@postgres/aeai_os",
+        "AEAI_WORKFLOW_EXECUTION_MODE": "async",
+        "AEAI_WORKFLOW_QUEUE_BACKEND": "redis",
+        "AEAI_REDIS_URL": "redis://redis:6379/0",
+        "AEAI_AUTH_MODE": "oidc",
+        "AEAI_OIDC_ISSUER": "https://identity.example.com",
+        "AEAI_OIDC_AUDIENCE": "aeai-os",
+        "AEAI_OIDC_JWKS_URL": "https://identity.example.com/.well-known/jwks.json",
+    }
+
+    assert validate_runtime_config(env, component="api") == []
+
+
 def test_runtime_config_rejects_production_placeholders():
     env = {
         "AEAI_ENV": "production",

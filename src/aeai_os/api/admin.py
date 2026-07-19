@@ -78,7 +78,11 @@ def build_admin_router(
 
     @router.get("/affected-runs", response_model=list[AffectedRunResponse])
     def list_affected_runs(user: AdminUser) -> list[AffectedRunResponse]:
-        return _find_affected_runs(run_repository)
+        return _find_affected_runs(
+            run_repository,
+            organization_id=user.organization_id,
+            workspace_id=user.workspace_id,
+        )
 
     return router
 
@@ -92,9 +96,18 @@ def _agent_to_response(registration) -> AgentAdminResponse:
     )
 
 
-def _find_affected_runs(repository: InMemoryRunRepository) -> list[AffectedRunResponse]:
+def _find_affected_runs(
+    repository: InMemoryRunRepository,
+    *,
+    organization_id: str = "local-org",
+    workspace_id: str = "default",
+) -> list[AffectedRunResponse]:
     affected: list[AffectedRunResponse] = []
     for run in reversed(repository.list_runs()):
+        if run.metadata.get("organization_id", "local-org") != organization_id:
+            continue
+        if run.metadata.get("workspace_id", "default") != workspace_id:
+            continue
         candidate = _affected_run_from_record(repository, run)
         if candidate is not None:
             affected.append(candidate)

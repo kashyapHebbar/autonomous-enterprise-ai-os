@@ -48,8 +48,6 @@ def test_connector_installation_api_creates_lists_and_tests_tenant_scoped_instal
         json={
             "connector_id": "snowflake-default",
             "name": "Finance Snowflake",
-            "organization_id": "acme",
-            "workspace_id": "finance",
             "credential_reference": "env://SNOWFLAKE_USER/SNOWFLAKE_PASSWORD",
             "configuration": {
                 "account": "acct",
@@ -61,10 +59,9 @@ def test_connector_installation_api_creates_lists_and_tests_tenant_scoped_instal
     )
 
     installation = response.json()
-    own_list = client.get("/connectors/installations?organization_id=acme")
-    other_list = client.get("/connectors/installations?organization_id=other")
+    own_list = client.get("/connectors/installations")
     test_response = client.post(
-        f"/connectors/installations/{installation['id']}/test?organization_id=acme"
+        f"/connectors/installations/{installation['id']}/test"
     )
 
     assert response.status_code == 201
@@ -72,7 +69,8 @@ def test_connector_installation_api_creates_lists_and_tests_tenant_scoped_instal
     assert installation["credential_reference"] == "env://SNOWFLAKE_USER/SNOWFLAKE_PASSWORD"
     assert "secret-password" not in str(installation)
     assert own_list.json() == [installation]
-    assert other_list.json() == []
+    assert installation["organization_id"] == "local-org"
+    assert installation["workspace_id"] == "default"
     assert test_response.status_code == 200
     assert test_response.json()["status"] == "ok"
 
@@ -85,7 +83,6 @@ def test_connector_installation_api_rejects_raw_secret_configuration():
         json={
             "connector_id": "snowflake-default",
             "name": "Unsafe Snowflake",
-            "organization_id": "acme",
             "credential_reference": "vault://acme/snowflake",
             "configuration": {"password": "must-not-be-stored"},
         },

@@ -127,6 +127,8 @@ def test_auth_disabled_allows_local_run_creation_and_records_local_actor(tmp_pat
         "id": "local-dev",
         "name": "Local Developer",
         "roles": ["admin"],
+        "organization_id": "local-org",
+        "workspace_id": "default",
     }
 
 
@@ -233,7 +235,11 @@ def test_api_created_sqlalchemy_run_survives_app_recreation(tmp_path, monkeypatc
     assert lookup_response.status_code == 200
     assert lookup_response.json()["id"] == run_id
     assert lookup_response.json()["task"] == "Analyze procurement spend."
-    assert lookup_response.json()["metadata"] == {"source": "restart-test"}
+    assert lookup_response.json()["metadata"] == {
+        "source": "restart-test",
+        "organization_id": "local-org",
+        "workspace_id": "default",
+    }
     assert any(run["id"] == run_id for run in list_response.json())
 
 
@@ -372,7 +378,8 @@ def test_admin_script_loads_registries_connectors_and_affected_runs(tmp_path):
     assert 'requestJson("/connectors")' in response.text
     assert 'requestJson("/connectors/credential-profiles")' in response.text
     assert 'requestJson("/connectors/installations"' in response.text
-    assert "test?organization_id=" in response.text
+    assert 'requestJson("/auth/me")' in response.text
+    assert "test?organization_id=" not in response.text
     assert 'requestJson("/admin/policies")' in response.text
     assert 'requestJson("/admin/affected-runs")' in response.text
     assert "run.inspector_url" in response.text

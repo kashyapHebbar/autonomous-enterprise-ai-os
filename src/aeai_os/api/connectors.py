@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Body, HTTPException, Query, status
+from fastapi import APIRouter, Body, HTTPException, status
 from pydantic import BaseModel, Field
 
 from aeai_os.api.auth import AdminUser, RunReader
@@ -53,8 +53,6 @@ class ConnectorHealthResponse(BaseModel):
 class CreateConnectorInstallationRequest(BaseModel):
     connector_id: str = Field(..., min_length=2, max_length=100)
     name: str = Field(..., min_length=2, max_length=200)
-    organization_id: str = Field(..., min_length=2, max_length=100)
-    workspace_id: str | None = Field(default=None, max_length=100)
     credential_reference: str | None = Field(default=None, max_length=500)
     configuration: dict[str, str] = Field(default_factory=dict)
 
@@ -103,8 +101,8 @@ def build_connectors_router(registry: ConnectorRegistry) -> APIRouter:
             installation = registry.create_installation(
                 connector_id=request.connector_id,
                 name=request.name,
-                organization_id=request.organization_id,
-                workspace_id=request.workspace_id,
+                organization_id=actor.organization_id,
+                workspace_id=actor.workspace_id,
                 credential_reference=request.credential_reference,
                 configuration=request.configuration,
                 created_by=actor.id,
@@ -119,14 +117,11 @@ def build_connectors_router(registry: ConnectorRegistry) -> APIRouter:
         return _installation_to_response(installation)
 
     @router.get("/installations", response_model=list[ConnectorInstallationResponse])
-    def list_installations(
-        organization_id: Annotated[str, Query(min_length=2, max_length=100)],
-        user: RunReader,
-    ) -> list[ConnectorInstallationResponse]:
-        del user
+    def list_installations(user: RunReader) -> list[ConnectorInstallationResponse]:
         return [
             _installation_to_response(installation)
-            for installation in registry.list_installations(organization_id)
+            for installation in registry.list_installations(user.organization_id)
+            if installation.workspace_id in {None, user.workspace_id}
         ]
 
     @router.post(
@@ -135,13 +130,18 @@ def build_connectors_router(registry: ConnectorRegistry) -> APIRouter:
     )
     def test_installation(
         installation_id: str,
-        organization_id: Annotated[str, Query(min_length=2, max_length=100)],
         actor: AdminUser,
     ) -> ConnectorHealthResponse:
-        del actor
         try:
+            installation = registry.get_installation(
+                installation_id, actor.organization_id
+            )
+            if installation.workspace_id not in {None, actor.workspace_id}:
+                raise ConnectorInstallationNotFoundError(
+                    f"Connector installation not found: {installation_id}"
+                )
             return _health_to_response(
-                registry.test_installation(installation_id, organization_id)
+                registry.test_installation(installation_id, actor.organization_id)
             )
         except ConnectorInstallationNotFoundError as exc:
             raise HTTPException(

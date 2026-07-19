@@ -74,6 +74,8 @@ class DataSourceResponse(BaseModel):
     credential_profile_id: str | None
     dataset_uri: str
     owner: str
+    organization_id: str
+    workspace_id: str
     metadata: dict[str, Any]
     created_at: datetime
     updated_at: datetime
@@ -88,7 +90,6 @@ def build_data_sources_router(registry: DataSourceRegistry) -> APIRouter:
         request: Annotated[CreateDataSourceRequest, Body(...)],
         actor: RunWriter,
     ) -> DataSourceResponse:
-        del actor
         try:
             source = registry.register(
                 data_source_id=request.id,
@@ -96,6 +97,8 @@ def build_data_sources_router(registry: DataSourceRegistry) -> APIRouter:
                 source_type=request.source_type,
                 dataset_uri=request.dataset_uri,
                 owner=request.owner,
+                organization_id=actor.organization_id,
+                workspace_id=actor.workspace_id,
                 connector_id=request.connector_id,
                 credential_profile_id=request.credential_profile_id,
                 metadata=request.metadata,
@@ -119,14 +122,17 @@ def build_data_sources_router(registry: DataSourceRegistry) -> APIRouter:
 
     @router.get("", response_model=list[DataSourceResponse])
     def list_data_sources(user: RunReader) -> list[DataSourceResponse]:
-        del user
-        return [_source_to_response(source) for source in registry.list_sources()]
+        return [
+            _source_to_response(source)
+            for source in registry.list_sources(user.organization_id, user.workspace_id)
+        ]
 
     @router.get("/{data_source_id}", response_model=DataSourceResponse)
     def get_data_source(data_source_id: str, user: RunReader) -> DataSourceResponse:
-        del user
         try:
-            return _source_to_response(registry.get(data_source_id))
+            return _source_to_response(
+                registry.get(data_source_id, user.organization_id, user.workspace_id)
+            )
         except DataSourceNotFoundError as exc:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -141,9 +147,12 @@ def build_data_sources_router(registry: DataSourceRegistry) -> APIRouter:
         data_source_id: str,
         actor: RunWriter,
     ) -> DataSourceValidationResponse:
-        del actor
         try:
-            return _validation_to_response(registry.validate(data_source_id))
+            return _validation_to_response(
+                registry.validate(
+                    data_source_id, actor.organization_id, actor.workspace_id
+                )
+            )
         except DataSourceNotFoundError as exc:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -162,6 +171,8 @@ def _source_to_response(source: DataSourceRecord) -> DataSourceResponse:
         credential_profile_id=source.credential_profile_id,
         dataset_uri=redact_uri(source.dataset_uri),
         owner=source.owner,
+        organization_id=source.organization_id,
+        workspace_id=source.workspace_id,
         metadata=redact_value(source.metadata),
         created_at=source.created_at,
         updated_at=source.updated_at,

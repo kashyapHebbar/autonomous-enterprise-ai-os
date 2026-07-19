@@ -154,6 +154,7 @@ detail responses and is also available at `/runs/{run_id}/audit-events`.
 | `GET /app` | Browser control plane for creating and browsing runs |
 | `GET /app/artifacts` | Browser artifact browser with dashboard/report previews |
 | `GET /app/admin` | Browser admin UI for agent, connector, credential, and policy inspection |
+| `GET /auth/me` | Return the authenticated user, organization, workspaces, and permissions |
 | `GET /run-inspector/runs/{run_id}` | Browser run inspector UI |
 | `GET /runs/{run_id}/artifacts/{artifact_id}/content` | Preview or download safe artifact payloads |
 | `GET /admin/agents` | List registered agents, capabilities, and risk profiles |
@@ -162,8 +163,8 @@ detail responses and is also available at `/runs/{run_id}/audit-events`.
 | `GET /connectors` | List registered enterprise connectors and current status |
 | `GET /connectors/credential-profiles` | List sanitized credential profile references |
 | `POST /connectors/installations` | Save an organization-owned connector installation |
-| `GET /connectors/installations?organization_id=...` | List tenant-scoped installations |
-| `POST /connectors/installations/{installation_id}/test?organization_id=...` | Test a saved installation |
+| `GET /connectors/installations` | List installations in the authenticated tenant workspace |
+| `POST /connectors/installations/{installation_id}/test` | Test an installation in the authenticated tenant workspace |
 | `GET /connectors/{connector_id}/health` | Inspect connector configuration health |
 | `POST /data-sources` | Register and validate a reusable enterprise dataset source |
 | `GET /data-sources` | List registered dataset sources |
@@ -207,6 +208,21 @@ The Governance Center includes a Connector Hub driven by the connector manifests
 methods, capabilities, and whether an opaque credential reference is required. Saved installations
 are scoped to an organization and optional workspace. The installation API rejects unknown fields
 and never accepts raw passwords, tokens, access keys, or private keys as connector configuration.
+Organization and workspace scope comes only from verified identity; request bodies and query strings
+cannot select a different tenant.
+
+## Enterprise Identity And Tenant Isolation
+
+Local development uses `AEAI_AUTH_MODE=local`. Static API tokens use `AEAI_AUTH_MODE=token` and
+profiles in `token=user|name|roles|organization|workspace-a,workspace-b` format. Production supports
+OIDC with `AEAI_AUTH_MODE=oidc`, `AEAI_OIDC_ISSUER`, `AEAI_OIDC_AUDIENCE`, and
+`AEAI_OIDC_JWKS_URL`; install verification support with `pip install ".[identity]"`.
+
+OIDC tokens must contain subject, role, organization, and workspace claims. Claim names can be
+customized with `AEAI_OIDC_ROLES_CLAIM`, `AEAI_OIDC_ORGANIZATION_CLAIM`, and
+`AEAI_OIDC_WORKSPACES_CLAIM`. Clients may select only an assigned workspace with
+`X-AEAI-Workspace-ID`. Runs, nested artifacts and jobs, data sources, connector installations, and
+admin affected-run views are filtered against this server-derived tenant context.
 
 Credential references use provider-owned identifiers such as
 `aws-secrets://acme/snowflake-finance` or `vault://acme/data-platform`. Resolution of these references

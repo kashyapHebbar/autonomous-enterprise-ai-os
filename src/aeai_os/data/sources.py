@@ -37,6 +37,8 @@ class DataSourceRecord:
     credential_profile_id: str | None
     dataset_uri: str
     owner: str
+    organization_id: str
+    workspace_id: str
     metadata: dict[str, Any]
     created_at: datetime
     updated_at: datetime
@@ -95,6 +97,8 @@ class DataSourceRegistry:
         source_type: DataSourceType,
         dataset_uri: str,
         owner: str,
+        organization_id: str = "local-org",
+        workspace_id: str = "default",
         connector_id: str | None = None,
         credential_profile_id: str | None = None,
         metadata: Mapping[str, Any] | None = None,
@@ -104,12 +108,15 @@ class DataSourceRegistry:
         normalized_owner = _normalize_required(owner, "Data source owner")
         normalized_uri = _normalize_required(dataset_uri, "Dataset URI")
         normalized_metadata = dict(metadata or {})
+        normalized_organization = _normalize_required(organization_id, "Organization id")
+        normalized_workspace = _normalize_required(workspace_id, "Workspace id")
+        source_key = _source_key(normalized_id, normalized_organization, normalized_workspace)
         resolved_connector_id = connector_id or _default_connector_id(source_type)
         resolved_profile_id = credential_profile_id or _default_credential_profile_id(
             source_type
         )
         with self._lock:
-            if normalized_id in self._sources:
+            if source_key in self._sources:
                 raise DataSourceAlreadyExistsError(
                     f"Data source already exists: {normalized_id}"
                 )
@@ -122,6 +129,8 @@ class DataSourceRegistry:
             credential_profile_id=resolved_profile_id,
             dataset_uri=normalized_uri,
             owner=normalized_owner,
+            organization_id=normalized_organization,
+            workspace_id=normalized_workspace,
             metadata=normalized_metadata,
             created_at=now,
             updated_at=now,
@@ -131,41 +140,65 @@ class DataSourceRegistry:
             raise DataSourceValidationError(validation)
         stored = replace(record, latest_validation=validation)
         with self._lock:
-            self._sources[stored.id] = stored
+            self._sources[source_key] = stored
             return stored
 
-    def list_sources(self) -> list[DataSourceRecord]:
+    def list_sources(
+        self, organization_id: str | None = None, workspace_id: str | None = None
+    ) -> list[DataSourceRecord]:
         with self._lock:
-            return sorted(self._sources.values(), key=lambda source: source.created_at)
+            sources = self._sources.values()
+            if organization_id is not None:
+                sources = (
+                    source for source in sources if source.organization_id == organization_id
+                )
+            if workspace_id is not None:
+                sources = (source for source in sources if source.workspace_id == workspace_id)
+            return sorted(sources, key=lambda source: source.created_at)
 
-    def get(self, data_source_id: str) -> DataSourceRecord:
+    def get(
+        self,
+        data_source_id: str,
+        organization_id: str = "local-org",
+        workspace_id: str = "default",
+    ) -> DataSourceRecord:
         with self._lock:
             try:
-                return self._sources[data_source_id]
+                return self._sources[_source_key(data_source_id, organization_id, workspace_id)]
             except KeyError as exc:
                 raise DataSourceNotFoundError(
                     f"Data source not found: {data_source_id}"
                 ) from exc
 
-    def validate(self, data_source_id: str) -> DataSourceValidationResult:
+    def validate(
+        self,
+        data_source_id: str,
+        organization_id: str = "local-org",
+        workspace_id: str = "default",
+    ) -> DataSourceValidationResult:
         with self._lock:
-            source = self.get(data_source_id)
+            source = self.get(data_source_id, organization_id, workspace_id)
             validation = self.validate_record(source)
-            self._sources[data_source_id] = replace(
+            self._sources[_source_key(data_source_id, organization_id, workspace_id)] = replace(
                 source,
                 latest_validation=validation,
                 updated_at=_now(),
             )
             return validation
 
-    def validate_for_execution(self, data_source_id: str) -> DataSourceRecord:
-        source = self.get(data_source_id)
+    def validate_for_execution(
+        self,
+        data_source_id: str,
+        organization_id: str = "local-org",
+        workspace_id: str = "default",
+    ) -> DataSourceRecord:
+        source = self.get(data_source_id, organization_id, workspace_id)
         validation = self.validate_record(source)
         if validation.status != "ok":
             raise DataSourceValidationError(validation)
         with self._lock:
             updated = replace(source, latest_validation=validation, updated_at=_now())
-            self._sources[data_source_id] = updated
+            self._sources[_source_key(data_source_id, organization_id, workspace_id)] = updated
             return updated
 
     def validate_record(
@@ -311,6 +344,10 @@ def _normalize_id(value: str) -> str:
     if any(character not in allowed for character in normalized):
         raise ValueError("Data source ID can only contain letters, numbers, and hyphens.")
     return normalized
+
+
+def _source_key(data_source_id: str, organization_id: str, workspace_id: str) -> str:
+    return f"{organization_id}:{workspace_id}:{data_source_id}"
 
 
 def _normalize_required(value: str, label: str) -> str:

@@ -25,6 +25,7 @@ def create_app(
 
     from aeai_os.agents.registry import build_default_registry
     from aeai_os.api.admin import build_admin_router
+    from aeai_os.api.auth import build_auth_router
     from aeai_os.api.connectors import build_connectors_router
     from aeai_os.api.data_sources import build_data_sources_router
     from aeai_os.api.metrics import build_metrics_router
@@ -142,6 +143,7 @@ def create_app(
         )
     )
     app.include_router(build_metrics_router(run_repository))
+    app.include_router(build_auth_router())
     app.include_router(build_connectors_router(connector_registry))
     app.include_router(build_data_sources_router(data_source_registry))
     app.include_router(

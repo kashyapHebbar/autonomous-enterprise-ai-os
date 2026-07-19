@@ -51,6 +51,9 @@ secrets = [
     "azure-keyvault-secrets>=4.8,<5.0",
     "hvac>=2.3,<3.0",
 ]
+identity = [
+    "PyJWT[crypto]>=2.9,<3.0",
+]
 warehouse = [
     "snowflake-connector-python>=3.12,<4.0",
 ]

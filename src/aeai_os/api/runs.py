@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from copy import deepcopy
 from pathlib import Path
 from typing import Annotated, Any
 from urllib.parse import urlparse
@@ -134,7 +135,9 @@ def build_runs_router(
                 )
             try:
                 data_source = data_source_registry.validate_for_execution(
-                    request.data_source_id
+                    request.data_source_id,
+                    actor.organization_id,
+                    actor.workspace_id,
                 )
             except DataSourceNotFoundError as exc:
                 raise HTTPException(
@@ -152,6 +155,7 @@ def build_runs_router(
                 ) from exc
 
         run_metadata = dict(request.metadata)
+        run_metadata.update(_tenant_metadata(actor))
         if data_source is not None:
             run_metadata.update(
                 {
@@ -169,7 +173,11 @@ def build_runs_router(
                 run_id=run.id,
                 artifact_type=ArtifactType.DATASET,
                 uri=request.dataset_uri,
-                metadata={"source": "reference", **request.metadata},
+                metadata={
+                    "source": "reference",
+                    **request.metadata,
+                    **_tenant_metadata(actor),
+                },
             )
             run = repository.get_run(run.id)
         if data_source is not None:
@@ -200,7 +208,11 @@ def build_runs_router(
 
     @router.get("", response_model=list[RunResponse])
     def list_runs(user: RunReader) -> list[RunResponse]:
-        return [run_to_response(run) for run in repository.list_runs()]
+        return [
+            run_to_response(run)
+            for run in repository.list_runs()
+            if _run_is_visible_to(run, user)
+        ]
 
     @router.post("/import", response_model=RunDetailResponse, status_code=status.HTTP_201_CREATED)
     def import_run(
@@ -208,9 +220,25 @@ def build_runs_router(
         actor: RunWriter,
     ) -> RunDetailResponse:
         try:
+            archive = deepcopy(request.archive)
+            archive.setdefault("run", {}).setdefault("metadata", {}).update(
+                _tenant_metadata(actor)
+            )
+            archive_run_id = str(archive.get("run", {}).get("id") or "").strip()
+            if archive_run_id:
+                try:
+                    existing_run = repository.get_run(archive_run_id)
+                except RunNotFoundError:
+                    pass
+                else:
+                    if not _run_is_visible_to(existing_run, actor):
+                        raise HTTPException(
+                            status_code=status.HTTP_404_NOT_FOUND,
+                            detail=f"Run not found: {archive_run_id}",
+                        )
             run = import_run_archive(
                 repository,
-                request.archive,
+                archive,
                 overwrite=request.overwrite,
             )
         except RunArchiveConflictError as exc:
@@ -234,12 +262,12 @@ def build_runs_router(
 
     @router.get("/{run_id}/export", response_model=dict[str, Any])
     def export_run(run_id: str, user: RunReader) -> dict[str, Any]:
-        _get_run_or_404(repository, run_id)
+        _get_run_or_404(repository, run_id, user)
         return export_run_archive(repository, run_id)
 
     @router.get("/{run_id}", response_model=RunDetailResponse)
     def get_run(run_id: str, user: RunReader) -> RunDetailResponse:
-        run = _get_run_or_404(repository, run_id)
+        run = _get_run_or_404(repository, run_id, user)
         return run_to_detail_response(
             run,
             repository.list_artifacts(run_id),
@@ -266,7 +294,7 @@ def build_runs_router(
                 max_attempts=procurement_workflow_max_attempts,
             )
 
-        _get_run_or_404(repository, run_id)
+        _get_run_or_404(repository, run_id, actor)
         _record_audit_event(
             repository,
             run_id,
@@ -305,7 +333,7 @@ def build_runs_router(
 
     @router.get("/{run_id}/workflow-jobs", response_model=list[WorkflowJobResponse])
     def list_workflow_jobs(run_id: str, user: RunReader) -> list[WorkflowJobResponse]:
-        _get_run_or_404(repository, run_id)
+        _get_run_or_404(repository, run_id, user)
         return [
             workflow_job_to_response(job)
             for job in repository.list_workflow_jobs(run_id=run_id)
@@ -316,7 +344,7 @@ def build_runs_router(
         response_model=WorkflowJobResponse,
     )
     def get_workflow_job(run_id: str, job_id: str, user: RunReader) -> WorkflowJobResponse:
-        _get_run_or_404(repository, run_id)
+        _get_run_or_404(repository, run_id, user)
         try:
             job = repository.get_workflow_job(job_id)
         except WorkflowJobNotFoundError as exc:
@@ -341,7 +369,7 @@ def build_runs_router(
         request: WorkflowJobControlBody,
         actor: RunWriter,
     ) -> WorkflowJobResponse:
-        _get_run_or_404(repository, run_id)
+        _get_run_or_404(repository, run_id, actor)
         _get_workflow_job_for_run_or_404(repository, run_id, job_id)
         try:
             if workflow_queue is None:
@@ -376,7 +404,7 @@ def build_runs_router(
         request: WorkflowJobControlBody,
         actor: RunWriter,
     ) -> WorkflowJobResponse:
-        _get_run_or_404(repository, run_id)
+        _get_run_or_404(repository, run_id, actor)
         _get_workflow_job_for_run_or_404(repository, run_id, job_id)
         try:
             if workflow_queue is None:
@@ -411,7 +439,7 @@ def build_runs_router(
         request: Annotated[CreateDeploymentRequest, Body(...)],
         actor: RunWriter,
     ) -> WorkflowJobResponse:
-        _get_run_or_404(repository, run_id)
+        _get_run_or_404(repository, run_id, actor)
         try:
             job = request_deployment_approval(
                 repository,
@@ -450,7 +478,7 @@ def build_runs_router(
         request: Annotated[DeploymentApprovalDecisionRequest, Body(...)],
         actor: RunApprover,
     ) -> WorkflowJobResponse:
-        _get_run_or_404(repository, run_id)
+        _get_run_or_404(repository, run_id, actor)
         try:
             result = decide_deployment_approval(
                 repository,
@@ -482,7 +510,7 @@ def build_runs_router(
 
     @router.get("/{run_id}/graph-nodes", response_model=list[GraphNodeResponse])
     def list_graph_nodes(run_id: str, user: RunReader) -> list[GraphNodeResponse]:
-        _get_run_or_404(repository, run_id)
+        _get_run_or_404(repository, run_id, user)
         return [
             graph_node_to_response(node)
             for node in repository.list_graph_nodes(run_id)
@@ -490,7 +518,7 @@ def build_runs_router(
 
     @router.get("/{run_id}/events", response_model=list[AgentEventResponse])
     def list_events(run_id: str, user: RunReader) -> list[AgentEventResponse]:
-        _get_run_or_404(repository, run_id)
+        _get_run_or_404(repository, run_id, user)
         return [
             agent_event_to_response(event)
             for event in repository.list_events(run_id)
@@ -498,7 +526,7 @@ def build_runs_router(
 
     @router.get("/{run_id}/audit-events", response_model=list[AuditEventResponse])
     def list_audit_events(run_id: str, user: RunReader) -> list[AuditEventResponse]:
-        _get_run_or_404(repository, run_id)
+        _get_run_or_404(repository, run_id, user)
         return [
             audit_event
             for event in repository.list_events(run_id)
@@ -507,7 +535,7 @@ def build_runs_router(
 
     @router.get("/{run_id}/timeline", response_model=list[RunTimelineItemResponse])
     def get_run_timeline(run_id: str, user: RunReader) -> list[RunTimelineItemResponse]:
-        run = _get_run_or_404(repository, run_id)
+        run = _get_run_or_404(repository, run_id, user)
         return build_run_timeline(
             run=run,
             workflow_jobs=repository.list_workflow_jobs(run_id=run_id),
@@ -527,7 +555,7 @@ def build_runs_router(
         request: Annotated[ApprovalDecisionRequest, Body(...)],
         actor: RunApprover,
     ) -> RunExecutionResponse:
-        _get_run_or_404(repository, run_id)
+        _get_run_or_404(repository, run_id, actor)
         _record_audit_event(
             repository,
             run_id,
@@ -559,7 +587,7 @@ def build_runs_router(
         response_model=RunExecutionResponse,
     )
     def retry_graph_node(run_id: str, node_id: str, actor: RunWriter) -> RunExecutionResponse:
-        _get_run_or_404(repository, run_id)
+        _get_run_or_404(repository, run_id, actor)
         _record_audit_event(
             repository,
             run_id,
@@ -582,19 +610,19 @@ def build_runs_router(
 
     @router.get("/{run_id}/evaluations", response_model=list[EvaluationResponse])
     def list_evaluations(run_id: str, user: RunReader) -> list[EvaluationResponse]:
-        _get_run_or_404(repository, run_id)
+        _get_run_or_404(repository, run_id, user)
         return [
             evaluation_to_response(evaluation) for evaluation in repository.list_evaluations(run_id)
         ]
 
     @router.get("/{run_id}/artifacts", response_model=list[ArtifactResponse])
     def list_artifacts(run_id: str, user: RunReader) -> list[ArtifactResponse]:
-        _get_run_or_404(repository, run_id)
+        _get_run_or_404(repository, run_id, user)
         return [artifact_to_response(artifact) for artifact in repository.list_artifacts(run_id)]
 
     @router.get("/{run_id}/artifacts/{artifact_id}", response_model=ArtifactResponse)
     def get_artifact(run_id: str, artifact_id: str, user: RunReader) -> ArtifactResponse:
-        artifact = _get_artifact_or_404(repository, run_id, artifact_id)
+        artifact = _get_artifact_or_404(repository, run_id, artifact_id, user)
         return artifact_to_response(artifact)
 
     @router.get("/{run_id}/artifacts/{artifact_id}/content")
@@ -604,7 +632,7 @@ def build_runs_router(
         user: RunReader,
         download: Annotated[bool, Query()] = False,
     ) -> Response:
-        artifact = _get_artifact_or_404(repository, run_id, artifact_id)
+        artifact = _get_artifact_or_404(repository, run_id, artifact_id, user)
         if artifact.type not in PREVIEWABLE_ARTIFACT_TYPES:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -643,7 +671,7 @@ def build_runs_router(
         artifact_id: str,
         user: RunReader,
     ) -> ArtifactLineageResponse:
-        _get_artifact_or_404(repository, run_id, artifact_id)
+        _get_artifact_or_404(repository, run_id, artifact_id, user)
         lineage = lineage_service.build_lineage(run_id, artifact_id)
         return artifact_lineage_to_response(lineage)
 
@@ -657,7 +685,7 @@ def build_runs_router(
         request: Annotated[AttachDatasetReferenceRequest, Body(...)],
         actor: RunWriter,
     ) -> ArtifactResponse:
-        _get_run_or_404(repository, run_id)
+        _get_run_or_404(repository, run_id, actor)
         artifact = repository.add_artifact(
             run_id=run_id,
             artifact_type=ArtifactType.DATASET,
@@ -692,7 +720,7 @@ def build_runs_router(
         file: Annotated[UploadFile, File(...)],
         actor: RunWriter,
     ) -> ArtifactResponse:
-        _get_run_or_404(repository, run_id)
+        _get_run_or_404(repository, run_id, actor)
         filename = _validate_upload_filename(file.filename or "")
         payload = await file.read()
         if not payload:
@@ -790,7 +818,7 @@ def _enqueue_procurement_or_400(
     queue: WorkflowQueueBackend | None,
     max_attempts: int,
 ) -> WorkflowJobResponse:
-    run = _get_run_or_404(repository, run_id)
+    run = _get_run_or_404(repository, run_id, actor)
     if not run.dataset_artifact_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -815,19 +843,30 @@ def _enqueue_procurement_or_400(
     return workflow_job_to_response(job)
 
 
-def _get_run_or_404(repository: InMemoryRunRepository, run_id: str):
+def _get_run_or_404(
+    repository: InMemoryRunRepository,
+    run_id: str,
+    actor: AuthenticatedUser,
+):
     try:
-        return repository.get_run(run_id)
+        run = repository.get_run(run_id)
     except RunNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    if not _run_is_visible_to(run, actor):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Run not found: {run_id}",
+        )
+    return run
 
 
 def _get_artifact_or_404(
     repository: InMemoryRunRepository,
     run_id: str,
     artifact_id: str,
+    actor: AuthenticatedUser,
 ):
-    _get_run_or_404(repository, run_id)
+    _get_run_or_404(repository, run_id, actor)
     try:
         return repository.get_artifact(run_id, artifact_id)
     except ArtifactNotFoundError as exc:
@@ -852,6 +891,20 @@ def _get_workflow_job_for_run_or_404(
             detail=f"Workflow job not found for run: {job_id}",
         )
     return job
+
+
+def _tenant_metadata(actor: AuthenticatedUser) -> dict[str, str]:
+    return {
+        "organization_id": actor.organization_id,
+        "workspace_id": actor.workspace_id,
+    }
+
+
+def _run_is_visible_to(run: Any, actor: AuthenticatedUser) -> bool:
+    return actor.can_access(
+        run.metadata.get("organization_id", "local-org"),
+        run.metadata.get("workspace_id", "default"),
+    )
 
 
 def _execution_response(

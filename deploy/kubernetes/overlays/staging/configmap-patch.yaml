@@ -6,6 +6,7 @@ metadata:
 data:
   AEAI_ENV: "staging"
   AEAI_AUTH_ENABLED: "true"
+  AEAI_AUTH_MODE: "token"
   AEAI_RUN_REPOSITORY_CREATE_SCHEMA: "true"
   AEAI_WORKFLOW_EXECUTION_MODE: "async"
   AEAI_WORKFLOW_QUEUE_BACKEND: "redis"
