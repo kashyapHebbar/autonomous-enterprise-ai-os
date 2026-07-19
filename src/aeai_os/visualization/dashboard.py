@@ -28,6 +28,8 @@ def build_procurement_chart_specs(analysis: dict[str, Any]) -> list[ProcurementC
     trend = list(analysis["spend_trend"])
     outliers = list(analysis["outliers"])
     anomalies = list(analysis.get("anomalies", outliers))
+    forecast = dict(analysis.get("spend_forecast") or {})
+    supplier_risks = list(analysis.get("supplier_risk_profiles") or [])
     currency_symbol = analysis.get("dataset", {}).get("currency_symbol", "$")
 
     return [
@@ -100,6 +102,22 @@ def build_procurement_chart_specs(analysis: dict[str, Any]) -> list[ProcurementC
             description="Ranked, explainable procurement risks ready for investigator review.",
             data=anomalies,
             body_html=_anomaly_table(anomalies, currency_symbol),
+        ),
+        ProcurementChartSpec(
+            slug="spend-forecast",
+            title="Spend Forecast",
+            chart_type="table",
+            description="Three-month baseline projection with uncertainty bounds.",
+            data=list(forecast.get("forecast") or []),
+            body_html=_forecast_table(forecast, currency_symbol),
+        ),
+        ProcurementChartSpec(
+            slug="supplier-risk",
+            title="Supplier Risk Profiles",
+            chart_type="table",
+            description="Supplier concentration and anomaly exposure ranked by internal risk.",
+            data=supplier_risks,
+            body_html=_supplier_risk_table(supplier_risks, currency_symbol),
         ),
     ]
 
@@ -195,6 +213,14 @@ def render_dashboard_document(
             <div>
               <span>Risk exposure</span>
               <strong>{escape(_money(kpis.get("risk_exposure", 0), currency_symbol))}</strong>
+            </div>
+            <div>
+              <span>Next month forecast</span>
+              <strong>{escape(_money(kpis.get("forecast_next_month", 0), currency_symbol))}</strong>
+            </div>
+            <div>
+              <span>At-risk suppliers</span>
+              <strong>{escape(str(kpis.get("at_risk_supplier_count", 0)))}</strong>
             </div>
           </section>
 
@@ -430,6 +456,47 @@ def _anomaly_table(anomalies: list[dict[str, Any]], currency_symbol: str = "$") 
     </div>
     {_anomaly_script()}
     """
+
+
+def _forecast_table(forecast: dict[str, Any], currency_symbol: str = "$") -> str:
+    rows = forecast.get("forecast") or []
+    if not rows:
+        return '<p class="empty-state">At least three months of history are required.</p>'
+    body = "".join(
+        f"<tr><td>{escape(str(item['month']))}</td>"
+        f"<td>{escape(_money(item['predicted_spend'], currency_symbol))}</td>"
+        f"<td>{escape(_money(item['lower_bound'], currency_symbol))}</td>"
+        f"<td>{escape(_money(item['upper_bound'], currency_symbol))}</td></tr>"
+        for item in rows
+    )
+    return (
+        f'<p class="forecast-note">{escape(str(forecast.get("direction", "stable")).title())}'
+        f' trend · {escape(_percent(_number(forecast.get("confidence", 0))))} confidence</p>'
+        '<div class="table-wrap"><table><thead><tr><th>Month</th><th>Forecast</th>'
+        f'<th>Lower</th><th>Upper</th></tr></thead><tbody>{body}</tbody></table></div>'
+    )
+
+
+def _supplier_risk_table(
+    profiles: list[dict[str, Any]], currency_symbol: str = "$"
+) -> str:
+    if not profiles:
+        return '<p class="empty-state">No supplier risk profiles are available.</p>'
+    rows = "".join(
+        f'<tr><td><strong>{escape(str(item["supplier"]))}</strong></td>'
+        f'<td>{escape(str(item["risk_score"]))}/100</td>'
+        f'<td><span class="severity severity-{escape(str(item["risk_level"]))}">'
+        f'{escape(str(item["risk_level"]).title())}</span></td>'
+        f'<td>{escape(_money(item["spend"], currency_symbol))}</td>'
+        f'<td>{escape(_money(item["anomaly_exposure"], currency_symbol))}</td>'
+        f'<td>{escape("; ".join(item["risk_factors"]))}</td></tr>'
+        for item in profiles[:20]
+    )
+    return (
+        '<div class="table-wrap"><table><thead><tr><th>Supplier</th><th>Score</th>'
+        '<th>Level</th><th>Spend</th><th>Flagged exposure</th><th>Factors</th></tr>'
+        f'</thead><tbody>{rows}</tbody></table></div>'
+    )
 
 
 def _signal_items(item: dict[str, Any]) -> str:

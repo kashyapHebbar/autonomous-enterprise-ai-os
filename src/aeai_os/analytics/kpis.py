@@ -6,6 +6,8 @@ from datetime import datetime
 from typing import Any
 
 from aeai_os.analytics.anomalies import detect_procurement_anomalies
+from aeai_os.analytics.forecasting import forecast_monthly_spend
+from aeai_os.analytics.supplier_risk import build_supplier_risk_profiles
 from aeai_os.data import DatasetQueryAdapter
 from aeai_os.data.profiling import is_missing_value
 
@@ -132,6 +134,8 @@ def analyze_procurement_dataset(adapter: DatasetQueryAdapter) -> ProcurementAnal
         for item in anomalies
         if any(signal["code"] == "amount_outlier" for signal in item["signals"])
     ]
+    forecast = forecast_monthly_spend(spend_trend)
+    supplier_risks = build_supplier_risk_profiles(spend_by_supplier, anomalies)
     missing_risks = _missing_data_risks(missing_counts, len(rows), resolved)
     savings = _savings_opportunities(
         total_spend=total_spend,
@@ -171,6 +175,15 @@ def analyze_procurement_dataset(adapter: DatasetQueryAdapter) -> ProcurementAnal
                     + anomaly_result["summary"]["high_risk_count"]
                 ),
                 "risk_exposure": anomaly_result["summary"]["risk_exposure"],
+                "forecast_next_month": (
+                    forecast["forecast"][0]["predicted_spend"]
+                    if forecast.get("forecast")
+                    else None
+                ),
+                "at_risk_supplier_count": sum(
+                    profile["risk_level"] in {"high", "medium"}
+                    for profile in supplier_risks
+                ),
                 "estimated_savings": round(sum(item["estimated_savings"] for item in savings), 4),
             },
             "spend_by_supplier": spend_by_supplier,
@@ -179,6 +192,8 @@ def analyze_procurement_dataset(adapter: DatasetQueryAdapter) -> ProcurementAnal
             "outliers": outliers,
             "anomaly_intelligence": anomaly_result,
             "anomalies": anomalies,
+            "spend_forecast": forecast,
+            "supplier_risk_profiles": supplier_risks,
             "savings_opportunities": savings,
             "missing_data_risks": missing_risks,
             "insights": insights,

@@ -97,6 +97,8 @@ def test_visualization_agent_registers_chart_and_dashboard_artifacts(tmp_path):
         "Category Spend Breakdown",
         "Monthly Spend Trend",
         "Anomaly Investigation",
+        "Spend Forecast",
+        "Supplier Risk Profiles",
     } == chart_titles
     anomaly_document = next(
         Path(artifact.uri).read_text(encoding="utf-8")

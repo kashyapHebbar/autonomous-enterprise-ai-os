@@ -86,6 +86,8 @@ def test_procurement_kpis_cover_spend_trends_outliers_savings_and_missing_risks(
         "anomaly_count": 1,
         "high_risk_count": 1,
         "risk_exposure": 1000.0,
+        "forecast_next_month": 280.0,
+        "at_risk_supplier_count": 1,
         "estimated_savings": 86.2,
     }
     assert analysis["spend_by_supplier"][0] == {
@@ -101,6 +103,10 @@ def test_procurement_kpis_cover_spend_trends_outliers_savings_and_missing_risks(
     assert analysis["outliers"][0]["amount"] == 1000.0
     assert analysis["anomalies"][0]["risk_score"] >= 60
     assert analysis["anomalies"][0]["signals"]
+    assert analysis["spend_forecast"]["status"] == "ready"
+    assert analysis["spend_forecast"]["forecast"][0]["month"] == "2026-04"
+    assert analysis["supplier_risk_profiles"][0]["supplier"] == "Acme"
+    assert analysis["supplier_risk_profiles"][0]["risk_level"] == "high"
     assert {item["type"] for item in analysis["savings_opportunities"]} == {
         "supplier_concentration",
         "tail_supplier_consolidation",

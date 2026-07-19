@@ -17,6 +17,8 @@ def render_procurement_markdown_report(
     savings_opportunities = analysis.get("savings_opportunities", [])
     missing_risks = analysis.get("missing_data_risks", [])
     anomalies = analysis.get("anomalies", [])
+    forecast = analysis.get("spend_forecast", {})
+    supplier_risks = analysis.get("supplier_risk_profiles", [])
     charts = [artifact for artifact in artifacts if artifact.type == ArtifactType.CHART]
     dashboards = [artifact for artifact in artifacts if artifact.type == ArtifactType.DASHBOARD]
     currency_symbol = analysis.get("dataset", {}).get("currency_symbol", "$")
@@ -33,6 +35,10 @@ def render_procurement_markdown_report(
         _quality_section(schema_profile=schema_profile, quality_report=quality_report),
         "## Anomaly Intelligence",
         _anomaly_section(anomalies=anomalies, currency_symbol=currency_symbol),
+        "## Spend Forecast",
+        _forecast_section(forecast, currency_symbol),
+        "## Supplier Risk Profiles",
+        _supplier_risk_section(supplier_risks, currency_symbol),
         "## Charts And Dashboard",
         _chart_section(charts=charts, dashboards=dashboards),
         "## Recommendations",
@@ -176,6 +182,42 @@ def _chart_section(
     if not rows:
         return "No chart or dashboard artifacts were available for this report."
     return _markdown_table(["Artifact", "ID", "URI"], rows)
+
+
+def _forecast_section(forecast: dict[str, Any], currency_symbol: str) -> str:
+    rows = forecast.get("forecast") or []
+    if not rows:
+        return "Insufficient monthly history for a forecast. At least three months are required."
+    return _markdown_table(
+        ["Month", "Forecast", "Lower Bound", "Upper Bound"],
+        [
+            (
+                item["month"],
+                _money(item["predicted_spend"], currency_symbol),
+                _money(item["lower_bound"], currency_symbol),
+                _money(item["upper_bound"], currency_symbol),
+            )
+            for item in rows
+        ],
+    )
+
+
+def _supplier_risk_section(profiles: list[dict[str, Any]], currency_symbol: str) -> str:
+    if not profiles:
+        return "No supplier risk profiles were generated."
+    return _markdown_table(
+        ["Supplier", "Risk", "Spend", "Flagged Exposure", "Factors"],
+        [
+            (
+                item["supplier"],
+                f'{item["risk_score"]}/100 ({item["risk_level"]})',
+                _money(item["spend"], currency_symbol),
+                _money(item["anomaly_exposure"], currency_symbol),
+                "; ".join(item["risk_factors"]),
+            )
+            for item in profiles[:20]
+        ],
+    )
 
 
 def _recommendations_section(

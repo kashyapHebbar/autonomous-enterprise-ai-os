@@ -7,11 +7,13 @@ from aeai_os.analytics.code_guard import (
     CodeSafetyReport,
     PythonCodeGuard,
 )
+from aeai_os.analytics.forecasting import forecast_monthly_spend
 from aeai_os.analytics.kpis import (
     AnalyticsError,
     ProcurementAnalysisResult,
     analyze_procurement_dataset,
 )
+from aeai_os.analytics.supplier_risk import build_supplier_risk_profiles
 
 __all__ = [
     "AnalyticsError",
@@ -22,4 +24,6 @@ __all__ = [
     "PythonCodeGuard",
     "analyze_procurement_dataset",
     "detect_procurement_anomalies",
+    "forecast_monthly_spend",
+    "build_supplier_risk_profiles",
 ]

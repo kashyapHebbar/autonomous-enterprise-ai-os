@@ -19,6 +19,7 @@ The first vertical slice is a procurement analytics workflow:
 - Data retrieval, analytics/code, visualization, report, and evaluation agents
 - Security policy gates for required tools and risky actions
 - Explainable procurement anomaly scoring and investigator-ready risk queues
+- Audited investigation case management, baseline spend forecasting, and supplier risk profiles
 - API-driven workflow execution, approval decisions, failed-node retry, and run inspection
 - OpenTelemetry trace IDs, Prometheus-compatible metrics, and optional MLflow/LangSmith tracking
 - Docker Compose for API, workflow worker, Postgres, Redis, and MinIO
@@ -72,6 +73,8 @@ Open:
 - API docs: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 - Health: [http://127.0.0.1:8000/health](http://127.0.0.1:8000/health)
 - Metrics: [http://127.0.0.1:8000/metrics](http://127.0.0.1:8000/metrics)
+- Workflow console: [http://127.0.0.1:8000/app](http://127.0.0.1:8000/app)
+- Investigations: [http://127.0.0.1:8000/app/investigations](http://127.0.0.1:8000/app/investigations)
 - Prometheus: [http://127.0.0.1:9090](http://127.0.0.1:9090)
 - Grafana: [http://127.0.0.1:3000](http://127.0.0.1:3000)
 
@@ -153,6 +156,7 @@ detail responses and is also available at `/runs/{run_id}/audit-events`.
 | `POST /runs/{run_id}/graph-nodes/{node_id}/retry` | Retry a failed graph node |
 | `GET /runs/{run_id}/evaluations` | List evaluation results for a run |
 | `GET /app` | Browser control plane for creating and browsing runs |
+| `GET /app/investigations` | Investigation workspace for triage, assignment, evidence, and dispositions |
 | `GET /app/artifacts` | Browser artifact browser with dashboard/report previews |
 | `GET /app/admin` | Browser admin UI for agent, connector, credential, and policy inspection |
 | `GET /auth/me` | Return the authenticated user, organization, workspaces, and permissions |
@@ -171,6 +175,9 @@ detail responses and is also available at `/runs/{run_id}/audit-events`.
 | `GET /data-sources` | List registered dataset sources |
 | `GET /data-sources/{data_source_id}` | Inspect a registered dataset source |
 | `POST /data-sources/{data_source_id}/validate` | Re-check source reachability before execution |
+| `GET /investigations` | List anomaly cases in the authenticated tenant workspace |
+| `GET /investigations/summary` | Summarize case status, severity, and currency-aware exposure |
+| `PATCH /investigations/{run_id}/{anomaly_id}` | Assign or disposition a case with audited rationale |
 | `GET /metrics` | Prometheus-compatible run and agent metrics |
 | `GET /health` | Service health |
 | `GET /docs` | Interactive OpenAPI documentation |
@@ -234,14 +241,21 @@ purchases, weekend activity, and high-value single-use suppliers. Every flagged 
 severity, confidence, weighted evidence, exposure, and a recommended investigator action.
 
 Generated dashboards include a ranked Anomaly Investigation queue with severity filters and search.
-Reports preserve the same evidence, and the evaluation agent verifies that scores are ranked and
-supported by valid signals. These scores prioritize human review; they do not independently establish
-fraud or authorize an adverse action.
+The investigation workspace adds tenant-scoped assignment, status, rationale, and immutable actor
+history. Reports preserve the same evidence, and the evaluation agent verifies that scores are ranked
+and supported by valid signals. These scores prioritize human review; they do not independently
+establish fraud or authorize an adverse action.
+
+The analytics output also includes a transparent three-month linear spend projection with residual
+uncertainty bounds and supplier risk profiles that combine spend concentration with flagged exposure.
+Both are decision-support baselines with their methods and limitations exposed in the artifacts; they
+are not trained predictive models.
 
 Useful optional columns are `invoice_id`, `department`, and `approver`; common aliases are detected.
-Supplier, category, amount, and date remain the core procurement fields. Forecasting and learned
-tenant-specific models should be enabled only after enough historical data and reviewer outcomes are
-available for time-based validation, drift monitoring, and false-positive measurement.
+Supplier, category, amount, and date remain the core procurement fields. The baseline forecast needs
+at least three monthly observations. Learned tenant-specific models should be enabled only after enough
+history and reviewer outcomes are available for time-based validation, drift monitoring, and
+false-positive measurement.
 
 Credential references use provider-owned identifiers such as
 `aws-secrets://acme/snowflake-finance` or `vault://acme/data-platform`. Resolution of these references
