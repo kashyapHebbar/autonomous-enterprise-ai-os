@@ -27,6 +27,7 @@ def build_procurement_chart_specs(analysis: dict[str, Any]) -> list[ProcurementC
     category_spend = list(analysis["spend_by_category"])
     trend = list(analysis["spend_trend"])
     outliers = list(analysis["outliers"])
+    anomalies = list(analysis.get("anomalies", outliers))
     currency_symbol = analysis.get("dataset", {}).get("currency_symbol", "$")
 
     return [
@@ -40,6 +41,11 @@ def build_procurement_chart_specs(analysis: dict[str, Any]) -> list[ProcurementC
                 {"metric": "Suppliers", "value": kpis["supplier_count"]},
                 {"metric": "Categories", "value": kpis["category_count"]},
                 {"metric": "Outliers", "value": kpis["outlier_count"]},
+                {
+                    "metric": "Flagged transactions",
+                    "value": kpis.get("anomaly_count", len(anomalies)),
+                },
+                {"metric": "High risk", "value": kpis.get("high_risk_count", 0)},
                 {"metric": "Estimated savings", "value": kpis["estimated_savings"]},
             ],
             body_html=_metric_grid(kpis, currency_symbol),
@@ -89,11 +95,11 @@ def build_procurement_chart_specs(analysis: dict[str, Any]) -> list[ProcurementC
         ),
         ProcurementChartSpec(
             slug="anomaly-review",
-            title="Anomaly Review",
+            title="Anomaly Investigation",
             chart_type="table",
-            description="High-value transaction outliers that may require review.",
-            data=outliers,
-            body_html=_outlier_table(outliers, currency_symbol),
+            description="Ranked, explainable procurement risks ready for investigator review.",
+            data=anomalies,
+            body_html=_anomaly_table(anomalies, currency_symbol),
         ),
     ]
 
@@ -150,6 +156,7 @@ def render_dashboard_document(
     kpis = analysis["kpis"]
     row_count = analysis.get("dataset", {}).get("row_count", 0)
     currency_symbol = analysis.get("dataset", {}).get("currency_symbol", "$")
+    anomaly_count = kpis.get("anomaly_count", len(analysis.get("anomalies", [])))
 
     return _document_shell(
         title="Procurement Dashboard",
@@ -180,6 +187,14 @@ def render_dashboard_document(
             <div>
               <span>Estimated savings</span>
               <strong>{escape(_money(kpis["estimated_savings"], currency_symbol))}</strong>
+            </div>
+            <div>
+              <span>Flagged transactions</span>
+              <strong>{escape(str(anomaly_count))}</strong>
+            </div>
+            <div>
+              <span>Risk exposure</span>
+              <strong>{escape(_money(kpis.get("risk_exposure", 0), currency_symbol))}</strong>
             </div>
           </section>
 
@@ -232,6 +247,8 @@ def _metric_grid(kpis: dict[str, Any], currency_symbol: str = "$") -> str:
         ("Suppliers", str(kpis["supplier_count"])),
         ("Categories", str(kpis["category_count"])),
         ("Outliers", str(kpis["outlier_count"])),
+        ("Flagged transactions", str(kpis.get("anomaly_count", kpis["outlier_count"]))),
+        ("High risk", str(kpis.get("high_risk_count", 0))),
         ("Estimated savings", _money(kpis["estimated_savings"], currency_symbol)),
     ]
     items = "\n".join(
@@ -348,37 +365,121 @@ def _line_chart(
     """
 
 
-def _outlier_table(outliers: list[dict[str, Any]], currency_symbol: str = "$") -> str:
-    if not outliers:
-        return '<p class="empty-state">No high-value transaction outliers were detected.</p>'
+def _anomaly_table(anomalies: list[dict[str, Any]], currency_symbol: str = "$") -> str:
+    if not anomalies:
+        return '<p class="empty-state">No transactions crossed the anomaly review threshold.</p>'
 
     rows = "\n".join(
         f"""
-        <tr>
+        <tr data-anomaly-row data-severity="{escape(str(item.get("severity", "medium")))}"
+            data-search="{escape(_anomaly_search_text(item))}">
           <td>{escape(str(item.get("row_number", "")))}</td>
-          <td>{escape(str(item.get("supplier", "")))}</td>
-          <td>{escape(str(item.get("category", "")))}</td>
+          <td>
+            <strong>{escape(str(item.get("supplier", "")))}</strong>
+            <span class="cell-detail">{escape(str(item.get("category", "")))}</span>
+          </td>
           <td>{escape(_money(item.get("amount", 0), currency_symbol))}</td>
-          <td>{escape(str(item.get("reason", "")))}</td>
+          <td>
+            <div class="risk-score">
+              <strong>{escape(str(item.get("risk_score", "--")))}</strong><span>/100</span>
+            </div>
+            <span class="severity severity-{escape(str(item.get("severity", "medium")))}">
+              {escape(str(item.get("severity", "medium")).title())}
+            </span>
+          </td>
+          <td>{escape(_percent(_number(item.get("confidence", 0))))}</td>
+          <td>
+            <strong>{escape(str(item.get("reason", "Review required")))}</strong>
+            <ul class="signal-list">{_signal_items(item)}</ul>
+          </td>
+          <td>{escape(str(item.get("recommended_action", "Review transaction.")))}</td>
         </tr>
         """
-        for item in outliers[:12]
+        for item in anomalies[:50]
     )
     return f"""
-    <div class="table-wrap">
+    <div class="anomaly-queue" data-anomaly-queue>
+      <div class="anomaly-toolbar">
+        <div class="severity-filter" role="group" aria-label="Filter anomaly severity">
+          <button type="button" class="active" data-severity-filter="all">All</button>
+          <button type="button" data-severity-filter="priority">Critical &amp; High</button>
+          <button type="button" data-severity-filter="medium">Medium</button>
+        </div>
+        <label class="anomaly-search">
+          <span>Search transactions</span>
+          <input type="search" placeholder="Supplier, category, signal" data-anomaly-search />
+        </label>
+      </div>
+      <div class="table-wrap">
       <table>
         <thead>
           <tr>
             <th>Row</th>
-            <th>Supplier</th>
-            <th>Category</th>
+            <th>Transaction</th>
             <th>Amount</th>
-            <th>Reason</th>
+            <th>Risk</th>
+            <th>Confidence</th>
+            <th>Evidence</th>
+            <th>Recommended action</th>
           </tr>
         </thead>
         <tbody>{rows}</tbody>
       </table>
+      </div>
+      <p class="queue-count" data-anomaly-count></p>
     </div>
+    {_anomaly_script()}
+    """
+
+
+def _signal_items(item: dict[str, Any]) -> str:
+    return "".join(
+        f'<li><span>+{escape(str(signal.get("weight", 0)))}</span>'
+        f'{escape(str(signal.get("evidence", signal.get("label", ""))))}</li>'
+        for signal in item.get("signals", [])
+    )
+
+
+def _anomaly_search_text(item: dict[str, Any]) -> str:
+    values = [item.get("supplier"), item.get("category"), item.get("reason")]
+    values.extend(signal.get("evidence") for signal in item.get("signals", []))
+    return " ".join(str(value or "") for value in values).lower()
+
+
+def _anomaly_script() -> str:
+    return """
+    <script>
+      document.querySelectorAll('[data-anomaly-queue]').forEach((queue) => {
+        const rows = [...queue.querySelectorAll('[data-anomaly-row]')];
+        const search = queue.querySelector('[data-anomaly-search]');
+        const count = queue.querySelector('[data-anomaly-count]');
+        let severity = 'all';
+        const update = () => {
+          const query = search.value.trim().toLowerCase();
+          let visible = 0;
+          rows.forEach((row) => {
+            const matchesSeverity = severity === 'all'
+              || (severity === 'priority' && ['critical', 'high'].includes(row.dataset.severity))
+              || row.dataset.severity === severity;
+            const matchesSearch = !query || row.dataset.search.includes(query);
+            row.hidden = !(matchesSeverity && matchesSearch);
+            if (!row.hidden) visible += 1;
+          });
+          count.textContent = `${visible} of ${rows.length} flagged transactions shown`;
+        };
+        queue.querySelectorAll('[data-severity-filter]').forEach((button) => {
+          button.addEventListener('click', () => {
+            severity = button.dataset.severityFilter;
+            queue.querySelectorAll('[data-severity-filter]').forEach((item) => {
+              item.classList.toggle('active', item === button);
+            });
+            update();
+          });
+        });
+        search.addEventListener('input', update);
+        update();
+      });
+    </script>
     """
 
 
@@ -492,6 +593,9 @@ def _document_shell(title: str, body: str) -> str:
       overflow: hidden;
       padding: 18px;
     }}
+    .dashboard-chart[data-chart-type="table"] {{
+      grid-column: 1 / -1;
+    }}
     .chart-heading p {{
       margin-bottom: 16px;
       color: var(--muted);
@@ -518,6 +622,57 @@ def _document_shell(title: str, body: str) -> str:
     .table-wrap {{
       overflow-x: auto;
     }}
+    .anomaly-toolbar {{
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 16px;
+    }}
+    .severity-filter {{
+      display: inline-flex;
+      padding: 3px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: var(--surface-strong);
+    }}
+    .severity-filter button {{
+      min-height: 34px;
+      padding: 6px 11px;
+      border: 0;
+      border-radius: 5px;
+      color: var(--muted);
+      background: transparent;
+      cursor: pointer;
+      font: inherit;
+      font-size: 0.82rem;
+      font-weight: 700;
+    }}
+    .severity-filter button.active {{
+      color: var(--text);
+      background: var(--surface);
+      box-shadow: 0 1px 3px rgb(15 23 42 / 12%);
+    }}
+    .anomaly-search {{
+      min-width: min(300px, 100%);
+    }}
+    .anomaly-search span {{
+      display: block;
+      margin-bottom: 4px;
+      color: var(--muted);
+      font-size: 0.75rem;
+      font-weight: 700;
+    }}
+    .anomaly-search input {{
+      width: 100%;
+      min-height: 40px;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      background: var(--surface);
+      font: inherit;
+    }}
     table {{
       width: 100%;
       border-collapse: collapse;
@@ -535,6 +690,53 @@ def _document_shell(title: str, body: str) -> str:
       font-size: 0.78rem;
       text-transform: uppercase;
     }}
+    .cell-detail {{
+      display: block;
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 0.8rem;
+    }}
+    .risk-score {{
+      display: flex;
+      align-items: baseline;
+      gap: 2px;
+      margin-bottom: 5px;
+    }}
+    .risk-score strong {{ font-size: 1.2rem; }}
+    .risk-score span {{ color: var(--muted); font-size: 0.72rem; }}
+    .severity {{
+      display: inline-flex;
+      padding: 3px 7px;
+      border-radius: 5px;
+      font-size: 0.72rem;
+      font-weight: 800;
+    }}
+    .severity-critical {{ color: #7a271a; background: #fee4e2; }}
+    .severity-high {{ color: #912018; background: #ffead5; }}
+    .severity-medium {{ color: #854a0e; background: #fef0c7; }}
+    .severity-low {{ color: #175cd3; background: #dbeafe; }}
+    .signal-list {{
+      display: grid;
+      gap: 5px;
+      margin: 8px 0 0;
+      padding: 0;
+      color: var(--muted);
+      font-size: 0.78rem;
+      list-style: none;
+    }}
+    .signal-list span {{
+      display: inline-block;
+      min-width: 28px;
+      margin-right: 5px;
+      color: var(--danger);
+      font-weight: 800;
+    }}
+    .queue-count {{
+      margin: 12px 0 0;
+      color: var(--muted);
+      font-size: 0.82rem;
+    }}
+    tr[hidden] {{ display: none; }}
     .empty-state {{
       margin: 0;
       padding: 18px;
@@ -554,6 +756,8 @@ def _document_shell(title: str, body: str) -> str:
       .dashboard-chart, .chart-panel {{
         padding: 14px;
       }}
+      .anomaly-toolbar {{ align-items: stretch; flex-direction: column; }}
+      .severity-filter {{ overflow-x: auto; }}
     }}
   </style>
 </head>

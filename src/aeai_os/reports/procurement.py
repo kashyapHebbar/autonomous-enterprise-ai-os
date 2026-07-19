@@ -16,6 +16,7 @@ def render_procurement_markdown_report(
     insights = analysis.get("insights", [])
     savings_opportunities = analysis.get("savings_opportunities", [])
     missing_risks = analysis.get("missing_data_risks", [])
+    anomalies = analysis.get("anomalies", [])
     charts = [artifact for artifact in artifacts if artifact.type == ArtifactType.CHART]
     dashboards = [artifact for artifact in artifacts if artifact.type == ArtifactType.DASHBOARD]
     currency_symbol = analysis.get("dataset", {}).get("currency_symbol", "$")
@@ -30,6 +31,8 @@ def render_procurement_markdown_report(
         _kpi_table(kpis, currency_symbol),
         "## Dataset Quality",
         _quality_section(schema_profile=schema_profile, quality_report=quality_report),
+        "## Anomaly Intelligence",
+        _anomaly_section(anomalies=anomalies, currency_symbol=currency_symbol),
         "## Charts And Dashboard",
         _chart_section(charts=charts, dashboards=dashboards),
         "## Recommendations",
@@ -56,8 +59,8 @@ def render_procurement_markdown_report(
         _bullet_list(
             [
                 (
-                    "Outlier detection uses a simple IQR rule and should be reviewed before "
-                    "audit action."
+                    "Anomaly scores combine robust statistics and deterministic risk rules; "
+                    "they prioritize review and do not establish fraud."
                 ),
                 "Savings estimates are directional opportunities, not negotiated outcomes.",
                 (
@@ -92,6 +95,9 @@ def _kpi_table(kpis: dict[str, Any], currency_symbol: str = "$") -> str:
             _money(kpis.get("average_transaction_value", 0), currency_symbol),
         ),
         ("Outlier count", str(kpis["outlier_count"])),
+        ("Flagged transactions", str(kpis.get("anomaly_count", kpis["outlier_count"]))),
+        ("High-risk transactions", str(kpis.get("high_risk_count", 0))),
+        ("Risk exposure", _money(kpis.get("risk_exposure", 0), currency_symbol)),
         ("Estimated savings", _money(kpis["estimated_savings"], currency_symbol)),
     ]
     return _markdown_table(["Metric", "Value"], rows)
@@ -122,6 +128,28 @@ def _quality_section(
     if not rows:
         return "No schema or quality artifact was available for this report."
     return _markdown_table(["Quality Signal", "Value"], rows)
+
+
+def _anomaly_section(
+    anomalies: list[dict[str, Any]], currency_symbol: str = "$"
+) -> str:
+    if not anomalies:
+        return "No transactions crossed the anomaly review threshold."
+    rows = [
+        (
+            item.get("risk_score", ""),
+            str(item.get("severity", "unknown")).title(),
+            item.get("supplier", ""),
+            _money(item.get("amount", 0), currency_symbol),
+            item.get("reason", ""),
+            item.get("recommended_action", "Review transaction."),
+        )
+        for item in anomalies[:20]
+    ]
+    return _markdown_table(
+        ["Risk Score", "Severity", "Supplier", "Amount", "Evidence", "Action"],
+        rows,
+    )
 
 
 def _chart_section(
