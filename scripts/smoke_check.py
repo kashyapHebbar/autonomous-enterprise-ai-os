@@ -29,6 +29,7 @@ def main() -> int:
         ROOT / "deploy" / "kubernetes" / "overlays" / "production" / "kustomization.yaml",
         ROOT / "docs" / "architecture.md",
         ROOT / "docs" / "development.md",
+        ROOT / "docs" / "portfolio-architecture.md",
         ROOT / "scripts" / "run_procurement_demo.py",
         ROOT / "scripts" / "run_workflow_worker.py",
         ROOT / "scripts" / "validate_cloud_deployment.py",
