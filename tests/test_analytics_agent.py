@@ -83,6 +83,9 @@ def test_procurement_kpis_cover_spend_trends_outliers_savings_and_missing_risks(
         "category_count": 4,
         "average_transaction_value": 282.0,
         "outlier_count": 1,
+        "anomaly_count": 1,
+        "high_risk_count": 1,
+        "risk_exposure": 1000.0,
         "estimated_savings": 86.2,
     }
     assert analysis["spend_by_supplier"][0] == {
@@ -96,6 +99,8 @@ def test_procurement_kpis_cover_spend_trends_outliers_savings_and_missing_risks(
         {"month": "2026-03", "spend": 10.0},
     ]
     assert analysis["outliers"][0]["amount"] == 1000.0
+    assert analysis["anomalies"][0]["risk_score"] >= 60
+    assert analysis["anomalies"][0]["signals"]
     assert {item["type"] for item in analysis["savings_opportunities"]} == {
         "supplier_concentration",
         "tail_supplier_consolidation",

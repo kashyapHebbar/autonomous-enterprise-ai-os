@@ -115,6 +115,7 @@ def test_evaluation_agent_passes_structured_quality_gates(tmp_path):
         "artifact_completeness",
         "task_completion",
         "data_consistency",
+        "anomaly_explainability",
         "assumption_disclosure",
     } == set(check_results)
     assert check_results["data_consistency"]["passed"] is True

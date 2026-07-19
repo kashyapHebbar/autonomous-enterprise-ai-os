@@ -18,6 +18,7 @@ The first vertical slice is a procurement analytics workflow:
 - Warehouse dataset references through SQLite and Snowflake connector abstractions
 - Data retrieval, analytics/code, visualization, report, and evaluation agents
 - Security policy gates for required tools and risky actions
+- Explainable procurement anomaly scoring and investigator-ready risk queues
 - API-driven workflow execution, approval decisions, failed-node retry, and run inspection
 - OpenTelemetry trace IDs, Prometheus-compatible metrics, and optional MLflow/LangSmith tracking
 - Docker Compose for API, workflow worker, Postgres, Redis, and MinIO
@@ -223,6 +224,24 @@ customized with `AEAI_OIDC_ROLES_CLAIM`, `AEAI_OIDC_ORGANIZATION_CLAIM`, and
 `AEAI_OIDC_WORKSPACES_CLAIM`. Clients may select only an assigned workspace with
 `X-AEAI-Workspace-ID`. Runs, nested artifacts and jobs, data sources, connector installations, and
 admin affected-run views are filtered against this server-derived tenant context.
+
+## Anomaly Intelligence
+
+Procurement workflows score suspicious transactions with an explainable `0-100` risk score. The
+initial model combines robust amount statistics with deterministic signals for duplicate invoice
+identifiers, repeated transaction fingerprints, supplier-level amount spikes, potential split
+purchases, weekend activity, and high-value single-use suppliers. Every flagged item includes
+severity, confidence, weighted evidence, exposure, and a recommended investigator action.
+
+Generated dashboards include a ranked Anomaly Investigation queue with severity filters and search.
+Reports preserve the same evidence, and the evaluation agent verifies that scores are ranked and
+supported by valid signals. These scores prioritize human review; they do not independently establish
+fraud or authorize an adverse action.
+
+Useful optional columns are `invoice_id`, `department`, and `approver`; common aliases are detected.
+Supplier, category, amount, and date remain the core procurement fields. Forecasting and learned
+tenant-specific models should be enabled only after enough historical data and reviewer outcomes are
+available for time-based validation, drift monitoring, and false-positive measurement.
 
 Credential references use provider-owned identifiers such as
 `aws-secrets://acme/snowflake-finance` or `vault://acme/data-platform`. Resolution of these references

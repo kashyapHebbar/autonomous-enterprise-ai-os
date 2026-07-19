@@ -40,6 +40,7 @@ def evaluate_procurement_outputs(
             report_markdown=report_markdown,
             chart_payloads=chart_payloads,
         ),
+        _anomaly_explainability_check(analysis),
         _assumption_disclosure_check(report_markdown),
     ]
     required_checks = [check for check in checks if check["required"]]
@@ -173,6 +174,49 @@ def _assumption_disclosure_check(report_markdown: str) -> dict[str, Any]:
         details={
             "has_assumptions": has_assumptions,
             "has_limitations": has_limitations,
+        },
+    )
+
+
+def _anomaly_explainability_check(analysis: dict[str, Any]) -> dict[str, Any]:
+    anomalies = analysis.get("anomalies", [])
+    required_fields = {
+        "id",
+        "risk_score",
+        "severity",
+        "confidence",
+        "signals",
+        "recommended_action",
+    }
+    malformed: list[str] = []
+    previous_score = 101
+    for index, anomaly in enumerate(anomalies):
+        anomaly_id = str(anomaly.get("id") or f"index-{index}")
+        if required_fields - set(anomaly):
+            malformed.append(anomaly_id)
+            continue
+        score = _number(anomaly["risk_score"])
+        signals = anomaly.get("signals")
+        valid_signals = bool(signals) and all(
+            signal.get("code") and signal.get("evidence") and signal.get("weight")
+            for signal in signals
+        )
+        if not 0 <= score <= 100 or not valid_signals or score > previous_score:
+            malformed.append(anomaly_id)
+        previous_score = score
+    passed = not malformed
+    return _check(
+        name="anomaly_explainability",
+        passed=passed,
+        score=1.0 if passed else 0.0,
+        message=(
+            "Anomaly scores are ranked and include explainable evidence."
+            if passed
+            else "One or more anomaly scores are malformed or lack evidence."
+        ),
+        details={
+            "anomaly_count": len(anomalies),
+            "malformed_anomaly_ids": malformed,
         },
     )
 

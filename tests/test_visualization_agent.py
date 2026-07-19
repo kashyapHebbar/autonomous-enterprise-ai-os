@@ -96,8 +96,16 @@ def test_visualization_agent_registers_chart_and_dashboard_artifacts(tmp_path):
         "Supplier Spend Concentration",
         "Category Spend Breakdown",
         "Monthly Spend Trend",
-        "Anomaly Review",
+        "Anomaly Investigation",
     } == chart_titles
+    anomaly_document = next(
+        Path(artifact.uri).read_text(encoding="utf-8")
+        for artifact in chart_artifacts
+        if artifact.metadata["title"] == "Anomaly Investigation"
+    )
+    assert "data-anomaly-queue" in anomaly_document
+    assert "data-severity-filter" in anomaly_document
+    assert "data-anomaly-search" in anomaly_document
 
     for chart_artifact in chart_artifacts:
         chart_html = Path(chart_artifact.uri).read_text(encoding="utf-8")

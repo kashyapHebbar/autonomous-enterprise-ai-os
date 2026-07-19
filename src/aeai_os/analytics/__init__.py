@@ -1,5 +1,6 @@
 """Procurement analytics and safe-code helpers."""
 
+from aeai_os.analytics.anomalies import detect_procurement_anomalies
 from aeai_os.analytics.code_guard import (
     CodePolicyViolation,
     CodeSafetyDecision,
@@ -20,4 +21,5 @@ __all__ = [
     "ProcurementAnalysisResult",
     "PythonCodeGuard",
     "analyze_procurement_dataset",
+    "detect_procurement_anomalies",
 ]

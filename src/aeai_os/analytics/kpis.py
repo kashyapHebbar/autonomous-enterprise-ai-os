@@ -3,9 +3,9 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import datetime
-from math import ceil, floor
 from typing import Any
 
+from aeai_os.analytics.anomalies import detect_procurement_anomalies
 from aeai_os.data import DatasetQueryAdapter
 from aeai_os.data.profiling import is_missing_value
 
@@ -38,6 +38,9 @@ COLUMN_ALIASES = {
         "posting_date",
         "date",
     ),
+    "invoice_id": ("invoice_id", "invoice_number", "invoice_no", "bill_number"),
+    "department": ("department", "business_unit", "cost_center", "team"),
+    "approver": ("approver", "approved_by", "buyer", "requester"),
 }
 
 
@@ -71,7 +74,7 @@ def analyze_procurement_dataset(adapter: DatasetQueryAdapter) -> ProcurementAnal
     category_totals: dict[str, float] = {}
     monthly_totals: dict[str, float] = {}
     parsed_rows: list[dict[str, Any]] = []
-    missing_counts = {role: 0 for role in COLUMN_ALIASES}
+    missing_counts = {role: 0 for role in ("supplier", "category", "amount", "date")}
     invalid_amount_rows = 0
 
     for row_number, row in enumerate(rows, start=2):
@@ -108,6 +111,10 @@ def analyze_procurement_dataset(adapter: DatasetQueryAdapter) -> ProcurementAnal
                 "category": category_key,
                 "amount": amount,
                 "month": month,
+                "date": raw_date,
+                "invoice_id": _value(row, resolved.get("invoice_id")),
+                "department": _value(row, resolved.get("department")),
+                "approver": _value(row, resolved.get("approver")),
             }
         )
 
@@ -118,7 +125,13 @@ def analyze_procurement_dataset(adapter: DatasetQueryAdapter) -> ProcurementAnal
         {"month": month, "spend": round(amount, 4)}
         for month, amount in sorted(monthly_totals.items())
     ]
-    outliers = _find_outliers(parsed_rows)
+    anomaly_result = detect_procurement_anomalies(parsed_rows)
+    anomalies = anomaly_result["anomalies"]
+    outliers = [
+        item
+        for item in anomalies
+        if any(signal["code"] == "amount_outlier" for signal in item["signals"])
+    ]
     missing_risks = _missing_data_risks(missing_counts, len(rows), resolved)
     savings = _savings_opportunities(
         total_spend=total_spend,
@@ -152,12 +165,20 @@ def analyze_procurement_dataset(adapter: DatasetQueryAdapter) -> ProcurementAnal
                     round(total_spend / len(parsed_rows), 4) if parsed_rows else 0.0
                 ),
                 "outlier_count": len(outliers),
+                "anomaly_count": anomaly_result["summary"]["anomaly_count"],
+                "high_risk_count": (
+                    anomaly_result["summary"]["critical_count"]
+                    + anomaly_result["summary"]["high_risk_count"]
+                ),
+                "risk_exposure": anomaly_result["summary"]["risk_exposure"],
                 "estimated_savings": round(sum(item["estimated_savings"] for item in savings), 4),
             },
             "spend_by_supplier": spend_by_supplier,
             "spend_by_category": spend_by_category,
             "spend_trend": spend_trend,
             "outliers": outliers,
+            "anomaly_intelligence": anomaly_result,
+            "anomalies": anomalies,
             "savings_opportunities": savings,
             "missing_data_risks": missing_risks,
             "insights": insights,
@@ -255,34 +276,6 @@ def _ranked_spend(
         }
         for name, amount in sorted(totals.items(), key=lambda item: (-item[1], item[0]))
     ]
-
-
-def _find_outliers(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    amounts = sorted(row["amount"] for row in rows)
-    if len(amounts) < 4:
-        return []
-    q1 = _percentile(amounts, 0.25)
-    q3 = _percentile(amounts, 0.75)
-    threshold = q3 + 1.5 * (q3 - q1)
-    return [
-        {
-            **row,
-            "amount": round(row["amount"], 4),
-            "reason": f"Amount exceeds IQR threshold of {round(threshold, 4)}.",
-        }
-        for row in rows
-        if row["amount"] > threshold
-    ]
-
-
-def _percentile(values: list[float], percentile: float) -> float:
-    position = (len(values) - 1) * percentile
-    lower = floor(position)
-    upper = ceil(position)
-    if lower == upper:
-        return values[lower]
-    weight = position - lower
-    return values[lower] * (1 - weight) + values[upper] * weight
 
 
 def _missing_data_risks(
