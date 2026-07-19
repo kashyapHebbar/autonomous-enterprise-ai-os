@@ -17,6 +17,7 @@ const els = {
   errorText: document.querySelector("#errorText"),
   flowSteps: document.querySelector("#flowSteps"),
   flowDetail: document.querySelector("#flowDetail"),
+  flowSummary: document.querySelector("#flowSummary"),
   graphNodes: document.querySelector("#graphNodes"),
   workflowJobs: document.querySelector("#workflowJobs"),
   timeline: document.querySelector("#timeline"),
@@ -100,6 +101,25 @@ function titleLabel(value) {
       return acronyms[key] || key[0].toUpperCase() + key.slice(1);
     })
     .join(" ");
+}
+
+function shortId(value) {
+  const text = String(value || "");
+  return text.length > 16 ? `${text.slice(0, 8)}...${text.slice(-5)}` : text;
+}
+
+function workflowTitle(task) {
+  const text = String(task || "Workflow").trim().replace(/[.]+$/, "");
+  return text.length > 76 ? `${text.slice(0, 73).trimEnd()}...` : text;
+}
+
+function datasetDisplayName(run) {
+  const artifact = run.artifacts.find((item) => item.id === run.dataset_artifact_id);
+  if (!artifact) {
+    return "No dataset";
+  }
+  const uri = String(artifact.uri || "");
+  return artifact.metadata?.title || artifact.metadata?.filename || uri.split("/").pop() || "Dataset";
 }
 
 function pillClass(status) {
@@ -216,16 +236,22 @@ function setActionStatus(message, kind = "idle") {
 
 function renderRun() {
   const { run } = state.data;
-  document.title = `${run.id} | Run Inspector`;
-  els.runTitle.textContent = run.id;
+  document.title = `${workflowTitle(run.task)} | Workflow`;
+  els.runTitle.textContent = workflowTitle(run.task);
   els.runStatus.textContent = titleLabel(run.status);
   els.runStatus.className = `status-pill status-${run.status}`;
-  els.traceId.textContent = run.trace_id || "--";
-  els.datasetId.textContent = run.dataset_artifact_id || "--";
+  els.traceId.textContent = shortId(run.id);
+  els.traceId.title = run.id;
+  els.datasetId.textContent = datasetDisplayName(run);
+  els.datasetId.title = run.dataset_artifact_id || "";
   els.updatedAt.textContent = formatDate(run.updated_at);
   els.artifactCount.textContent = String(run.artifacts.length);
   els.taskText.textContent = run.task;
   els.errorText.textContent = run.error_summary || "";
+  const passedEvaluations = run.evaluations.filter((evaluation) => evaluation.passed).length;
+  els.flowSummary.textContent = `${state.data.graphNodes.length} agent stages · ${
+    run.artifacts.length
+  } outputs · ${passedEvaluations} quality gate${passedEvaluations === 1 ? "" : "s"} passed`;
 }
 
 function renderNodeActions(node) {

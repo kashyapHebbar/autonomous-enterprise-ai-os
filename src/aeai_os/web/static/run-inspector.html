@@ -3,9 +3,9 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Run Inspector | Autonomous Enterprise AI OS</title>
-    <link rel="stylesheet" href="/run-inspector/run-inspector.css?v=workflow-story-1" />
-    <link rel="stylesheet" href="/app/app-shell.css?v=visual-polish-2" />
+    <title>Workflow | Autonomous Enterprise AI OS</title>
+    <link rel="stylesheet" href="/run-inspector/run-inspector.css?v=workflow-console-2" />
+    <link rel="stylesheet" href="/app/app-shell.css?v=product-system-1" />
   </head>
   <body>
     <main class="shell product-shell">
@@ -18,10 +18,10 @@
           </span>
         </a>
         <nav class="app-nav" aria-label="Primary">
-          <a href="/app"><span class="nav-icon" aria-hidden="true">R</span><span>Runs</span></a>
-          <a href="/app/artifacts"><span class="nav-icon" aria-hidden="true">A</span><span>Artifacts</span></a>
+          <a href="/app" aria-current="page"><span class="nav-icon" aria-hidden="true">W</span><span>Workflows</span></a>
+          <a href="/app/artifacts"><span class="nav-icon" aria-hidden="true">O</span><span>Outputs</span></a>
           <a href="/app/admin"><span class="nav-icon" aria-hidden="true">G</span><span>Governance</span></a>
-          <a href="/docs"><span class="nav-icon" aria-hidden="true">D</span><span>API Docs</span></a>
+          <a href="/docs"><span class="nav-icon" aria-hidden="true">{ }</span><span>API Reference</span></a>
         </nav>
         <div class="sidebar-footer">
           <div class="system-chip"><span>Mode</span><strong>Local</strong></div>
@@ -32,15 +32,15 @@
       <div class="workspace-shell">
         <header class="intro-band inspector-header">
           <div class="run-heading">
-            <p class="eyebrow">Agent workflow</p>
-            <h1 id="runTitle">Run Inspector</h1>
+            <p class="eyebrow">Workflow execution</p>
+            <h1 id="runTitle">Workflow</h1>
           </div>
           <span class="status-pill" id="runStatus">Loading</span>
         </header>
 
         <section class="summary-grid" aria-label="Run summary">
           <article class="summary-panel">
-            <span>Trace</span>
+            <span>Run</span>
             <strong id="traceId">--</strong>
           </article>
           <article class="summary-panel">
@@ -52,12 +52,13 @@
             <strong id="updatedAt">--</strong>
           </article>
           <article class="summary-panel">
-            <span>Artifacts</span>
+            <span>Outputs</span>
             <strong id="artifactCount">--</strong>
           </article>
         </section>
 
         <section class="task-panel">
+          <span class="task-label">Objective</span>
           <p id="taskText">Loading run details.</p>
           <p class="action-text" id="actionText" aria-live="polite"></p>
           <p class="error-text" id="errorText"></p>
@@ -69,7 +70,7 @@
               <p class="eyebrow">Workflow story</p>
               <h2 id="flowTitle">How the agents completed this task</h2>
             </div>
-            <p>Select a step to see what went in, what happened, and what came out.</p>
+            <p id="flowSummary">Execution summary</p>
           </div>
           <div class="flow-steps" id="flowSteps" role="tablist" aria-label="Workflow steps"></div>
           <article class="flow-detail" id="flowDetail" aria-live="polite"></article>
@@ -80,7 +81,7 @@
             <div class="section-heading">
               <div>
                 <p class="eyebrow">Execution graph</p>
-                <h2 id="graphTitle">Nodes</h2>
+                <h2 id="graphTitle">Agent Steps</h2>
               </div>
             </div>
             <div class="node-list" id="graphNodes"></div>
@@ -90,7 +91,7 @@
             <div class="section-heading">
               <div>
                 <p class="eyebrow">Queue</p>
-                <h2 id="jobsTitle">Workflow Jobs</h2>
+                <h2 id="jobsTitle">Execution Queue</h2>
               </div>
             </div>
             <div class="compact-list" id="workflowJobs"></div>
@@ -110,7 +111,7 @@
             <div class="section-heading">
               <div>
                 <p class="eyebrow">Outputs</p>
-                <h2 id="artifactsTitle">Artifacts</h2>
+                <h2 id="artifactsTitle">Outputs</h2>
               </div>
             </div>
             <div class="compact-list" id="artifacts"></div>
@@ -120,7 +121,7 @@
             <div class="section-heading">
               <div>
                 <p class="eyebrow">Approvals</p>
-                <h2 id="approvalTitle">Decision History</h2>
+                <h2 id="approvalTitle">Policy Decisions</h2>
               </div>
             </div>
             <div class="compact-list" id="approvalHistory"></div>
@@ -130,7 +131,7 @@
             <div class="section-heading">
               <div>
                 <p class="eyebrow">Quality</p>
-                <h2 id="evaluationsTitle">Evaluations</h2>
+                <h2 id="evaluationsTitle">Quality Gates</h2>
               </div>
             </div>
             <div class="compact-list" id="evaluations"></div>
@@ -140,7 +141,7 @@
             <div class="section-heading">
               <div>
                 <p class="eyebrow">Promotion</p>
-                <h2 id="deploymentTitle">Deployment History</h2>
+                <h2 id="deploymentTitle">Deployments</h2>
               </div>
             </div>
             <div class="compact-list" id="deploymentHistory"></div>
@@ -159,6 +160,6 @@
         </section>
       </div>
     </main>
-    <script src="/run-inspector/run-inspector.js?v=workflow-story-1" defer></script>
+    <script src="/run-inspector/run-inspector.js?v=workflow-console-2" defer></script>
   </body>
 </html>

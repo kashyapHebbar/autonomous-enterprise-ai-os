@@ -3,9 +3,9 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Control Plane | Autonomous Enterprise AI OS</title>
-    <link rel="stylesheet" href="/app/control-plane.css?v=visual-polish-2" />
-    <link rel="stylesheet" href="/app/app-shell.css?v=visual-polish-2" />
+    <title>Workflows | Autonomous Enterprise AI OS</title>
+    <link rel="stylesheet" href="/app/control-plane.css?v=workflow-console-2" />
+    <link rel="stylesheet" href="/app/app-shell.css?v=product-system-1" />
   </head>
   <body>
     <main class="shell product-shell">
@@ -18,10 +18,10 @@
           </span>
         </a>
         <nav class="app-nav" aria-label="Primary">
-          <a href="/app" aria-current="page"><span class="nav-icon" aria-hidden="true">R</span><span>Runs</span></a>
-          <a href="/app/artifacts"><span class="nav-icon" aria-hidden="true">A</span><span>Artifacts</span></a>
+          <a href="/app" aria-current="page"><span class="nav-icon" aria-hidden="true">W</span><span>Workflows</span></a>
+          <a href="/app/artifacts"><span class="nav-icon" aria-hidden="true">O</span><span>Outputs</span></a>
           <a href="/app/admin"><span class="nav-icon" aria-hidden="true">G</span><span>Governance</span></a>
-          <a href="/docs"><span class="nav-icon" aria-hidden="true">D</span><span>API Docs</span></a>
+          <a href="/docs"><span class="nav-icon" aria-hidden="true">{ }</span><span>API Reference</span></a>
         </nav>
         <div class="sidebar-footer">
           <div class="system-chip"><span>Mode</span><strong>Local</strong></div>
@@ -32,11 +32,11 @@
       <div class="workspace-shell">
         <section class="intro-band" aria-labelledby="pageTitle">
           <div>
-            <p class="eyebrow">Control plane</p>
-            <h1 id="pageTitle">Runs</h1>
+            <p class="eyebrow">Autonomous operations</p>
+            <h1 id="pageTitle">Workflow Console</h1>
           </div>
           <div class="page-actions">
-            <span class="status-pill">Orchestrator</span>
+            <span class="status-pill status-ok">Orchestrator ready</span>
             <button class="icon-button" id="refreshRuns" type="button" title="Refresh runs">
               <svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M20 6v5h-5" />
@@ -49,19 +49,26 @@
           </div>
         </section>
 
+        <section class="workflow-summary" aria-label="Workflow summary">
+          <article><span>Total workflows</span><strong id="totalWorkflowCount">--</strong></article>
+          <article><span>Completed</span><strong id="completedWorkflowCount">--</strong></article>
+          <article><span>In progress</span><strong id="activeWorkflowCount">--</strong></article>
+          <article><span>Needs attention</span><strong id="attentionWorkflowCount">--</strong></article>
+        </section>
+
         <section class="control-grid">
           <section class="panel create-panel" aria-labelledby="createRunTitle">
             <div class="section-heading">
               <div>
-                <p class="eyebrow">New workflow</p>
-                <h2 id="createRunTitle">Create Run</h2>
+                <p class="eyebrow">New analysis</p>
+                <h2 id="createRunTitle">Launch Workflow</h2>
               </div>
               <span class="status-pill" id="sourceStatus">Loading sources</span>
             </div>
 
             <form id="createRunForm" class="run-form">
               <label class="field">
-                <span>Task</span>
+                <span>Analysis objective</span>
                 <textarea
                   id="taskInput"
                   name="task"
@@ -74,14 +81,14 @@
               </label>
 
               <fieldset class="segmented-field">
-                <legend>Dataset</legend>
+                <legend>Data input</legend>
                 <label>
-                  <input type="radio" name="datasetMode" value="none" checked />
-                  <span>None</span>
+                  <input type="radio" name="datasetMode" value="demo" checked />
+                  <span>Demo data</span>
                 </label>
                 <label>
                   <input type="radio" name="datasetMode" value="source" />
-                  <span>Source</span>
+                  <span>Catalog</span>
                 </label>
                 <label>
                   <input type="radio" name="datasetMode" value="uri" />
@@ -90,24 +97,24 @@
               </fieldset>
 
               <label class="field" id="sourceField" hidden>
-                <span>Data Source</span>
+                <span>Registered source</span>
                 <select id="dataSourceSelect" name="dataSourceId"></select>
               </label>
 
               <label class="field" id="uriField" hidden>
-                <span>Dataset URI</span>
+                <span>Dataset location</span>
                 <input
                   id="datasetUriInput"
                   name="datasetUri"
                   type="text"
                   maxlength="2048"
-                  placeholder="s3://bucket/procurement.csv"
+                  placeholder="/path/procurement.csv or s3://bucket/procurement.csv"
                 />
               </label>
 
               <div class="form-actions">
                 <button class="primary-button" id="createRunButton" type="submit">
-                  Create Run
+                  Run workflow
                 </button>
                 <p class="action-text" id="formStatus" aria-live="polite"></p>
               </div>
@@ -120,15 +127,31 @@
             <div class="section-heading">
               <div>
                 <p class="eyebrow">Recent activity</p>
-                <h2 id="runsListTitle">Run Queue</h2>
+                <h2 id="runsListTitle">Workflow History</h2>
               </div>
               <span class="status-pill" id="runCount">--</span>
+            </div>
+            <div class="history-controls">
+              <label>
+                <span class="sr-only">Search workflows</span>
+                <input id="runSearch" type="search" placeholder="Search workflows" autocomplete="off" />
+              </label>
+              <label>
+                <span class="sr-only">Filter workflow status</span>
+                <select id="runStatusFilter">
+                  <option value="all">All statuses</option>
+                  <option value="completed">Completed</option>
+                  <option value="running">In progress</option>
+                  <option value="pending">Pending</option>
+                  <option value="failed">Needs attention</option>
+                </select>
+              </label>
             </div>
             <div class="run-list" id="runsList"></div>
           </section>
         </section>
       </div>
     </main>
-    <script src="/app/control-plane.js?v=visual-polish-2" defer></script>
+    <script src="/app/control-plane.js?v=workflow-console-2" defer></script>
   </body>
 </html>

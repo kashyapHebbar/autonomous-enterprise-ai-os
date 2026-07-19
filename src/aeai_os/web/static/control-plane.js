@@ -3,6 +3,8 @@ const state = {
   dataSources: [],
   loadingRuns: false,
   creatingRun: false,
+  searchQuery: "",
+  statusFilter: "all",
 };
 
 const els = {
@@ -19,6 +21,12 @@ const els = {
   datasetUriInput: document.querySelector("#datasetUriInput"),
   formStatus: document.querySelector("#formStatus"),
   createdRun: document.querySelector("#createdRun"),
+  totalWorkflowCount: document.querySelector("#totalWorkflowCount"),
+  completedWorkflowCount: document.querySelector("#completedWorkflowCount"),
+  activeWorkflowCount: document.querySelector("#activeWorkflowCount"),
+  attentionWorkflowCount: document.querySelector("#attentionWorkflowCount"),
+  runSearch: document.querySelector("#runSearch"),
+  runStatusFilter: document.querySelector("#runStatusFilter"),
 };
 
 async function requestJson(path, options = {}) {
@@ -110,6 +118,40 @@ function inspectorUrl(runId) {
   return `/run-inspector/runs/${encodeURIComponent(runId)}`;
 }
 
+function shortId(value) {
+  const text = String(value || "");
+  return text.length > 16 ? `${text.slice(0, 8)}...${text.slice(-5)}` : text;
+}
+
+function workflowTitle(task) {
+  const text = String(task || "Untitled workflow").trim();
+  return text.length > 86 ? `${text.slice(0, 83).trimEnd()}...` : text;
+}
+
+function visibleRuns() {
+  const query = state.searchQuery.trim().toLowerCase();
+  return state.runs.filter((run) => {
+    const matchesStatus = state.statusFilter === "all" || run.status === state.statusFilter;
+    const matchesQuery = !query || `${run.task} ${run.id}`.toLowerCase().includes(query);
+    return matchesStatus && matchesQuery;
+  });
+}
+
+function renderWorkflowSummary() {
+  const activeStatuses = new Set(["running", "queued", "pending", "waiting_for_approval"]);
+  const attentionStatuses = new Set(["failed", "dead_letter", "denied"]);
+  els.totalWorkflowCount.textContent = state.runs.length;
+  els.completedWorkflowCount.textContent = state.runs.filter(
+    (run) => run.status === "completed"
+  ).length;
+  els.activeWorkflowCount.textContent = state.runs.filter((run) =>
+    activeStatuses.has(run.status)
+  ).length;
+  els.attentionWorkflowCount.textContent = state.runs.filter((run) =>
+    attentionStatuses.has(run.status)
+  ).length;
+}
+
 function setFormStatus(message, kind = "") {
   els.formStatus.textContent = message;
   els.formStatus.className = `action-text${kind ? ` action-${kind}` : ""}`;
@@ -142,24 +184,27 @@ function renderSources() {
     : '<option value="">No registered sources</option>';
   els.sourceStatus.textContent = sources.length
     ? `${sources.length} source${sources.length === 1 ? "" : "s"}`
-    : "No sources";
+    : "Demo ready";
 }
 
 function renderRuns() {
+  const filteredRuns = visibleRuns();
   els.runCount.textContent = state.loadingRuns
     ? "Loading"
-    : `${state.runs.length} run${state.runs.length === 1 ? "" : "s"}`;
+    : state.searchQuery || state.statusFilter !== "all"
+      ? `${filteredRuns.length} of ${state.runs.length}`
+      : `${state.runs.length} workflow${state.runs.length === 1 ? "" : "s"}`;
 
   if (state.loadingRuns) {
     els.runsList.innerHTML = '<p class="empty">Loading recent runs.</p>';
     return;
   }
-  if (!state.runs.length) {
-    els.runsList.innerHTML = '<p class="empty">No runs have been created yet.</p>';
+  if (!filteredRuns.length) {
+    els.runsList.innerHTML = '<p class="empty">No workflows match the current view.</p>';
     return;
   }
 
-  const runs = [...state.runs].sort(
+  const runs = [...filteredRuns].sort(
     (left, right) => new Date(right.updated_at) - new Date(left.updated_at)
   );
   els.runsList.innerHTML = runs.map(renderRunItem).join("");
@@ -169,28 +214,38 @@ function renderRunItem(run) {
   return `
     <article class="run-item">
       <div class="run-main">
-        <a class="run-link" href="${inspectorUrl(run.id)}">${escapeHtml(run.id)}</a>
+        <div class="run-title-group">
+          <a class="workflow-title" href="${inspectorUrl(run.id)}">${escapeHtml(
+            workflowTitle(run.task)
+          )}</a>
+          <code title="${escapeHtml(run.id)}">${escapeHtml(shortId(run.id))}</code>
+        </div>
         <span class="${statusClass(run.status)}">${escapeHtml(titleLabel(run.status))}</span>
       </div>
-      <p class="run-task">${escapeHtml(run.task)}</p>
       <div class="meta-line">
-        <span>updated ${escapeHtml(formatDate(run.updated_at))}</span>
-        <span>created ${escapeHtml(formatDate(run.created_at))}</span>
-        ${
-          run.dataset_artifact_id
-            ? `<span>dataset ${escapeHtml(run.dataset_artifact_id)}</span>`
-            : ""
-        }
+        <span>${escapeHtml(formatDate(run.updated_at))}</span>
+        <span>${
+          Array.isArray(run.artifacts)
+            ? `${run.artifacts.length} outputs`
+            : run.status === "completed"
+              ? "Outputs ready"
+              : "No outputs yet"
+        }</span>
+        <span>${run.dataset_artifact_id ? "Dataset attached" : "No dataset"}</span>
       </div>
+      <a class="run-link" href="${inspectorUrl(run.id)}">Open workflow</a>
     </article>`;
 }
 
 function renderCreatedRun(run) {
   els.createdRun.hidden = false;
   els.createdRun.innerHTML = `
-    <strong>${escapeHtml(run.id)}</strong>
-    <p class="run-task">${escapeHtml(run.task)}</p>
-    <a class="run-link" href="${inspectorUrl(run.id)}">Open Run Inspector</a>`;
+    <span class="status-pill ${statusClass(run.status)}">${escapeHtml(
+      titleLabel(run.status)
+    )}</span>
+    <strong>${escapeHtml(workflowTitle(run.task))}</strong>
+    <code title="${escapeHtml(run.id)}">${escapeHtml(shortId(run.id))}</code>
+    <a class="run-link" href="${inspectorUrl(run.id)}">Open workflow</a>`;
 }
 
 async function loadRuns() {
@@ -203,6 +258,7 @@ async function loadRuns() {
     els.runsList.innerHTML = `<p class="error-panel">${escapeHtml(error.message)}</p>`;
   } finally {
     state.loadingRuns = false;
+    renderWorkflowSummary();
     renderRuns();
     els.refreshRuns.disabled = false;
   }
@@ -224,6 +280,10 @@ function buildCreatePayload() {
     metadata: { source: "control-plane-ui" },
   };
   const mode = selectedDatasetMode();
+  if (mode === "demo") {
+    payload.dataset_uri = "examples/procurement_demo.csv";
+    payload.metadata.dataset_origin = "demo";
+  }
   if (mode === "source") {
     const dataSourceId = els.dataSourceSelect.value.trim();
     if (!dataSourceId) {
@@ -255,7 +315,7 @@ async function handleCreateRun(event) {
 
   state.creatingRun = true;
   els.createRunButton.disabled = true;
-  setFormStatus("Creating run.", "");
+  setFormStatus("Preparing workflow.", "");
 
   try {
     const run = await requestJson("/runs", {
@@ -263,8 +323,16 @@ async function handleCreateRun(event) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    setFormStatus("Run created.", "success");
-    renderCreatedRun(run);
+    setFormStatus("Running five agent stages.", "");
+    await requestJson(`/runs/${encodeURIComponent(run.id)}/execute/procurement`, {
+      method: "POST",
+    });
+    const completedRun = await requestJson(`/runs/${encodeURIComponent(run.id)}`);
+    setFormStatus(
+      completedRun.status === "completed" ? "Workflow completed." : "Workflow submitted.",
+      "success"
+    );
+    renderCreatedRun(completedRun);
     els.taskInput.value = "";
     els.datasetUriInput.value = "";
     await loadRuns();
@@ -276,6 +344,12 @@ async function handleCreateRun(event) {
   }
 }
 
+function handleRunFilters() {
+  state.searchQuery = els.runSearch.value;
+  state.statusFilter = els.runStatusFilter.value;
+  renderRuns();
+}
+
 function handleRefreshRuns() {
   els.refreshRuns.disabled = true;
   loadRuns();
@@ -284,6 +358,8 @@ function handleRefreshRuns() {
 els.createRunForm.addEventListener("change", updateDatasetFields);
 els.createRunForm.addEventListener("submit", handleCreateRun);
 els.refreshRuns.addEventListener("click", handleRefreshRuns);
+els.runSearch.addEventListener("input", handleRunFilters);
+els.runStatusFilter.addEventListener("change", handleRunFilters);
 
 updateDatasetFields();
 loadSources();

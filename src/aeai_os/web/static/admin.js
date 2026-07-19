@@ -78,7 +78,29 @@ function titleLabel(value) {
 function chip(value, extraClass = "") {
   const normalized = String(value ?? "unknown").toLowerCase();
   const cssClass = `status-${normalized.replaceAll(" ", "_")}`;
-  return `<span class="chip ${cssClass} ${extraClass}">${escapeHtml(titleLabel(normalized))}</span>`;
+  return `<span class="chip ${cssClass} ${extraClass}">${escapeHtml(displayStatus(normalized))}</span>`;
+}
+
+function displayStatus(value) {
+  const normalized = String(value || "unknown").toLowerCase();
+  const names = {
+    ok: "Ready",
+    not_configured: "Setup needed",
+    loading: "Checking",
+    failed: "Attention",
+  };
+  return names[normalized] || titleLabel(normalized);
+}
+
+function agentName(value) {
+  const names = {
+    analytics_code: "Analytics",
+    data_retrieval: "Data Retrieval",
+    evaluation: "Quality Evaluation",
+    planner: "Planning",
+    report: "Reporting",
+  };
+  return names[value] || titleLabel(value);
 }
 
 function setText(element, value) {
@@ -86,7 +108,7 @@ function setText(element, value) {
 }
 
 function setStatus(element, value) {
-  element.textContent = titleLabel(value);
+  element.textContent = displayStatus(value);
   element.className = `status-pill status-${String(value).toLowerCase()}`;
 }
 
@@ -109,7 +131,7 @@ function renderAgents(agents) {
         <article class="item-card">
           <div class="item-header">
             <div class="item-title">
-              <strong>${escapeHtml(titleLabel(agent.agent_type))}</strong>
+              <strong>${escapeHtml(agentName(agent.agent_type))}</strong>
               <span>${escapeHtml(agent.description)}</span>
             </div>
             ${chip(agent.risk_profile)}
@@ -139,14 +161,16 @@ function renderConnectors(connectors, healthById) {
           <div class="item-header">
             <div class="item-title">
               <strong>${escapeHtml(titleLabel(connector.name))}</strong>
-              <span>${escapeHtml(connector.id)} &middot; ${escapeHtml(titleLabel(connector.provider))} &middot; ${escapeHtml(titleLabel(connector.kind))}</span>
+              <span title="${escapeHtml(connector.id)}">${escapeHtml(
+                titleLabel(connector.provider)
+              )} &middot; ${escapeHtml(titleLabel(connector.kind))}</span>
             </div>
             ${chip(status)}
           </div>
           <p>${escapeHtml(message)}</p>
           <div class="meta-row">
             <span>Profile</span>
-            <strong>${escapeHtml(connector.credential_profile_id || "none")}</strong>
+            <strong>${escapeHtml(titleLabel(connector.credential_profile_id || "none"))}</strong>
           </div>
           <div class="chips">
             ${(connector.capabilities || []).map((capability) => chip(capability)).join("")}

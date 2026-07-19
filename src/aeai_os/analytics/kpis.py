@@ -288,7 +288,7 @@ def _build_insights(
     outliers: list[dict[str, Any]],
     missing_risks: list[dict[str, Any]],
 ) -> list[str]:
-    insights = [f"Total analyzed procurement spend is {round(total_spend, 2)}."]
+    insights = [f"Total analyzed procurement spend is ${total_spend:,.2f}."]
     if spend_by_supplier:
         top = spend_by_supplier[0]
         insights.append(
@@ -296,9 +296,11 @@ def _build_insights(
         )
     if spend_by_category:
         top = spend_by_category[0]
-        insights.append(f"Largest category is {top['category']} at {round(top['spend'], 2)}.")
+        insights.append(f"Largest category is {top['category']} at ${top['spend']:,.2f}.")
     if outliers:
-        insights.append(f"Detected {len(outliers)} high-value transaction outlier(s).")
+        noun = "outlier" if len(outliers) == 1 else "outliers"
+        insights.append(f"Detected {len(outliers)} high-value transaction {noun}.")
     if missing_risks:
-        insights.append(f"Detected {len(missing_risks)} missing-data risk area(s).")
+        noun = "area" if len(missing_risks) == 1 else "areas"
+        insights.append(f"Detected {len(missing_risks)} missing-data risk {noun}.")
     return insights

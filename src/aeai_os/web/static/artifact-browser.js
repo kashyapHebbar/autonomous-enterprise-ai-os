@@ -164,6 +164,11 @@ function shortId(value) {
   return text.length > 14 ? `${text.slice(0, 9)}...${text.slice(-5)}` : text;
 }
 
+function workflowTitle(task) {
+  const text = String(task || "Untitled workflow").trim().replace(/[.]+$/, "");
+  return text.length > 58 ? `${text.slice(0, 55).trimEnd()}...` : text;
+}
+
 function filteredArtifacts() {
   const artifacts = state.selectedRun?.artifacts || [];
   const query = state.searchQuery.trim().toLowerCase();
@@ -200,7 +205,7 @@ function renderRunSelect() {
         .map(
           (run) => `
             <option value="${escapeHtml(run.id)}"${run.id === state.selectedRunId ? " selected" : ""}>
-              ${escapeHtml(run.id)} - ${escapeHtml(titleLabel(run.status))}
+              ${escapeHtml(workflowTitle(run.task))} - ${escapeHtml(shortId(run.id))}
             </option>`
         )
         .join("")

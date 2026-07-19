@@ -152,6 +152,15 @@ body {
   margin: 0;
 }
 
+.task-label {
+  display: block;
+  margin-bottom: 7px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
 .error-text {
   margin-top: 10px;
   color: var(--red);

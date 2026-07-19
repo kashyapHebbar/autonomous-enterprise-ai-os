@@ -140,17 +140,18 @@ def render_dashboard_document(
         "analysis": analysis,
     }
     kpis = analysis["kpis"]
+    row_count = analysis.get("dataset", {}).get("row_count", 0)
 
     return _document_shell(
         title="Procurement Dashboard",
         body=f"""
         <main class="dashboard" data-source-artifact-id="{escape(source_artifact_id)}">
           <header class="dashboard-hero">
-            <p class="eyebrow">Autonomous Enterprise AI Operating System</p>
+            <p class="eyebrow">Executive procurement intelligence</p>
             <h1>Procurement Dashboard</h1>
             <p>
-              Traceable dashboard generated from KPI artifact
-              <code>{escape(source_artifact_id)}</code>.
+              Decision-ready analysis of {escape(str(row_count))} procurement transactions with
+              traceable metrics, anomalies, and savings opportunities.
             </p>
           </header>
 
@@ -174,7 +175,7 @@ def render_dashboard_document(
           </section>
 
           <section class="insights">
-            <h2>Generated Insights</h2>
+            <h2>Executive Insights</h2>
             <ul>{insights}</ul>
           </section>
 
