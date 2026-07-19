@@ -45,13 +45,40 @@ function escapeHtml(value) {
 }
 
 function label(value) {
-  return String(value ?? "unknown").replaceAll("_", " ");
+  return String(value ?? "unknown")
+    .replaceAll("_", " ")
+    .replaceAll("-", " ")
+    .replaceAll(":", ": ");
+}
+
+function titleLabel(value) {
+  const acronyms = {
+    api: "API",
+    csv: "CSV",
+    github: "GitHub",
+    id: "ID",
+    json: "JSON",
+    kpi: "KPI",
+    mlflow: "MLflow",
+    sqlite: "SQLite",
+    sql: "SQL",
+    uri: "URI",
+  };
+  return label(value)
+    .split(" ")
+    .filter(Boolean)
+    .map((word) => {
+      const suffix = word.endsWith(":") ? ":" : "";
+      const key = word.replace(":", "").toLowerCase();
+      return `${acronyms[key] || key[0].toUpperCase() + key.slice(1)}${suffix}`;
+    })
+    .join(" ");
 }
 
 function chip(value, extraClass = "") {
   const normalized = String(value ?? "unknown").toLowerCase();
   const cssClass = `status-${normalized.replaceAll(" ", "_")}`;
-  return `<span class="chip ${cssClass} ${extraClass}">${escapeHtml(label(normalized))}</span>`;
+  return `<span class="chip ${cssClass} ${extraClass}">${escapeHtml(titleLabel(normalized))}</span>`;
 }
 
 function setText(element, value) {
@@ -59,7 +86,7 @@ function setText(element, value) {
 }
 
 function setStatus(element, value) {
-  element.textContent = label(value);
+  element.textContent = titleLabel(value);
   element.className = `status-pill status-${String(value).toLowerCase()}`;
 }
 
@@ -82,7 +109,7 @@ function renderAgents(agents) {
         <article class="item-card">
           <div class="item-header">
             <div class="item-title">
-              <strong>${escapeHtml(agent.agent_type)}</strong>
+              <strong>${escapeHtml(titleLabel(agent.agent_type))}</strong>
               <span>${escapeHtml(agent.description)}</span>
             </div>
             ${chip(agent.risk_profile)}
@@ -111,8 +138,8 @@ function renderConnectors(connectors, healthById) {
         <article class="item-card">
           <div class="item-header">
             <div class="item-title">
-              <strong>${escapeHtml(connector.name)}</strong>
-              <span>${escapeHtml(connector.id)} &middot; ${escapeHtml(connector.provider)} &middot; ${escapeHtml(connector.kind)}</span>
+              <strong>${escapeHtml(titleLabel(connector.name))}</strong>
+              <span>${escapeHtml(connector.id)} &middot; ${escapeHtml(titleLabel(connector.provider))} &middot; ${escapeHtml(titleLabel(connector.kind))}</span>
             </div>
             ${chip(status)}
           </div>
@@ -157,7 +184,7 @@ function renderProfiles(profiles) {
           <div class="item-header">
             <div class="item-title">
               <strong>${escapeHtml(profile.id)}</strong>
-              <span>${escapeHtml(profile.provider)} &middot; ${escapeHtml(profile.credential_type)}</span>
+              <span>${escapeHtml(titleLabel(profile.provider))} &middot; ${escapeHtml(titleLabel(profile.credential_type))}</span>
             </div>
             ${chip(profile.configured ? "ok" : "not_configured")}
           </div>
@@ -193,7 +220,7 @@ function renderPermission(permission) {
     <article class="item-card">
       <div class="item-header">
         <div class="item-title">
-          <strong>${escapeHtml(permission.tool)}</strong>
+          <strong>${escapeHtml(titleLabel(permission.tool))}</strong>
           <span>${escapeHtml(permission.description)}</span>
         </div>
         ${chip(permission.risk)}
@@ -219,7 +246,7 @@ function renderRule(rule) {
     <article class="item-card">
       <div class="item-header">
         <div class="item-title">
-          <strong>${escapeHtml(rule.id)}</strong>
+          <strong>${escapeHtml(titleLabel(rule.id))}</strong>
           <span>${escapeHtml(rule.description)}</span>
         </div>
         ${chip(rule.decision)}
@@ -244,7 +271,7 @@ function renderAffectedRuns(runs) {
         <article class="item-card">
           <div class="item-header">
             <div class="item-title">
-              <strong>${escapeHtml(run.id)}</strong>
+              <strong>${escapeHtml(titleLabel(run.affected_area))}</strong>
               <span>${escapeHtml(run.task)}</span>
             </div>
             ${chip(run.affected_area)}

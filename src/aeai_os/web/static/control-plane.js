@@ -70,6 +70,35 @@ function formatDate(value) {
   }).format(new Date(value));
 }
 
+function label(value) {
+  return String(value ?? "unknown")
+    .replaceAll("_", " ")
+    .replaceAll("-", " ");
+}
+
+function titleLabel(value) {
+  const acronyms = {
+    api: "API",
+    csv: "CSV",
+    github: "GitHub",
+    id: "ID",
+    json: "JSON",
+    kpi: "KPI",
+    mlflow: "MLflow",
+    sqlite: "SQLite",
+    sql: "SQL",
+    uri: "URI",
+  };
+  return label(value)
+    .split(" ")
+    .filter(Boolean)
+    .map((word) => {
+      const key = word.toLowerCase();
+      return acronyms[key] || key[0].toUpperCase() + key.slice(1);
+    })
+    .join(" ");
+}
+
 function statusClass(status) {
   return `status-pill status-${String(status || "")
     .toLowerCase()
@@ -106,7 +135,7 @@ function renderSources() {
         .map(
           (source) => `
             <option value="${escapeHtml(source.id)}">
-              ${escapeHtml(source.name)} (${escapeHtml(source.source_type)})
+              ${escapeHtml(source.name)} (${escapeHtml(titleLabel(source.source_type))})
             </option>`
         )
         .join("")
@@ -141,7 +170,7 @@ function renderRunItem(run) {
     <article class="run-item">
       <div class="run-main">
         <a class="run-link" href="${inspectorUrl(run.id)}">${escapeHtml(run.id)}</a>
-        <span class="${statusClass(run.status)}">${escapeHtml(run.status)}</span>
+        <span class="${statusClass(run.status)}">${escapeHtml(titleLabel(run.status))}</span>
       </div>
       <p class="run-task">${escapeHtml(run.task)}</p>
       <div class="meta-line">

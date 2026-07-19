@@ -70,6 +70,35 @@ function formatDate(value) {
   }).format(new Date(value));
 }
 
+function label(value) {
+  return String(value ?? "unknown")
+    .replaceAll("_", " ")
+    .replaceAll("-", " ");
+}
+
+function titleLabel(value) {
+  const acronyms = {
+    api: "API",
+    csv: "CSV",
+    github: "GitHub",
+    id: "ID",
+    json: "JSON",
+    kpi: "KPI",
+    mlflow: "MLflow",
+    sqlite: "SQLite",
+    sql: "SQL",
+    uri: "URI",
+  };
+  return label(value)
+    .split(" ")
+    .filter(Boolean)
+    .map((word) => {
+      const key = word.toLowerCase();
+      return acronyms[key] || key[0].toUpperCase() + key.slice(1);
+    })
+    .join(" ");
+}
+
 function pillClass(status) {
   return `mini-pill status-${String(status || "")
     .toLowerCase()
@@ -165,7 +194,7 @@ function renderRun() {
   const { run } = state.data;
   document.title = `${run.id} | Run Inspector`;
   els.runTitle.textContent = run.id;
-  els.runStatus.textContent = run.status;
+  els.runStatus.textContent = titleLabel(run.status);
   els.runStatus.className = `status-pill status-${run.status}`;
   els.traceId.textContent = run.trace_id || "--";
   els.datasetId.textContent = run.dataset_artifact_id || "--";
@@ -282,19 +311,19 @@ function renderNodes() {
           (node) => `
             <article class="node-item">
               <div class="node-main">
-                <strong>${escapeHtml(node.id)}</strong>
-                <span class="${pillClass(node.status)}">${escapeHtml(node.status)}</span>
+                <strong>${escapeHtml(titleLabel(node.id))}</strong>
+                <span class="${pillClass(node.status)}">${escapeHtml(titleLabel(node.status))}</span>
               </div>
               ${renderMeta([
-                node.agent_type,
+                titleLabel(node.agent_type),
                 `retries ${node.retry_count}`,
                 `updated ${formatDate(node.updated_at)}`,
               ])}
               ${renderMeta([
-                `depends: ${node.depends_on.join(", ") || "none"}`,
-                `tools: ${node.required_tools.join(", ") || "none"}`,
+                `depends: ${node.depends_on.map(titleLabel).join(", ") || "none"}`,
+                `tools: ${node.required_tools.map(titleLabel).join(", ") || "none"}`,
               ])}
-              ${renderMeta([`expects: ${node.expected_artifacts.join(", ") || "none"}`])}
+              ${renderMeta([`expects: ${node.expected_artifacts.map(titleLabel).join(", ") || "none"}`])}
               ${renderNodeActions(node)}
             </article>`
         )
@@ -310,8 +339,8 @@ function renderJobs() {
           (job) => `
             <article class="compact-item">
               <div class="compact-main">
-                <strong>${escapeHtml(job.workflow_name)}</strong>
-                <span class="${pillClass(job.status)}">${escapeHtml(job.status)}</span>
+                <strong>${escapeHtml(titleLabel(job.workflow_name))}</strong>
+                <span class="${pillClass(job.status)}">${escapeHtml(titleLabel(job.status))}</span>
               </div>
               ${renderMeta([
                 job.id,
@@ -339,9 +368,9 @@ function renderTimeline() {
                 <span>${escapeHtml(formatDate(item.timestamp))}</span>
               </div>
               ${renderMeta([
-                item.kind,
-                item.status,
-                item.node_id ? `node ${item.node_id}` : null,
+                titleLabel(item.kind),
+                titleLabel(item.status),
+                item.node_id ? `node ${titleLabel(item.node_id)}` : null,
                 item.artifact_id ? `artifact ${item.artifact_id}` : null,
                 item.workflow_job_id ? `job ${item.workflow_job_id}` : null,
               ])}
@@ -363,8 +392,8 @@ function renderArtifacts() {
             return `
             <article class="compact-item" id="${artifactElementId(artifact.id)}">
               <div class="compact-main">
-                <strong>${escapeHtml(artifact.type)}</strong>
-                <span class="mini-pill">${escapeHtml(artifact.producer_node_id || "input")}</span>
+                <strong>${escapeHtml(titleLabel(artifact.type))}</strong>
+                <span class="mini-pill">${escapeHtml(titleLabel(artifact.producer_node_id || "input"))}</span>
               </div>
               ${renderMeta([
                 artifact.id,
@@ -410,9 +439,9 @@ function renderApprovalHistory() {
           return `
             <article class="compact-item">
               <div class="compact-main">
-                <strong>${escapeHtml(event.payload.message || event.event_type)}</strong>
+                <strong>${escapeHtml(event.payload.message || titleLabel(event.event_type))}</strong>
                 <span class="${pillClass(decision || event.event_type)}">
-                  ${escapeHtml(decision || event.event_type)}
+                  ${escapeHtml(titleLabel(decision || event.event_type))}
                 </span>
               </div>
               ${renderMeta([
@@ -444,7 +473,7 @@ function renderEvaluations() {
               <div class="compact-main">
                 <strong>${escapeHtml(evaluation.id)}</strong>
                 <span class="${pillClass(evaluation.passed ? "passed" : "failed")}">
-                  ${evaluation.passed ? "passed" : "failed"}
+                  ${evaluation.passed ? "Passed" : "Failed"}
                 </span>
               </div>
               ${renderMeta([
@@ -461,8 +490,8 @@ function renderEvaluations() {
                 ${renderKeyValues(
                   Object.fromEntries(
                     evaluation.checks.map((check, index) => [
-                      check.name || `check_${index + 1}`,
-                      `${check.passed ? "passed" : "failed"} (${check.score ?? "n/a"})`,
+                      titleLabel(check.name || `check_${index + 1}`),
+                      `${check.passed ? "Passed" : "Failed"} (${check.score ?? "n/a"})`,
                     ])
                   ),
                   "No evaluation checks recorded."
@@ -491,7 +520,7 @@ function renderDeploymentHistory() {
                 <div class="compact-main">
                   <strong>${escapeHtml(item.id)}</strong>
                   <span class="${pillClass(item.metadata.deployment_status || "completed")}">
-                    ${escapeHtml(item.metadata.deployment_status || "completed")}
+                    ${escapeHtml(titleLabel(item.metadata.deployment_status || "completed"))}
                   </span>
                 </div>
                 ${renderMeta([
@@ -510,7 +539,7 @@ function renderDeploymentHistory() {
             <article class="compact-item">
               <div class="compact-main">
                 <strong>${escapeHtml(item.id)}</strong>
-                <span class="${pillClass(item.status)}">${escapeHtml(item.status)}</span>
+                <span class="${pillClass(item.status)}">${escapeHtml(titleLabel(item.status))}</span>
               </div>
               ${renderMeta([
                 item.payload.destination,
@@ -538,7 +567,7 @@ function renderEvents() {
           (event) => `
             <article class="event-item">
               <div class="compact-main">
-                <strong>${escapeHtml(event.event_type)}</strong>
+                <strong>${escapeHtml(titleLabel(event.event_type))}</strong>
                 <span>${escapeHtml(formatDate(event.created_at))}</span>
               </div>
               ${renderMeta([event.node_id, event.id])}

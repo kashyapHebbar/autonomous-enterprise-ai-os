@@ -348,7 +348,10 @@ def test_artifact_browser_script_previews_downloads_and_links_lineage(tmp_path):
     assert "renderMarkdown" in response.text
     assert "/lineage" in response.text
     assert "navigator.clipboard.writeText" in response.text
-    assert "Artifact type ${escapeHtml(artifact.type)} is not available" in response.text
+    assert (
+        "Artifact type ${escapeHtml(titleLabel(artifact.type))} is not available"
+        in response.text
+    )
 
 
 def test_admin_script_loads_registries_connectors_and_affected_runs(tmp_path):
