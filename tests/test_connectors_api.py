@@ -50,7 +50,7 @@ def test_connector_installation_api_creates_lists_and_tests_tenant_scoped_instal
             "name": "Finance Snowflake",
             "organization_id": "acme",
             "workspace_id": "finance",
-            "credential_reference": "aws-secrets://acme/snowflake-finance",
+            "credential_reference": "env://SNOWFLAKE_USER/SNOWFLAKE_PASSWORD",
             "configuration": {
                 "account": "acct",
                 "warehouse": "COMPUTE_WH",
@@ -69,7 +69,7 @@ def test_connector_installation_api_creates_lists_and_tests_tenant_scoped_instal
 
     assert response.status_code == 201
     assert installation["status"] == "ready"
-    assert installation["credential_reference"] == "aws-secrets://acme/snowflake-finance"
+    assert installation["credential_reference"] == "env://SNOWFLAKE_USER/SNOWFLAKE_PASSWORD"
     assert "secret-password" not in str(installation)
     assert own_list.json() == [installation]
     assert other_list.json() == []

@@ -213,6 +213,24 @@ Credential references use provider-owned identifiers such as
 is deliberately separated from installation metadata so a future Secrets Manager, Key Vault, or
 Vault adapter can rotate credentials without rewriting data sources or workflow definitions.
 
+Install all managed credential providers with:
+
+```bash
+pip install ".[secrets]"
+```
+
+Supported reference formats are:
+
+- `env://SNOWFLAKE_USER/SNOWFLAKE_PASSWORD` for explicit local-development environment keys
+- `aws-secrets://organization/secret-name` for an AWS Secrets Manager JSON secret
+- `azure-key-vault://vault-name/secret-name` for an Azure Key Vault JSON secret
+- `vault://mount/path/to/secret` for a HashiCorp Vault KV v2 secret
+
+Managed secrets must contain a JSON object whose keys match the connector's required environment
+settings. They are resolved only during a connection test or workflow execution and are never added
+to installation API responses. When the SQLAlchemy backend is enabled, connector installations are
+stored in the same PostgreSQL platform database and survive API restarts.
+
 ## Data Source Onboarding
 
 Register reusable dataset sources through `/data-sources` so users can start workflow runs without

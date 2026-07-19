@@ -45,6 +45,12 @@ observability = [
 storage = [
     "boto3>=1.34,<2.0",
 ]
+secrets = [
+    "boto3>=1.34,<2.0",
+    "azure-identity>=1.17,<2.0",
+    "azure-keyvault-secrets>=4.8,<5.0",
+    "hvac>=2.3,<3.0",
+]
 warehouse = [
     "snowflake-connector-python>=3.12,<4.0",
 ]

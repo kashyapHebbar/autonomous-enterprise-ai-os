@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
 from uuid import uuid4
 
 from aeai_os.settings import AppSettings, get_env_secret
 
-ConnectorStatus = Literal["ok", "not_configured"]
+ConnectorStatus = Literal["ok", "not_configured", "error"]
 InstallationStatus = Literal["ready", "setup_required"]
 
 
@@ -29,6 +29,7 @@ class ConnectorConfigurationField:
     secret: bool = False
     placeholder: str = ""
     description: str = ""
+    env_key: str | None = None
 
     def public_summary(self) -> dict[str, Any]:
         return {
@@ -135,6 +136,18 @@ class ConnectorInstallation:
     updated_at: datetime
 
 
+class ConnectorInstallationStore(Protocol):
+    def save(self, installation: ConnectorInstallation) -> ConnectorInstallation: ...
+
+    def list(self, organization_id: str) -> list[ConnectorInstallation]: ...
+
+    def get(self, installation_id: str, organization_id: str) -> ConnectorInstallation: ...
+
+
+class CredentialResolver(Protocol):
+    def resolve(self, reference: str) -> dict[str, str]: ...
+
+
 class ConnectorRegistry:
     def __init__(
         self,
@@ -142,12 +155,19 @@ class ConnectorRegistry:
         credential_profiles: list[CredentialProfile],
         *,
         env: Mapping[str, str] | None = None,
+        installation_store: ConnectorInstallationStore | None = None,
+        credential_resolver: CredentialResolver | None = None,
     ) -> None:
         self._connectors = {connector.id: connector for connector in connectors}
         self._credential_profiles = {
             profile.id: profile for profile in credential_profiles
         }
-        self._installations: dict[str, ConnectorInstallation] = {}
+        if installation_store is None:
+            from aeai_os.connectors.installations import InMemoryConnectorInstallationRepository
+
+            installation_store = InMemoryConnectorInstallationRepository()
+        self._installation_store = installation_store
+        self._credential_resolver = credential_resolver
         self._env = os.environ if env is None else env
 
     def list_connectors(self) -> list[ConnectorDefinition]:
@@ -205,35 +225,65 @@ class ConnectorRegistry:
             created_at=now,
             updated_at=now,
         )
-        self._installations[installation.id] = installation
-        return installation
+        return self._installation_store.save(installation)
 
     def list_installations(self, organization_id: str) -> list[ConnectorInstallation]:
         normalized_organization = _normalize_required(organization_id, "Organization id")
-        return sorted(
-            (
-                installation
-                for installation in self._installations.values()
-                if installation.organization_id == normalized_organization
-            ),
-            key=lambda installation: (installation.name.lower(), installation.id),
-        )
+        return self._installation_store.list(normalized_organization)
 
     def get_installation(
         self, installation_id: str, organization_id: str
     ) -> ConnectorInstallation:
-        installation = self._installations.get(installation_id)
-        if installation is None or installation.organization_id != organization_id:
-            raise ConnectorInstallationNotFoundError(
-                f"Connector installation not found: {installation_id}"
-            )
-        return installation
+        return self._installation_store.get(installation_id, organization_id)
 
     def test_installation(
         self, installation_id: str, organization_id: str
     ) -> ConnectorHealth:
         installation = self.get_installation(installation_id, organization_id)
-        return self.health(installation.connector_id)
+        connector = self.get_connector(installation.connector_id)
+        effective_env = dict(self._env)
+        for config_field in connector.configuration_fields:
+            if config_field.env_key and config_field.key in installation.configuration:
+                effective_env[config_field.env_key] = installation.configuration[
+                    config_field.key
+                ]
+        if installation.credential_reference:
+            if self._credential_resolver is None:
+                return self._record_installation_health(
+                    installation,
+                    _credential_error_health(
+                        connector,
+                        "No credential provider registry is configured.",
+                    ),
+                )
+            try:
+                effective_env.update(
+                    self._credential_resolver.resolve(installation.credential_reference)
+                )
+            except ValueError as exc:
+                return self._record_installation_health(
+                    installation,
+                    _credential_error_health(connector, str(exc)),
+                )
+        return self._record_installation_health(
+            installation,
+            connector.health(effective_env),
+        )
+
+    def _record_installation_health(
+        self,
+        installation: ConnectorInstallation,
+        health: ConnectorHealth,
+    ) -> ConnectorHealth:
+        status: InstallationStatus = "ready" if health.status == "ok" else "setup_required"
+        self._installation_store.save(
+            replace(
+                installation,
+                status=status,
+                updated_at=datetime.now().astimezone(),
+            )
+        )
+        return health
 
     def connector_summary(self, connector: ConnectorDefinition) -> dict[str, Any]:
         health = connector.health(self._env)
@@ -289,6 +339,8 @@ class ConnectorRegistry:
 def build_default_connector_registry(
     settings: AppSettings,
     env: Mapping[str, str] | None = None,
+    installation_store: ConnectorInstallationStore | None = None,
+    credential_resolver: CredentialResolver | None = None,
 ) -> ConnectorRegistry:
     values = os.environ if env is None else env
     artifact_backend = settings.artifact_storage_backend.strip().lower()
@@ -355,11 +407,19 @@ def build_default_connector_registry(
                 "SNOWFLAKE_APPLICATION",
             ),
             configuration_fields=(
-                ConnectorConfigurationField("account", "Account", required=True),
-                ConnectorConfigurationField("warehouse", "Warehouse", required=True),
-                ConnectorConfigurationField("database", "Database", required=True),
-                ConnectorConfigurationField("schema", "Schema", required=True),
-                ConnectorConfigurationField("role", "Role"),
+                ConnectorConfigurationField(
+                    "account", "Account", required=True, env_key="SNOWFLAKE_ACCOUNT"
+                ),
+                ConnectorConfigurationField(
+                    "warehouse", "Warehouse", required=True, env_key="SNOWFLAKE_WAREHOUSE"
+                ),
+                ConnectorConfigurationField(
+                    "database", "Database", required=True, env_key="SNOWFLAKE_DATABASE"
+                ),
+                ConnectorConfigurationField(
+                    "schema", "Schema", required=True, env_key="SNOWFLAKE_SCHEMA"
+                ),
+                ConnectorConfigurationField("role", "Role", env_key="SNOWFLAKE_ROLE"),
             ),
             credential_required=True,
             auth_methods=("key_pair", "oauth", "password"),
@@ -448,7 +508,13 @@ def build_default_connector_registry(
             description="GitHub token profile. Either token variable can satisfy the profile.",
         ),
     ]
-    return ConnectorRegistry(connectors, profiles, env=values)
+    return ConnectorRegistry(
+        connectors,
+        profiles,
+        env=values,
+        installation_store=installation_store,
+        credential_resolver=credential_resolver,
+    )
 
 
 def _artifact_required_env_keys(backend: str) -> tuple[str, ...]:
@@ -485,3 +551,19 @@ def _normalize_optional(value: str | None) -> str | None:
         return None
     normalized = str(value).strip()
     return normalized or None
+
+
+def _credential_error_health(
+    connector: ConnectorDefinition, message: str
+) -> ConnectorHealth:
+    return ConnectorHealth(
+        connector_id=connector.id,
+        status="error",
+        message=message,
+        checked_at=datetime.now().astimezone(),
+        details={
+            "provider": connector.provider,
+            "kind": connector.kind,
+            "credential_profile_id": connector.credential_profile_id,
+        },
+    )

@@ -29,7 +29,11 @@ def create_app(
     from aeai_os.api.data_sources import build_data_sources_router
     from aeai_os.api.metrics import build_metrics_router
     from aeai_os.api.runs import build_runs_router
-    from aeai_os.connectors import build_default_connector_registry
+    from aeai_os.connectors import (
+        build_connector_installation_repository,
+        build_default_connector_registry,
+        build_default_credential_provider_registry,
+    )
     from aeai_os.data.sources import DataSourceRegistry
     from aeai_os.observability.tracing import configure_tracing, current_trace_id, start_span
     from aeai_os.security import default_tool_permission_registry
@@ -42,7 +46,11 @@ def create_app(
     run_artifact_root = artifact_root or Path(settings.artifact_root)
     workflow_queue = build_workflow_queue(settings, run_repository)
     artifact_store = build_artifact_store(settings, artifact_root=run_artifact_root)
-    connector_registry = build_default_connector_registry(settings)
+    connector_registry = build_default_connector_registry(
+        settings,
+        installation_store=build_connector_installation_repository(settings),
+        credential_resolver=build_default_credential_provider_registry(),
+    )
     data_source_registry = DataSourceRegistry(connector_registry=connector_registry)
     agent_registry = build_default_registry()
     policy_registry = default_tool_permission_registry()

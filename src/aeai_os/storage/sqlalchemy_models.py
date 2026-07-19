@@ -113,3 +113,19 @@ class EvaluationResultModel(Base):
     passed: Mapped[bool] = mapped_column(Boolean, nullable=False)
     checks: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ConnectorInstallationModel(Base):
+    __tablename__ = "connector_installations"
+
+    id: Mapped[str] = mapped_column(String(96), primary_key=True)
+    connector_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    workspace_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    credential_reference: Mapped[str | None] = mapped_column(Text, nullable=True)
+    configuration_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    created_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
