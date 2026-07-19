@@ -28,10 +28,19 @@ class AppSettings:
     workflow_queue_key_prefix: str = "aeai:workflow"
     redis_url: str = "redis://redis:6379/0"
     auth_enabled: bool = False
+    auth_mode: str = "local"
     auth_token_profiles: str = ""
     auth_local_user_id: str = "local-dev"
     auth_local_user_name: str = "Local Developer"
     auth_local_roles: str = "admin"
+    auth_local_organization_id: str = "local-org"
+    auth_local_workspace_ids: str = "default"
+    oidc_issuer: str = ""
+    oidc_audience: str = ""
+    oidc_jwks_url: str = ""
+    oidc_roles_claim: str = "roles"
+    oidc_organization_claim: str = "organization_id"
+    oidc_workspaces_claim: str = "workspace_ids"
     run_repository_create_schema: bool = True
 
 
@@ -83,10 +92,22 @@ def get_settings() -> AppSettings:
         ),
         redis_url=os.getenv("AEAI_REDIS_URL", "redis://redis:6379/0"),
         auth_enabled=_parse_bool(os.getenv("AEAI_AUTH_ENABLED"), default=False),
+        auth_mode=os.getenv("AEAI_AUTH_MODE", "").strip().lower()
+        or ("token" if _parse_bool(os.getenv("AEAI_AUTH_ENABLED"), default=False) else "local"),
         auth_token_profiles=get_env_secret("AEAI_AUTH_TOKEN_PROFILES"),
         auth_local_user_id=os.getenv("AEAI_AUTH_LOCAL_USER_ID", "local-dev"),
         auth_local_user_name=os.getenv("AEAI_AUTH_LOCAL_USER_NAME", "Local Developer"),
         auth_local_roles=os.getenv("AEAI_AUTH_LOCAL_ROLES", "admin"),
+        auth_local_organization_id=os.getenv("AEAI_AUTH_LOCAL_ORGANIZATION_ID", "local-org"),
+        auth_local_workspace_ids=os.getenv("AEAI_AUTH_LOCAL_WORKSPACE_IDS", "default"),
+        oidc_issuer=os.getenv("AEAI_OIDC_ISSUER", ""),
+        oidc_audience=os.getenv("AEAI_OIDC_AUDIENCE", ""),
+        oidc_jwks_url=os.getenv("AEAI_OIDC_JWKS_URL", ""),
+        oidc_roles_claim=os.getenv("AEAI_OIDC_ROLES_CLAIM", "roles"),
+        oidc_organization_claim=os.getenv(
+            "AEAI_OIDC_ORGANIZATION_CLAIM", "organization_id"
+        ),
+        oidc_workspaces_claim=os.getenv("AEAI_OIDC_WORKSPACES_CLAIM", "workspace_ids"),
     )
 
 

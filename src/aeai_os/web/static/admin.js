@@ -273,11 +273,7 @@ function renderInstallations(installations) {
 }
 
 async function loadInstallations() {
-  const organizationId = elements.organizationId.value.trim();
-  if (!organizationId) return [];
-  const installations = await requestJson(
-    `/connectors/installations?organization_id=${encodeURIComponent(organizationId)}`
-  );
+  const installations = await requestJson("/connectors/installations");
   connectorHub.installations = installations;
   renderInstallations(installations);
   setStatus(elements.installationStatus, installations.length ? "ok" : "not_configured");
@@ -439,13 +435,16 @@ async function refreshAdmin() {
   );
 
   try {
-    const [agents, connectors, profiles, policies, affectedRuns] = await Promise.all([
+    const [session, agents, connectors, profiles, policies, affectedRuns] = await Promise.all([
+      requestJson("/auth/me"),
       requestJson("/admin/agents"),
       requestJson("/connectors"),
       requestJson("/connectors/credential-profiles"),
       requestJson("/admin/policies"),
       requestJson("/admin/affected-runs"),
     ]);
+    elements.organizationId.value = session.organization_id;
+    elements.workspaceId.value = session.active_workspace_id;
     const healthById = await loadConnectorHealth(connectors);
 
     connectorHub.connectors = connectors;
@@ -488,7 +487,6 @@ async function refreshAdmin() {
 
 elements.refresh.addEventListener("click", refreshAdmin);
 elements.connectorId.addEventListener("change", renderConfigurationFields);
-elements.organizationId.addEventListener("change", () => loadInstallations().catch(showHubError));
 elements.connectorForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   elements.connectorFormMessage.textContent = "Adding connection...";
@@ -502,8 +500,6 @@ elements.connectorForm.addEventListener("submit", async (event) => {
       body: JSON.stringify({
         connector_id: elements.connectorId.value,
         name: elements.installationName.value.trim(),
-        organization_id: elements.organizationId.value.trim(),
-        workspace_id: elements.workspaceId.value.trim() || null,
         credential_reference: elements.credentialReference.value.trim() || null,
         configuration,
       }),
@@ -523,7 +519,7 @@ elements.installationsList.addEventListener("click", async (event) => {
   button.disabled = true;
   try {
     const health = await requestJson(
-      `/connectors/installations/${encodeURIComponent(button.dataset.installationId)}/test?organization_id=${encodeURIComponent(elements.organizationId.value.trim())}`,
+      `/connectors/installations/${encodeURIComponent(button.dataset.installationId)}/test`,
       { method: "POST" }
     );
     elements.connectorFormMessage.textContent = health.message;

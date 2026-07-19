@@ -9,7 +9,9 @@ from aeai_os.security.auth import (
     local_development_user,
     parse_roles,
     parse_token_profiles,
+    parse_workspace_ids,
 )
+from aeai_os.security.oidc import authenticated_user_from_oidc_token
 from aeai_os.security.policy import (
     PolicyEvaluationContext,
     PolicyRule,
@@ -45,6 +47,7 @@ __all__ = [
     "ToolRiskLevel",
     "UserRole",
     "authenticated_user_from_headers",
+    "authenticated_user_from_oidc_token",
     "build_policy_registry_from_rules",
     "default_tool_permission_registry",
     "ensure_permission",
@@ -52,6 +55,7 @@ __all__ = [
     "local_development_user",
     "parse_roles",
     "parse_token_profiles",
+    "parse_workspace_ids",
     "redact_text",
     "redact_uri",
     "redact_value",

@@ -62,8 +62,17 @@ def validate_runtime_config(env: Mapping[str, str], *, component: str) -> list[s
         if artifact_backend == "minio":
             required.add("AEAI_ARTIFACT_S3_ENDPOINT_URL")
 
-    if _is_truthy(_value(env, "AEAI_AUTH_ENABLED")):
+    auth_mode = _value(env, "AEAI_AUTH_MODE").lower()
+    if not auth_mode:
+        auth_mode = "token" if _is_truthy(_value(env, "AEAI_AUTH_ENABLED")) else "local"
+    if auth_mode == "token":
         required.add("AEAI_AUTH_TOKEN_PROFILES")
+    elif auth_mode == "oidc":
+        required.update({"AEAI_OIDC_ISSUER", "AEAI_OIDC_AUDIENCE", "AEAI_OIDC_JWKS_URL"})
+    elif auth_mode != "local":
+        errors.append("AEAI_AUTH_MODE must be one of: local, token, oidc.")
+    if normalized_env in PRODUCTION_ENVS and auth_mode == "local":
+        errors.append("Production-like environments require token or OIDC authentication.")
 
     trace_exporter = _value(env, "AEAI_TRACE_EXPORTER").lower()
     if trace_exporter in {"otlp_http", "otlp_grpc"}:
