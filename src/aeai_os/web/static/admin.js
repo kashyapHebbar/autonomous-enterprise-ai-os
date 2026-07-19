@@ -15,10 +15,24 @@ const elements = {
   permissionsList: document.querySelector("#permissionsList"),
   rulesList: document.querySelector("#rulesList"),
   affectedRunsList: document.querySelector("#affectedRunsList"),
+  installationStatus: document.querySelector("#installationStatus"),
+  connectorForm: document.querySelector("#connectorForm"),
+  organizationId: document.querySelector("#organizationId"),
+  workspaceId: document.querySelector("#workspaceId"),
+  connectorId: document.querySelector("#connectorId"),
+  installationName: document.querySelector("#installationName"),
+  credentialReference: document.querySelector("#credentialReference"),
+  configurationFields: document.querySelector("#configurationFields"),
+  connectorFormMessage: document.querySelector("#connectorFormMessage"),
+  installationsList: document.querySelector("#installationsList"),
 };
 
-async function requestJson(path) {
-  const response = await fetch(path, { headers: { Accept: "application/json" } });
+const connectorHub = { connectors: [], installations: [] };
+
+async function requestJson(path, options = {}) {
+  const headers = { Accept: "application/json", ...(options.headers || {}) };
+  if (options.body) headers["Content-Type"] = "application/json";
+  const response = await fetch(path, { ...options, headers });
   if (!response.ok) {
     const message = await readError(response);
     throw new Error(`${response.status} ${message}`);
@@ -180,6 +194,94 @@ function renderConnectors(connectors, healthById) {
       `;
     })
     .join("");
+}
+
+function renderConnectorOptions(connectors) {
+  const previous = elements.connectorId.value;
+  elements.connectorId.innerHTML = connectors
+    .map(
+      (connector) =>
+        `<option value="${escapeHtml(connector.id)}">${escapeHtml(connector.name)}</option>`
+    )
+    .join("");
+  if (connectors.some((connector) => connector.id === previous)) {
+    elements.connectorId.value = previous;
+  }
+  renderConfigurationFields();
+}
+
+function selectedConnector() {
+  return connectorHub.connectors.find((connector) => connector.id === elements.connectorId.value);
+}
+
+function renderConfigurationFields() {
+  const connector = selectedConnector();
+  const fields = connector?.configuration_fields || [];
+  elements.configurationFields.innerHTML = fields
+    .map(
+      (field) => `
+        <label>
+          <span>${escapeHtml(field.label)}${field.required ? " *" : ""}</span>
+          <input
+            name="configuration.${escapeHtml(field.key)}"
+            data-configuration-key="${escapeHtml(field.key)}"
+            placeholder="${escapeHtml(field.placeholder || "")}"
+            ${field.required ? "required" : ""}
+          />
+        </label>
+      `
+    )
+    .join("");
+  elements.credentialReference.required = Boolean(connector?.credential_required);
+}
+
+function renderInstallations(installations) {
+  if (!installations.length) {
+    elements.installationsList.innerHTML = empty("No saved connections for this organization.");
+    return;
+  }
+  elements.installationsList.innerHTML = installations
+    .map(
+      (installation) => `
+        <article class="item-card">
+          <div class="item-header">
+            <div class="item-title">
+              <strong>${escapeHtml(installation.name)}</strong>
+              <span>${escapeHtml(titleLabel(installation.connector_id))}</span>
+            </div>
+            ${chip(installation.status)}
+          </div>
+          <div class="meta-row">
+            <span>Workspace</span>
+            <strong>${escapeHtml(installation.workspace_id || "Organization-wide")}</strong>
+          </div>
+          <div class="meta-row">
+            <span>Credential</span>
+            <strong>${escapeHtml(installation.credential_reference || "Not required")}</strong>
+          </div>
+          <div class="installation-actions">
+            <button
+              class="command-button test-connection"
+              type="button"
+              data-installation-id="${escapeHtml(installation.id)}"
+            >Test Connection</button>
+          </div>
+        </article>
+      `
+    )
+    .join("");
+}
+
+async function loadInstallations() {
+  const organizationId = elements.organizationId.value.trim();
+  if (!organizationId) return [];
+  const installations = await requestJson(
+    `/connectors/installations?organization_id=${encodeURIComponent(organizationId)}`
+  );
+  connectorHub.installations = installations;
+  renderInstallations(installations);
+  setStatus(elements.installationStatus, installations.length ? "ok" : "not_configured");
+  return installations;
 }
 
 function renderEnvDetails(details) {
@@ -346,6 +448,10 @@ async function refreshAdmin() {
     ]);
     const healthById = await loadConnectorHealth(connectors);
 
+    connectorHub.connectors = connectors;
+    renderConnectorOptions(connectors);
+    await loadInstallations();
+
     renderAgents(agents);
     renderConnectors(connectors, healthById);
     renderProfiles(profiles);
@@ -381,4 +487,57 @@ async function refreshAdmin() {
 }
 
 elements.refresh.addEventListener("click", refreshAdmin);
+elements.connectorId.addEventListener("change", renderConfigurationFields);
+elements.organizationId.addEventListener("change", () => loadInstallations().catch(showHubError));
+elements.connectorForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  elements.connectorFormMessage.textContent = "Adding connection...";
+  const configuration = {};
+  elements.configurationFields.querySelectorAll("[data-configuration-key]").forEach((input) => {
+    if (input.value.trim()) configuration[input.dataset.configurationKey] = input.value.trim();
+  });
+  try {
+    await requestJson("/connectors/installations", {
+      method: "POST",
+      body: JSON.stringify({
+        connector_id: elements.connectorId.value,
+        name: elements.installationName.value.trim(),
+        organization_id: elements.organizationId.value.trim(),
+        workspace_id: elements.workspaceId.value.trim() || null,
+        credential_reference: elements.credentialReference.value.trim() || null,
+        configuration,
+      }),
+    });
+    elements.connectorFormMessage.textContent = "Connection saved. Credentials remain external.";
+    elements.installationName.value = "";
+    elements.credentialReference.value = "";
+    renderConfigurationFields();
+    await loadInstallations();
+  } catch (error) {
+    showHubError(error);
+  }
+});
+elements.installationsList.addEventListener("click", async (event) => {
+  const button = event.target.closest(".test-connection");
+  if (!button) return;
+  button.disabled = true;
+  try {
+    const health = await requestJson(
+      `/connectors/installations/${encodeURIComponent(button.dataset.installationId)}/test?organization_id=${encodeURIComponent(elements.organizationId.value.trim())}`,
+      { method: "POST" }
+    );
+    elements.connectorFormMessage.textContent = health.message;
+    setStatus(elements.installationStatus, health.status);
+  } catch (error) {
+    showHubError(error);
+  } finally {
+    button.disabled = false;
+  }
+});
+
+function showHubError(error) {
+  elements.connectorFormMessage.textContent = error.message || "Connector operation failed.";
+  setStatus(elements.installationStatus, "failed");
+}
+
 refreshAdmin();

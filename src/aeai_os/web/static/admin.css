@@ -130,12 +130,107 @@ body {
 }
 
 .metric,
-.panel {
+.panel,
+.connector-hub {
   min-width: 0;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
   box-shadow: var(--shadow);
+}
+
+.connector-hub {
+  margin-bottom: 16px;
+  padding: 18px;
+}
+
+.connector-hub-heading,
+.form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.connector-hub-heading h2 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.connector-form {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-strong);
+}
+
+.connector-form label,
+.configuration-fields label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.connector-form input,
+.connector-form select {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  padding: 8px 10px;
+}
+
+.credential-reference {
+  grid-column: span 2;
+}
+
+.configuration-fields {
+  display: contents;
+}
+
+.form-actions {
+  grid-column: 1 / -1;
+  min-height: 40px;
+}
+
+.form-actions p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.command-button {
+  min-height: 40px;
+  padding: 8px 14px;
+  border: 1px solid var(--green);
+  border-radius: 6px;
+  background: var(--green);
+  color: #fff;
+  font: inherit;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.installation-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.installation-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
 }
 
 .metric {
@@ -353,6 +448,11 @@ body {
     grid-template-columns: 1fr;
   }
 
+  .connector-form,
+  .installation-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .policies-panel,
   .affected-panel {
     grid-column: auto;
@@ -376,5 +476,14 @@ body {
 
   .icon-button {
     width: 100%;
+  }
+
+  .connector-form,
+  .installation-list {
+    grid-template-columns: 1fr;
+  }
+
+  .credential-reference {
+    grid-column: auto;
   }
 }

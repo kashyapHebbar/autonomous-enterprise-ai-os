@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Governance | Autonomous Enterprise AI OS</title>
-    <link rel="stylesheet" href="/app/admin.css?v=governance-center-1" />
+    <link rel="stylesheet" href="/app/admin.css?v=connector-hub-1" />
     <link rel="stylesheet" href="/app/app-shell.css?v=product-system-2" />
   </head>
   <body>
@@ -66,6 +66,48 @@
             <span>Attention Items</span>
             <strong id="affectedRunCount">--</strong>
           </article>
+        </section>
+
+        <section class="connector-hub" aria-labelledby="connectorHubTitle">
+          <div class="connector-hub-heading">
+            <div>
+              <p class="eyebrow">Integration management</p>
+              <h2 id="connectorHubTitle">Connector Hub</h2>
+            </div>
+            <span class="status-pill" id="installationStatus">Ready</span>
+          </div>
+          <form class="connector-form" id="connectorForm">
+            <label>
+              <span>Organization</span>
+              <input id="organizationId" name="organization_id" value="local-org" required />
+            </label>
+            <label>
+              <span>Workspace</span>
+              <input id="workspaceId" name="workspace_id" value="default" />
+            </label>
+            <label>
+              <span>Connector</span>
+              <select id="connectorId" name="connector_id" required></select>
+            </label>
+            <label>
+              <span>Connection name</span>
+              <input id="installationName" name="name" placeholder="Finance warehouse" required />
+            </label>
+            <label class="credential-reference">
+              <span>Credential reference</span>
+              <input
+                id="credentialReference"
+                name="credential_reference"
+                placeholder="aws-secrets://organization/connection"
+              />
+            </label>
+            <div class="configuration-fields" id="configurationFields"></div>
+            <div class="form-actions">
+              <p id="connectorFormMessage" role="status"></p>
+              <button class="command-button" type="submit">Add Connection</button>
+            </div>
+          </form>
+          <div class="installation-list" id="installationsList"></div>
         </section>
 
         <section class="admin-grid">
@@ -135,6 +177,6 @@
         </section>
       </div>
     </main>
-    <script src="/app/admin.js?v=governance-center-1" defer></script>
+    <script src="/app/admin.js?v=connector-hub-1" defer></script>
   </body>
 </html>
