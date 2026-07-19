@@ -303,6 +303,8 @@ def test_control_plane_page_and_assets_are_served(tmp_path):
     assert "Artifacts" in artifact_page_response.text
     assert 'id="artifactGroups"' in artifact_page_response.text
     assert 'id="previewSurface"' in artifact_page_response.text
+    assert 'id="runtimeSnowflake"' in artifact_page_response.text
+    assert 'id="artifactSearch"' in artifact_page_response.text
     assert "/app/app-shell.css" in artifact_page_response.text
     assert "/app/artifact-browser.js" in artifact_page_response.text
     assert admin_page_response.status_code == 200
@@ -348,6 +350,8 @@ def test_artifact_browser_script_previews_downloads_and_links_lineage(tmp_path):
     assert "renderMarkdown" in response.text
     assert "/lineage" in response.text
     assert "navigator.clipboard.writeText" in response.text
+    assert 'requestJson("/connectors")' in response.text
+    assert "renderStructuredPreview" in response.text
     assert (
         "Artifact type ${escapeHtml(titleLabel(artifact.type))} is not available"
         in response.text
@@ -522,6 +526,13 @@ def test_run_inspector_script_exposes_detail_approval_and_retry_controls(tmp_pat
     assert "escalation_target" in response.text
     assert "mlflow_status" in response.text
     assert "Source artifacts" in response.text
+    assert "renderFlowStory" in response.text
+    assert "How the agents completed this task" in client.get(
+        "/run-inspector/runs/run_example"
+    ).text
+    assert "/app/artifacts?run_id=" in response.text
+    assert "executed immediately in local mode" in response.text
+    assert 'item.kind !== "agent_event"' in response.text
 
 
 def test_create_run_rejects_blank_task(tmp_path):

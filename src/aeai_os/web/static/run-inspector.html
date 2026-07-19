@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Run Inspector | Autonomous Enterprise AI OS</title>
-    <link rel="stylesheet" href="/run-inspector/run-inspector.css?v=visual-polish-2" />
+    <link rel="stylesheet" href="/run-inspector/run-inspector.css?v=workflow-story-1" />
     <link rel="stylesheet" href="/app/app-shell.css?v=visual-polish-2" />
   </head>
   <body>
@@ -63,6 +63,18 @@
           <p class="error-text" id="errorText"></p>
         </section>
 
+        <section class="panel flow-panel" aria-labelledby="flowTitle">
+          <div class="section-heading flow-heading">
+            <div>
+              <p class="eyebrow">Workflow story</p>
+              <h2 id="flowTitle">How the agents completed this task</h2>
+            </div>
+            <p>Select a step to see what went in, what happened, and what came out.</p>
+          </div>
+          <div class="flow-steps" id="flowSteps" role="tablist" aria-label="Workflow steps"></div>
+          <article class="flow-detail" id="flowDetail" aria-live="polite"></article>
+        </section>
+
         <section class="workspace-grid">
           <section class="panel graph-panel" aria-labelledby="graphTitle">
             <div class="section-heading">
@@ -88,7 +100,7 @@
             <div class="section-heading">
               <div>
                 <p class="eyebrow">Chronology</p>
-                <h2 id="timelineTitle">Timeline</h2>
+                <h2 id="timelineTitle">Key Milestones</h2>
               </div>
             </div>
             <div class="timeline-list" id="timeline"></div>
@@ -134,18 +146,19 @@
             <div class="compact-list" id="deploymentHistory"></div>
           </section>
 
-          <section class="panel" aria-labelledby="eventsTitle">
-            <div class="section-heading">
+          <details class="panel diagnostics-panel">
+            <summary class="section-heading" id="eventsTitle">
               <div>
-                <p class="eyebrow">Telemetry</p>
-                <h2 id="eventsTitle">Events</h2>
+                <p class="eyebrow">Diagnostics</p>
+                <h2>Technical events and logs</h2>
               </div>
-            </div>
+              <span>Open diagnostics</span>
+            </summary>
             <div class="event-list" id="events"></div>
-          </section>
+          </details>
         </section>
       </div>
     </main>
-    <script src="/run-inspector/run-inspector.js?v=visual-polish-2" defer></script>
+    <script src="/run-inspector/run-inspector.js?v=workflow-story-1" defer></script>
   </body>
 </html>
