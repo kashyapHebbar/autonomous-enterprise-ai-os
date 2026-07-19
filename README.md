@@ -25,6 +25,9 @@ The first vertical slice is a procurement analytics workflow:
 
 ## Architecture
 
+For a polished reviewer-facing explanation with diagrams, UI links, setup paths, and the demo flow,
+start with [docs/portfolio-architecture.md](docs/portfolio-architecture.md).
+
 ```mermaid
 flowchart LR
     User[User request] --> Planner[Planner agent]
@@ -392,6 +395,7 @@ PYTHONPATH=src .venv/bin/python scripts/manage_database.py \
 
 ## Documentation
 
+- Portfolio architecture: [docs/portfolio-architecture.md](docs/portfolio-architecture.md)
 - Architecture: [docs/architecture.md](docs/architecture.md)
 - Development guide: [docs/development.md](docs/development.md)
 - Kubernetes baseline: [deploy/kubernetes/README.md](deploy/kubernetes/README.md)
