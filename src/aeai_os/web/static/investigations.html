@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Investigations | Autonomous Enterprise AI OS</title>
+    <link rel="stylesheet" href="/app/app-shell.css?v=product-system-2" />
+    <link rel="stylesheet" href="/app/investigations.css?v=case-workspace-1" />
+  </head>
+  <body>
+    <main class="shell product-shell">
+      <aside class="sidebar" aria-label="Application navigation">
+        <a class="brand" href="/app"><span class="brand-mark">AE</span><span class="brand-copy"><strong>Enterprise AI OS</strong><span>Control plane</span></span></a>
+        <nav class="app-nav" aria-label="Primary">
+          <a href="/app"><span class="nav-icon">&#8984;</span><span>Workflows</span></a>
+          <a href="/app/investigations" aria-current="page"><span class="nav-icon">!</span><span>Investigations</span></a>
+          <a href="/app/artifacts"><span class="nav-icon">&#9635;</span><span>Outputs</span></a>
+          <a href="/app/admin"><span class="nav-icon">&#9672;</span><span>Governance</span></a>
+          <a href="/docs"><span class="nav-icon">{ }</span><span>API Reference</span></a>
+        </nav>
+        <div class="sidebar-footer"><div class="system-chip"><span>Workspace</span><strong id="workspaceName">Loading</strong></div></div>
+      </aside>
+
+      <div class="workspace-shell">
+        <section class="intro-band">
+          <div><p class="eyebrow">Risk operations</p><h1>Investigations</h1></div>
+          <button class="icon-button" id="refreshCases" type="button" title="Refresh cases">&#8635;<span class="sr-only">Refresh</span></button>
+        </section>
+
+        <section class="case-summary" aria-label="Investigation summary">
+          <article><span>Open cases</span><strong id="openCount">--</strong></article>
+          <article><span>Critical</span><strong id="criticalCount">--</strong></article>
+          <article><span>Confirmed</span><strong id="confirmedCount">--</strong></article>
+          <article><span>Risk exposure</span><strong id="riskExposure">--</strong></article>
+        </section>
+
+        <section class="case-workspace">
+          <section class="case-list-panel" aria-labelledby="queueTitle">
+            <div class="case-toolbar">
+              <div><p class="eyebrow">Triage queue</p><h2 id="queueTitle">Flagged transactions</h2></div>
+              <div class="case-filters">
+                <input id="caseSearch" type="search" placeholder="Search supplier or evidence" />
+                <select id="statusFilter" aria-label="Filter status">
+                  <option value="">All statuses</option><option value="new">New</option><option value="investigating">Investigating</option><option value="confirmed">Confirmed</option><option value="dismissed">Dismissed</option><option value="resolved">Resolved</option>
+                </select>
+              </div>
+            </div>
+            <div class="case-table-head"><span>Risk</span><span>Transaction</span><span>Status</span><span>Owner</span><span>Updated</span></div>
+            <div id="caseList" class="case-list" aria-live="polite"></div>
+          </section>
+
+          <aside class="case-detail" id="caseDetail" aria-labelledby="caseDetailTitle">
+            <div class="empty-detail" id="emptyDetail"><strong>Select a case</strong><span>Review its evidence and record a disposition.</span></div>
+            <div id="activeDetail" hidden>
+              <div class="detail-heading"><div><p class="eyebrow" id="detailSeverity">Risk</p><h2 id="caseDetailTitle">Case</h2></div><strong class="detail-score" id="detailScore">--</strong></div>
+              <dl class="case-facts"><div><dt>Amount</dt><dd id="detailAmount">--</dd></div><div><dt>Confidence</dt><dd id="detailConfidence">--</dd></div><div><dt>Category</dt><dd id="detailCategory">--</dd></div><div><dt>Workflow</dt><dd id="detailRun">--</dd></div></dl>
+              <section class="evidence"><h3>Evidence</h3><ul id="evidenceList"></ul></section>
+              <p class="recommended" id="recommendedAction"></p>
+              <form id="caseForm">
+                <label><span>Status</span><select id="caseStatus"><option value="new">New</option><option value="investigating">Investigating</option><option value="confirmed">Confirmed</option><option value="dismissed">Dismissed</option><option value="resolved">Resolved</option></select></label>
+                <label><span>Assignee</span><input id="caseAssignee" maxlength="200" placeholder="Investigator or team" /></label>
+                <label><span>Disposition rationale</span><textarea id="caseComment" rows="4" maxlength="2000" placeholder="Document findings and supporting evidence"></textarea></label>
+                <button class="primary-button" type="submit">Save decision</button><p id="caseMessage" class="form-message"></p>
+              </form>
+              <section class="history"><h3>Case history</h3><div id="historyList"></div></section>
+            </div>
+          </aside>
+        </section>
+      </div>
+    </main>
+    <script src="/app/investigations.js?v=case-workspace-1" defer></script>
+  </body>
+</html>

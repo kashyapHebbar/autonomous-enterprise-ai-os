@@ -285,12 +285,15 @@ def test_control_plane_page_and_assets_are_served(tmp_path):
     root_response = client.get("/")
     page_response = client.get("/app")
     artifact_page_response = client.get("/app/artifacts")
+    investigations_page_response = client.get("/app/investigations")
     admin_page_response = client.get("/app/admin")
     shell_style_response = client.get("/app/app-shell.css")
     script_response = client.get("/app/control-plane.js")
     style_response = client.get("/app/control-plane.css")
     artifact_script_response = client.get("/app/artifact-browser.js")
     artifact_style_response = client.get("/app/artifact-browser.css")
+    investigations_script_response = client.get("/app/investigations.js")
+    investigations_style_response = client.get("/app/investigations.css")
     admin_script_response = client.get("/app/admin.js")
     admin_style_response = client.get("/app/admin.css")
     missing_response = client.get("/app/unknown.js")
@@ -298,6 +301,7 @@ def test_control_plane_page_and_assets_are_served(tmp_path):
     assert root_response.status_code == 200
     assert root_response.json()["control_plane"] == "/app"
     assert root_response.json()["artifact_browser"] == "/app/artifacts"
+    assert root_response.json()["investigations"] == "/investigations"
     assert root_response.json()["admin"] == "/app/admin"
     assert page_response.status_code == 200
     assert "Workflows" in page_response.text
@@ -314,6 +318,11 @@ def test_control_plane_page_and_assets_are_served(tmp_path):
     assert 'id="artifactSearch"' in artifact_page_response.text
     assert "/app/app-shell.css" in artifact_page_response.text
     assert "/app/artifact-browser.js" in artifact_page_response.text
+    assert investigations_page_response.status_code == 200
+    assert "Investigations" in investigations_page_response.text
+    assert 'id="caseList"' in investigations_page_response.text
+    assert 'id="caseForm"' in investigations_page_response.text
+    assert "/app/investigations.js" in investigations_page_response.text
     assert admin_page_response.status_code == 200
     assert "Governance Center" in admin_page_response.text
     assert 'id="agentsList"' in admin_page_response.text
@@ -328,6 +337,8 @@ def test_control_plane_page_and_assets_are_served(tmp_path):
     assert style_response.status_code == 200
     assert artifact_script_response.status_code == 200
     assert artifact_style_response.status_code == 200
+    assert investigations_script_response.status_code == 200
+    assert investigations_style_response.status_code == 200
     assert admin_script_response.status_code == 200
     assert admin_style_response.status_code == 200
     assert missing_response.status_code == 404

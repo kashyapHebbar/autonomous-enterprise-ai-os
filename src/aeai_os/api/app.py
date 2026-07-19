@@ -28,6 +28,7 @@ def create_app(
     from aeai_os.api.auth import build_auth_router
     from aeai_os.api.connectors import build_connectors_router
     from aeai_os.api.data_sources import build_data_sources_router
+    from aeai_os.api.investigations import build_investigations_router
     from aeai_os.api.metrics import build_metrics_router
     from aeai_os.api.runs import build_runs_router
     from aeai_os.connectors import (
@@ -122,6 +123,7 @@ def create_app(
             "metrics": "/metrics",
             "connectors": "/connectors",
             "data_sources": "/data-sources",
+            "investigations": "/investigations",
             "artifact_browser": "/app/artifacts",
             "admin": "/app/admin",
             "run_inspector": "/run-inspector",
@@ -144,6 +146,7 @@ def create_app(
     )
     app.include_router(build_metrics_router(run_repository))
     app.include_router(build_auth_router())
+    app.include_router(build_investigations_router(run_repository, artifact_store))
     app.include_router(build_connectors_router(connector_registry))
     app.include_router(build_data_sources_router(data_source_registry))
     app.include_router(
@@ -162,6 +165,10 @@ def create_app(
     def artifact_browser_page() -> FileResponse:
         return FileResponse(static_root / "artifact-browser.html")
 
+    @app.get("/app/investigations", include_in_schema=False)
+    def investigations_page() -> FileResponse:
+        return FileResponse(static_root / "investigations.html")
+
     @app.get("/app/admin", include_in_schema=False)
     def admin_page() -> FileResponse:
         return FileResponse(static_root / "admin.html")
@@ -176,6 +183,8 @@ def create_app(
             "artifact-browser.js",
             "control-plane.css",
             "control-plane.js",
+            "investigations.css",
+            "investigations.js",
         }
         if asset_name not in allowed_assets:
             from fastapi import HTTPException, status

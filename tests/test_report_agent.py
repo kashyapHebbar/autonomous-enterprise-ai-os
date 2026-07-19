@@ -102,6 +102,8 @@ def test_report_agent_generates_markdown_report_with_lineage(tmp_path):
     assert report_artifact.metadata["format"] == "markdown"
     assert report_artifact.metadata["chart_count"] >= 4
     assert "## Anomaly Intelligence" in report_markdown
+    assert "## Spend Forecast" in report_markdown
+    assert "## Supplier Risk Profiles" in report_markdown
     assert dataset.id in report_artifact.source_artifact_ids
     assert {
         ArtifactType.DATASET,
