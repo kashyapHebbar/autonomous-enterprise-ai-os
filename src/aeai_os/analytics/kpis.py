@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from math import ceil, floor
@@ -10,9 +11,33 @@ from aeai_os.data.profiling import is_missing_value
 
 COLUMN_ALIASES = {
     "supplier": ("supplier", "supplier_name", "vendor", "vendor_name"),
-    "category": ("category", "spend_category", "commodity", "procurement_category"),
-    "amount": ("spend_amount", "amount", "invoice_amount", "total_amount", "cost", "spend"),
-    "date": ("invoice_date", "transaction_date", "purchase_date", "date"),
+    "category": (
+        "category",
+        "spend_category",
+        "commodity",
+        "procurement_category",
+        "expense_type",
+        "expenditure_type",
+    ),
+    "amount": (
+        "spend_amount",
+        "amount",
+        "amount_gbp",
+        "invoice_amount",
+        "net_amount",
+        "total_amount",
+        "transaction_amount",
+        "cost",
+        "spend",
+    ),
+    "date": (
+        "invoice_date",
+        "transaction_date",
+        "purchase_date",
+        "payment_date",
+        "posting_date",
+        "date",
+    ),
 }
 
 
@@ -38,6 +63,9 @@ def analyze_procurement_dataset(adapter: DatasetQueryAdapter) -> ProcurementAnal
         raise AnalyticsError(
             "Dataset is missing required procurement columns: " + ", ".join(missing_required)
         )
+
+    currency = _detect_currency(resolved.get("amount"), rows)
+    currency_symbol = _currency_symbol(currency)
 
     supplier_totals: dict[str, float] = {}
     category_totals: dict[str, float] = {}
@@ -103,6 +131,7 @@ def analyze_procurement_dataset(adapter: DatasetQueryAdapter) -> ProcurementAnal
         spend_by_category=spend_by_category,
         outliers=outliers,
         missing_risks=missing_risks,
+        currency_symbol=currency_symbol,
     )
 
     return ProcurementAnalysisResult(
@@ -112,6 +141,8 @@ def analyze_procurement_dataset(adapter: DatasetQueryAdapter) -> ProcurementAnal
                 "valid_amount_rows": len(parsed_rows),
                 "invalid_amount_rows": invalid_amount_rows,
                 "resolved_columns": resolved,
+                "currency": currency,
+                "currency_symbol": currency_symbol,
             },
             "kpis": {
                 "total_spend": total_spend,
@@ -135,7 +166,7 @@ def analyze_procurement_dataset(adapter: DatasetQueryAdapter) -> ProcurementAnal
 
 
 def _resolve_columns(columns: list[str]) -> dict[str, str]:
-    normalized = {column.lower().strip(): column for column in columns}
+    normalized = {_normalize_column_name(column): column for column in columns}
     resolved: dict[str, str] = {}
     for role, aliases in COLUMN_ALIASES.items():
         for alias in aliases:
@@ -143,6 +174,10 @@ def _resolve_columns(columns: list[str]) -> dict[str, str]:
                 resolved[role] = normalized[alias]
                 break
     return resolved
+
+
+def _normalize_column_name(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
 
 
 def _value(row: dict[str, str], column: str | None) -> str | None:
@@ -155,11 +190,41 @@ def _value(row: dict[str, str], column: str | None) -> str | None:
 def _parse_amount(value: str | None) -> float | None:
     if value is None or is_missing_value(value):
         return None
-    normalized = value.replace(",", "").replace("$", "").strip()
+    normalized = value.replace(",", "").strip()
+    normalized = normalized.translate(str.maketrans("", "", "$£€¥₹"))
     try:
         return float(normalized)
     except ValueError:
         return None
+
+
+def _detect_currency(amount_column: str | None, rows: list[dict[str, str]]) -> str:
+    normalized_column = _normalize_column_name(amount_column or "")
+    column_currencies = {
+        "gbp": "GBP",
+        "eur": "EUR",
+        "inr": "INR",
+        "jpy": "JPY",
+        "usd": "USD",
+    }
+    for marker, currency in column_currencies.items():
+        if marker in normalized_column.split("_"):
+            return currency
+
+    symbol_currencies = {"£": "GBP", "€": "EUR", "₹": "INR", "¥": "JPY", "$": "USD"}
+    if amount_column:
+        for row in rows:
+            value = row.get(amount_column, "")
+            for symbol, currency in symbol_currencies.items():
+                if symbol in value:
+                    return currency
+    return "USD"
+
+
+def _currency_symbol(currency: str) -> str:
+    return {"GBP": "£", "EUR": "€", "INR": "₹", "JPY": "¥", "USD": "$"}.get(
+        currency, "$"
+    )
 
 
 def _parse_month(value: str | None) -> str | None:
@@ -168,7 +233,13 @@ def _parse_month(value: str | None) -> str | None:
     try:
         return datetime.fromisoformat(value).strftime("%Y-%m")
     except ValueError:
-        return None
+        pass
+    for date_format in ("%d/%m/%Y", "%m/%d/%Y", "%b-%y"):
+        try:
+            return datetime.strptime(value, date_format).strftime("%Y-%m")
+        except ValueError:
+            continue
+    return None
 
 
 def _ranked_spend(
@@ -287,8 +358,9 @@ def _build_insights(
     spend_by_category: list[dict[str, Any]],
     outliers: list[dict[str, Any]],
     missing_risks: list[dict[str, Any]],
+    currency_symbol: str = "$",
 ) -> list[str]:
-    insights = [f"Total analyzed procurement spend is ${total_spend:,.2f}."]
+    insights = [f"Total analyzed procurement spend is {currency_symbol}{total_spend:,.2f}."]
     if spend_by_supplier:
         top = spend_by_supplier[0]
         insights.append(
@@ -296,7 +368,9 @@ def _build_insights(
         )
     if spend_by_category:
         top = spend_by_category[0]
-        insights.append(f"Largest category is {top['category']} at ${top['spend']:,.2f}.")
+        insights.append(
+            f"Largest category is {top['category']} at {currency_symbol}{top['spend']:,.2f}."
+        )
     if outliers:
         noun = "outlier" if len(outliers) == 1 else "outliers"
         insights.append(f"Detected {len(outliers)} high-value transaction {noun}.")

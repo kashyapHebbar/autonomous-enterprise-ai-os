@@ -8,6 +8,7 @@ from aeai_os.agents.data_retrieval import DataRetrievalAgent
 from aeai_os.agents.report import ReportAgent
 from aeai_os.agents.visualization import VisualizationAgent
 from aeai_os.artifacts import ArtifactLineageService
+from aeai_os.reports.procurement import render_procurement_markdown_report
 from aeai_os.runs.repository import InMemoryRunRepository
 from aeai_os.schemas.enums import ArtifactType
 
@@ -138,3 +139,25 @@ def test_report_agent_fails_without_kpi_artifact(tmp_path):
     assert output.status == "failed"
     assert "No kpi_table artifact" in output.errors[0]
     assert repository.list_artifacts(run.id) == []
+
+
+def test_procurement_report_renders_dataset_currency():
+    analysis = {
+        "dataset": {"currency": "GBP", "currency_symbol": "£"},
+        "kpis": {
+            "total_spend": 3427.96,
+            "supplier_count": 2,
+            "category_count": 2,
+            "average_transaction_value": 1713.98,
+            "outlier_count": 0,
+            "estimated_savings": 100,
+        },
+        "insights": ["Total analyzed procurement spend is £3,427.96."],
+        "savings_opportunities": [],
+        "missing_data_risks": [],
+    }
+
+    report = render_procurement_markdown_report(analysis, [])
+
+    assert "£3,427.96" in report
+    assert "$" not in report

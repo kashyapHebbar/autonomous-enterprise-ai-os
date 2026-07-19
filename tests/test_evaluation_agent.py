@@ -12,29 +12,31 @@ from aeai_os.runs.repository import InMemoryRunRepository
 from aeai_os.schemas.enums import ArtifactType
 
 
-def write_evaluation_fixture(path: Path) -> None:
+def write_evaluation_fixture(path: Path, currency: str = "USD") -> None:
+    amount_column = "Amount (GBP)" if currency == "GBP" else "spend_amount"
+    amount_prefix = "£" if currency == "GBP" else ""
     path.write_text(
         "\n".join(
             [
-                "supplier,category,invoice_date,spend_amount,department",
-                "Acme,Software,2026-01-05,100,IT",
-                "Acme,Software,2026-01-06,100,IT",
-                "Zenith,Hardware,2026-02-01,200,Operations",
-                "Acme,Cloud,2026-02-10,1000,IT",
+                f"supplier,category,invoice_date,{amount_column},department",
+                f"Acme,Software,2026-01-05,{amount_prefix}100,IT",
+                f"Acme,Software,2026-01-06,{amount_prefix}100,IT",
+                f"Zenith,Hardware,2026-02-01,{amount_prefix}200,Operations",
+                f"Acme,Cloud,2026-02-10,{amount_prefix}1000,IT",
                 "Acme,,2026-02-11,,Finance",
-                "Tiny,Office,2026-03-01,10,Finance",
+                f"Tiny,Office,2026-03-01,{amount_prefix}10,Finance",
             ]
         ),
         encoding="utf-8",
     )
 
 
-def build_evaluation_fixture(tmp_path: Path):
+def build_evaluation_fixture(tmp_path: Path, currency: str = "USD"):
     repository = InMemoryRunRepository()
     artifact_root = tmp_path / "artifacts"
     run = repository.create_run("Analyze procurement data and create a dashboard report.")
     csv_path = tmp_path / "procurement.csv"
-    write_evaluation_fixture(csv_path)
+    write_evaluation_fixture(csv_path, currency)
     dataset = repository.add_artifact(
         run_id=run.id,
         artifact_type=ArtifactType.DATASET,
@@ -154,3 +156,21 @@ def test_evaluation_agent_fails_intentionally_inconsistent_report(tmp_path):
     assert check_results["data_consistency"]["passed"] is False
     assert check_results["data_consistency"]["details"]["report_matches"] is False
     assert check_results["data_consistency"]["details"]["chart_matches"] is True
+
+
+def test_evaluation_agent_uses_dataset_currency_for_consistency(tmp_path):
+    repository, run, agent, upstream_artifacts = build_evaluation_fixture(tmp_path, "GBP")
+
+    output = agent.execute(
+        AgentInput(
+            run_id=run.id,
+            node_id="evaluation",
+            task="Evaluate procurement outputs.",
+            artifacts=upstream_artifacts,
+        )
+    )
+
+    evaluation = repository.list_evaluations(run.id)[0]
+    consistency = next(check for check in evaluation.checks if check["name"] == "data_consistency")
+    assert output.status == "succeeded"
+    assert consistency["details"]["expected_report_value"] == "£1,410.00"
