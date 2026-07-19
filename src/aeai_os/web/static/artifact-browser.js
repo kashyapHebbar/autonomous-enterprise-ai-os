@@ -85,6 +85,35 @@ function formatDate(value) {
   }).format(new Date(value));
 }
 
+function label(value) {
+  return String(value ?? "unknown")
+    .replaceAll("_", " ")
+    .replaceAll("-", " ");
+}
+
+function titleLabel(value) {
+  const acronyms = {
+    api: "API",
+    csv: "CSV",
+    github: "GitHub",
+    id: "ID",
+    json: "JSON",
+    kpi: "KPI",
+    mlflow: "MLflow",
+    sqlite: "SQLite",
+    sql: "SQL",
+    uri: "URI",
+  };
+  return label(value)
+    .split(" ")
+    .filter(Boolean)
+    .map((word) => {
+      const key = word.toLowerCase();
+      return acronyms[key] || key[0].toUpperCase() + key.slice(1);
+    })
+    .join(" ");
+}
+
 function artifactContentPath(artifact, download = false) {
   const runId = encodeURIComponent(artifact.run_id);
   const artifactId = encodeURIComponent(artifact.id);
@@ -103,7 +132,7 @@ function statusClass(value) {
 }
 
 function artifactTitle(artifact) {
-  return artifact.metadata.title || artifact.metadata.filename || artifact.type;
+  return artifact.metadata.title || artifact.metadata.filename || titleLabel(artifact.type);
 }
 
 function groupedArtifacts(artifacts) {
@@ -121,7 +150,7 @@ function renderRunSelect() {
         .map(
           (run) => `
             <option value="${escapeHtml(run.id)}"${run.id === state.selectedRunId ? " selected" : ""}>
-              ${escapeHtml(run.id)} - ${escapeHtml(run.status)}
+              ${escapeHtml(run.id)} - ${escapeHtml(titleLabel(run.status))}
             </option>`
         )
         .join("")
@@ -146,7 +175,7 @@ function renderArtifactGroups() {
     .map(
       ([producer, groupArtifacts]) => `
         <section class="artifact-group">
-          <h3>${escapeHtml(producer)}</h3>
+          <h3>${escapeHtml(titleLabel(producer))}</h3>
           <div class="artifact-list">
             ${groupArtifacts.map(renderArtifactButton).join("")}
           </div>
@@ -167,12 +196,12 @@ function renderArtifactButton(artifact) {
     >
       <span class="artifact-main">
         <strong>${escapeHtml(artifactTitle(artifact))}</strong>
-        <span class="${statusClass(artifact.type)}">${escapeHtml(artifact.type)}</span>
+        <span class="${statusClass(artifact.type)}">${escapeHtml(titleLabel(artifact.type))}</span>
       </span>
       <span class="artifact-id">${escapeHtml(artifact.id)}</span>
       <span class="meta-line">
         <span>${escapeHtml(previewLabel)}</span>
-        <span>${escapeHtml(artifact.producer_node_id || "input")}</span>
+        <span>${escapeHtml(titleLabel(artifact.producer_node_id || "input"))}</span>
         <span>${escapeHtml(formatDate(artifact.created_at))}</span>
       </span>
     </button>`;
@@ -181,7 +210,7 @@ function renderArtifactButton(artifact) {
 function renderPreviewShell(artifact) {
   state.selectedArtifact = artifact;
   els.previewTitle.textContent = artifactTitle(artifact);
-  els.previewType.textContent = artifact.type;
+  els.previewType.textContent = titleLabel(artifact.type);
   els.previewType.className = statusClass(artifact.type);
   const canPreview = PREVIEWABLE_TYPES.has(artifact.type);
   const contentUrl = artifactContentPath(artifact);
@@ -200,7 +229,7 @@ function renderPreviewShell(artifact) {
 
   if (!canPreview) {
     els.previewSurface.innerHTML = `
-      <p class="unavailable-preview">Artifact type ${escapeHtml(artifact.type)} is not available for browser preview.</p>`;
+      <p class="unavailable-preview">Artifact type ${escapeHtml(titleLabel(artifact.type))} is not available for browser preview.</p>`;
     return;
   }
 
@@ -293,8 +322,8 @@ async function renderLineage(artifact) {
               <article class="lineage-item">
                 <strong>${escapeHtml(item.metadata.title || item.id)}</strong>
                 <div class="meta-line">
-                  <span>${escapeHtml(item.type)}</span>
-                  <span>${escapeHtml(item.producer_node_id || "input")}</span>
+                  <span>${escapeHtml(titleLabel(item.type))}</span>
+                  <span>${escapeHtml(titleLabel(item.producer_node_id || "input"))}</span>
                   <span>${escapeHtml(item.id)}</span>
                 </div>
               </article>`
