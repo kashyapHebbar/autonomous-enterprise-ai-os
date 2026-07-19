@@ -4,68 +4,86 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Artifacts | Autonomous Enterprise AI OS</title>
-    <link rel="stylesheet" href="/app/artifact-browser.css" />
+    <link rel="stylesheet" href="/app/artifact-browser.css?v=product-ui" />
+    <link rel="stylesheet" href="/app/app-shell.css?v=product-ui" />
   </head>
   <body>
-    <main class="shell">
-      <header class="topbar">
-        <a class="brand" href="/app">Autonomous Enterprise AI OS</a>
+    <main class="shell product-shell">
+      <aside class="sidebar" aria-label="Application navigation">
+        <a class="brand" href="/app">
+          <span class="brand-mark" aria-hidden="true">AE</span>
+          <span class="brand-copy">
+            <strong>Enterprise AI OS</strong>
+            <span>Autonomous control plane</span>
+          </span>
+        </a>
         <nav class="app-nav" aria-label="Primary">
-          <a href="/app">Runs</a>
-          <a href="/app/artifacts" aria-current="page">Artifacts</a>
-          <a href="/app/admin">Admin</a>
-          <a href="/docs">API Docs</a>
+          <a href="/app"><span class="nav-icon" aria-hidden="true">R</span><span>Runs</span></a>
+          <a href="/app/artifacts" aria-current="page"><span class="nav-icon" aria-hidden="true">A</span><span>Artifacts</span></a>
+          <a href="/app/admin"><span class="nav-icon" aria-hidden="true">G</span><span>Governance</span></a>
+          <a href="/docs"><span class="nav-icon" aria-hidden="true">D</span><span>API Docs</span></a>
         </nav>
-      </header>
-
-      <section class="intro-band" aria-labelledby="pageTitle">
-        <div>
-          <p class="eyebrow">Control plane</p>
-          <h1 id="pageTitle">Artifacts</h1>
+        <div class="sidebar-footer">
+          <div class="system-chip"><span>Mode</span><strong>Local</strong></div>
+          <div class="system-chip"><span>Release</span><strong>v1.0</strong></div>
         </div>
-        <div class="toolbar">
-          <label class="select-field">
-            <span>Run</span>
-            <select id="runSelect"></select>
-          </label>
-          <button class="icon-button" id="refreshArtifacts" type="button" title="Refresh artifacts">
-            <span aria-hidden="true">R</span>
-            <span class="sr-only">Refresh</span>
-          </button>
-        </div>
-      </section>
+      </aside>
 
-      <section class="artifact-grid">
-        <section class="panel browser-panel" aria-labelledby="artifactListTitle">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Generated outputs</p>
-              <h2 id="artifactListTitle">Browser</h2>
-            </div>
-            <span class="status-pill" id="artifactCount">--</span>
+      <div class="workspace-shell">
+        <section class="intro-band" aria-labelledby="pageTitle">
+          <div>
+            <p class="eyebrow">Generated outputs</p>
+            <h1 id="pageTitle">Artifacts</h1>
           </div>
-          <div class="artifact-groups" id="artifactGroups"></div>
+          <div class="toolbar">
+            <label class="select-field">
+              <span>Run</span>
+              <select id="runSelect"></select>
+            </label>
+            <button class="icon-button" id="refreshArtifacts" type="button" title="Refresh artifacts">
+              <svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M20 6v5h-5" />
+                <path d="M4 18v-5h5" />
+                <path d="M18.2 9A7 7 0 0 0 6.4 6.4L4 8.8" />
+                <path d="M5.8 15A7 7 0 0 0 17.6 17.6L20 15.2" />
+              </svg>
+              <span class="sr-only">Refresh</span>
+            </button>
+          </div>
         </section>
 
-        <section class="panel preview-panel" aria-labelledby="previewTitle">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Preview</p>
-              <h2 id="previewTitle">Artifact</h2>
+        <section class="artifact-grid">
+          <section class="panel browser-panel" aria-labelledby="artifactListTitle">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Lineage groups</p>
+                <h2 id="artifactListTitle">Browser</h2>
+              </div>
+              <span class="status-pill" id="artifactCount">--</span>
             </div>
-            <span class="status-pill" id="previewType">Idle</span>
-          </div>
-          <div class="preview-actions" id="previewActions"></div>
-          <div class="preview-surface" id="previewSurface">
-            <p class="empty">Select an artifact to inspect it.</p>
-          </div>
-          <section class="lineage-panel" aria-labelledby="lineageTitle">
-            <h3 id="lineageTitle">Lineage</h3>
-            <div id="lineageView"></div>
+            <div class="artifact-groups" id="artifactGroups"></div>
+          </section>
+
+          <section class="panel preview-panel" aria-labelledby="previewTitle">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Preview</p>
+                <h2 id="previewTitle">Artifact</h2>
+              </div>
+              <span class="status-pill" id="previewType">Idle</span>
+            </div>
+            <div class="preview-actions" id="previewActions"></div>
+            <div class="preview-surface" id="previewSurface">
+              <p class="empty">Select an artifact to inspect it.</p>
+            </div>
+            <section class="lineage-panel" aria-labelledby="lineageTitle">
+              <h3 id="lineageTitle">Lineage</h3>
+              <div id="lineageView"></div>
+            </section>
           </section>
         </section>
-      </section>
+      </div>
     </main>
-    <script src="/app/artifact-browser.js" defer></script>
+    <script src="/app/artifact-browser.js?v=product-ui" defer></script>
   </body>
 </html>
