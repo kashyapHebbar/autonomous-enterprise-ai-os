@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Governance | Autonomous Enterprise AI OS</title>
-    <link rel="stylesheet" href="/app/admin.css?v=connector-hub-1" />
+    <link rel="stylesheet" href="/app/admin.css?v=connector-hub-2" />
     <link rel="stylesheet" href="/app/app-shell.css?v=product-system-2" />
   </head>
   <body>
@@ -77,6 +77,11 @@
             </div>
             <span class="status-pill" id="installationStatus">Ready</span>
           </div>
+          <ol class="hub-steps" aria-label="Connector setup progress">
+            <li><span>1</span><strong>Connect</strong></li>
+            <li><span>2</span><strong>Explore</strong></li>
+            <li><span>3</span><strong>Publish</strong></li>
+          </ol>
           <form class="connector-form" id="connectorForm">
             <label>
               <span>Organization</span>
@@ -108,7 +113,64 @@
               <button class="command-button" type="submit">Add Connection</button>
             </div>
           </form>
+          <div class="saved-connections-heading">
+            <h3>Saved connections</h3>
+            <span id="installationCount">0</span>
+          </div>
           <div class="installation-list" id="installationsList"></div>
+
+          <section class="data-explorer" aria-labelledby="dataExplorerTitle">
+            <div class="explorer-toolbar">
+              <div>
+                <p class="eyebrow">Permitted data</p>
+                <h3 id="dataExplorerTitle">Data Explorer</h3>
+              </div>
+              <label>
+                <span class="sr-only">Saved connection</span>
+                <select id="explorerInstallation"></select>
+              </label>
+              <button class="secondary-button" id="browseUp" type="button" disabled>Up</button>
+              <button class="icon-button" id="refreshAssets" type="button" title="Refresh catalog">
+                <svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M20 6v5h-5" />
+                  <path d="M4 18v-5h5" />
+                  <path d="M18.2 9A7 7 0 0 0 6.4 6.4L4 8.8" />
+                  <path d="M5.8 15A7 7 0 0 0 17.6 17.6L20 15.2" />
+                </svg>
+                <span class="sr-only">Refresh catalog</span>
+              </button>
+            </div>
+            <div class="explorer-path" id="explorerPath">Catalog root</div>
+            <div class="explorer-grid">
+              <div class="asset-browser" id="assetList"></div>
+              <div class="preview-pane">
+                <div class="preview-heading">
+                  <div>
+                    <p class="eyebrow">Dataset preview</p>
+                    <h3 id="previewTitle">Select a dataset</h3>
+                  </div>
+                  <span class="status-pill" id="previewStatus">Waiting</span>
+                </div>
+                <div class="preview-table-wrap" id="previewTable"></div>
+                <form class="source-form" id="sourceForm" hidden>
+                  <label>
+                    <span>Source ID</span>
+                    <input id="sourceId" required minlength="3" maxlength="100" />
+                  </label>
+                  <label>
+                    <span>Display name</span>
+                    <input id="sourceName" required minlength="3" maxlength="200" />
+                  </label>
+                  <label>
+                    <span>Owner</span>
+                    <input id="sourceOwner" value="data-platform" required minlength="2" />
+                  </label>
+                  <button class="command-button" type="submit">Publish source</button>
+                </form>
+                <p class="explorer-message" id="explorerMessage" role="status"></p>
+              </div>
+            </div>
+          </section>
         </section>
 
         <section class="admin-grid">
@@ -178,6 +240,6 @@
         </section>
       </div>
     </main>
-    <script src="/app/admin.js?v=connector-hub-1" defer></script>
+    <script src="/app/admin.js?v=connector-hub-2" defer></script>
   </body>
 </html>

@@ -9,6 +9,7 @@ from typing import Any, Literal
 
 from aeai_os.connectors import ConnectorRegistry
 from aeai_os.data.warehouse import (
+    SnowflakeWarehouseConnector,
     WarehouseConnectorError,
     default_warehouse_registry,
     warehouse_reference_from_metadata,
@@ -60,6 +61,8 @@ class DataSourceRecord:
             "connector_id": self.connector_id,
             "credential_profile_id": self.credential_profile_id,
             "owner": self.owner,
+            "organization_id": self.organization_id,
+            "workspace_id": self.workspace_id,
         }
 
 
@@ -235,6 +238,9 @@ class DataSourceRegistry:
         self,
         source: DataSourceRecord,
     ) -> DataSourceValidationResult:
+        installation_id = str(source.metadata.get("installation_id") or "").strip()
+        if installation_id:
+            return self._validate_installed_snowflake_source(source, installation_id)
         try:
             health = self._connector_registry.health(source.connector_id)
         except KeyError as exc:
@@ -258,6 +264,40 @@ class DataSourceRegistry:
                 "connector_id": source.connector_id,
                 "credential_profile_id": source.credential_profile_id,
                 "relation": relation,
+            },
+        )
+
+    def _validate_installed_snowflake_source(
+        self,
+        source: DataSourceRecord,
+        installation_id: str,
+    ) -> DataSourceValidationResult:
+        try:
+            installation = self._connector_registry.get_installation(
+                installation_id, source.organization_id
+            )
+            if installation.workspace_id not in {None, source.workspace_id}:
+                raise ValueError("Connector installation is not available in this workspace.")
+            effective_env = self._connector_registry.resolve_installation_environment(
+                installation
+            )
+            reference = warehouse_reference_from_metadata(
+                source.dataset_uri,
+                _warehouse_metadata(source),
+            )
+            columns = SnowflakeWarehouseConnector.from_env(effective_env).describe(reference)
+        except (KeyError, ValueError, WarehouseConnectorError) as exc:
+            return _invalid(
+                "Snowflake source could not be reached through the saved connection. " + str(exc),
+                {"connector_id": source.connector_id, "installation_id": installation_id},
+            )
+        return _ok(
+            "Snowflake source is reachable through the saved connection.",
+            {
+                "connector_id": source.connector_id,
+                "installation_id": installation_id,
+                "column_count": len(columns),
+                "columns": [column.name for column in columns],
             },
         )
 

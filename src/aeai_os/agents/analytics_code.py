@@ -15,6 +15,8 @@ from aeai_os.analytics.reproducible import (
     generate_generic_analysis_code,
     generate_reproducible_analysis_code,
 )
+from aeai_os.connectors import ConnectorRegistry
+from aeai_os.connectors.explorer import ConnectorExplorer
 from aeai_os.data import (
     CsvDatasetAdapter,
     DataIngestionError,
@@ -44,11 +46,13 @@ class AnalyticsCodeAgent:
         warehouse_registry: WarehouseConnectorRegistry | None = None,
         warehouse_row_limit: int = 10_000,
         artifact_store: ArtifactStore | None = None,
+        connector_registry: ConnectorRegistry | None = None,
     ) -> None:
         self._repository = repository
         self._artifact_store = artifact_store or LocalArtifactStore(artifact_root)
         self._code_guard = code_guard or PythonCodeGuard()
         self._warehouse_registry = warehouse_registry or default_warehouse_registry()
+        self._connector_registry = connector_registry
         self._warehouse_row_limit = warehouse_row_limit
 
     def execute(self, agent_input: AgentInput) -> AgentOutput:
@@ -201,9 +205,19 @@ class AnalyticsCodeAgent:
         if dataset_reference.kind == "warehouse":
             if dataset_reference.warehouse is None:
                 raise AnalyticsError("Warehouse dataset reference is missing source details.")
-            connector = self._warehouse_registry.connector_for_reference(
-                dataset_reference.warehouse
-            )
+            installation_id = str(dataset.metadata.get("installation_id") or "").strip()
+            if installation_id and self._connector_registry is not None:
+                organization_id = str(dataset.metadata.get("organization_id") or "local-org")
+                installation = self._connector_registry.get_installation(
+                    installation_id, organization_id
+                )
+                connector = ConnectorExplorer(
+                    self._connector_registry
+                ).warehouse_connector(installation)
+            else:
+                connector = self._warehouse_registry.connector_for_reference(
+                    dataset_reference.warehouse
+                )
             return (
                 WarehouseDatasetAdapter(
                     connector=connector,
