@@ -57,6 +57,75 @@ def evaluate_procurement_outputs(
     )
 
 
+def evaluate_generic_outputs(
+    analysis: dict[str, Any],
+    report_markdown: str,
+    artifacts: list[ArtifactRecord],
+    chart_payloads: list[dict[str, Any]],
+    target_artifact_id: str | None = None,
+) -> EvaluationOutcome:
+    plan = analysis.get("analysis_plan") or {}
+    row_count = analysis.get("kpis", {}).get("row_count")
+    report_complete = all(
+        heading in report_markdown
+        for heading in (
+            "# Exploratory Dataset Analysis Report",
+            "## Recommendations",
+            "## Assumptions",
+            "## Limitations",
+        )
+    )
+    chart_row_count = any(
+        item.get("metric") == "row_count" and item.get("value") == row_count
+        for payload in chart_payloads
+        for item in payload.get("data", [])
+        if isinstance(item, dict)
+    )
+    transparent = all(
+        key in plan for key in ("recipe", "confidence", "measures", "dimensions", "warnings")
+    )
+    checks = [
+        _artifact_completeness_check(artifacts),
+        _check(
+            name="task_completion",
+            passed=report_complete,
+            score=1.0 if report_complete else 0.0,
+            message=(
+                "The exploratory report includes findings, recommendations, and safeguards."
+                if report_complete
+                else "The exploratory report is missing required decision-support sections."
+            ),
+            details={"required_sections_present": report_complete},
+        ),
+        _check(
+            name="data_consistency",
+            passed=chart_row_count,
+            score=1.0 if chart_row_count else 0.0,
+            message=(
+                "Dataset row count is consistent across analytics and visualization artifacts."
+                if chart_row_count
+                else "Dataset row count is not grounded in the visualization artifacts."
+            ),
+            details={"computed_row_count": row_count, "chart_matches": chart_row_count},
+        ),
+        _check(
+            name="semantic_transparency",
+            passed=transparent,
+            score=1.0 if transparent else 0.0,
+            message=(
+                "The inferred semantic plan and confidence are disclosed."
+                if transparent
+                else "The analysis does not disclose its semantic inference plan."
+            ),
+            details={"analysis_recipe": plan.get("recipe")},
+        ),
+        _assumption_disclosure_check(report_markdown),
+    ]
+    passed = all(check["passed"] for check in checks if check["required"])
+    score = round(sum(float(check["score"]) for check in checks) / len(checks), 4)
+    return EvaluationOutcome(score, passed, checks, target_artifact_id)
+
+
 def extract_embedded_chart_payload(document: str) -> dict[str, Any] | None:
     match = re.search(
         r'<script[^>]*data-role="chart-data"[^>]*>(.*?)</script>',

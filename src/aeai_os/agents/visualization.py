@@ -9,9 +9,11 @@ from aeai_os.schemas.enums import AgentEventType, ArtifactType
 from aeai_os.storage import ArtifactStorageError, ArtifactStore, LocalArtifactStore
 from aeai_os.visualization import (
     VisualizationError,
+    build_generic_chart_specs,
     build_procurement_chart_specs,
     render_chart_document,
     render_dashboard_document,
+    render_generic_dashboard_document,
 )
 
 
@@ -31,7 +33,12 @@ class VisualizationAgent:
         try:
             kpi_artifact = self._resolve_kpi_artifact(agent_input)
             analysis = self._artifact_store.read_json(kpi_artifact.uri)
-            charts = build_procurement_chart_specs(analysis)
+            analysis_type = str(analysis.get("analysis_type") or "procurement")
+            charts = (
+                build_generic_chart_specs(analysis)
+                if analysis_type == "generic"
+                else build_procurement_chart_specs(analysis)
+            )
             if len(charts) < 4:
                 raise VisualizationError("Dashboard requires at least four chart specs.")
 
@@ -42,7 +49,15 @@ class VisualizationAgent:
                     run_id=agent_input.run_id,
                     node_id=agent_input.node_id,
                     filename=f"{chart.slug}.html",
-                    payload=render_chart_document(chart, source_artifact_id=kpi_artifact.id),
+                    payload=render_chart_document(
+                        chart,
+                        source_artifact_id=kpi_artifact.id,
+                        eyebrow=(
+                            "Dataset intelligence chart"
+                            if analysis_type == "generic"
+                            else "Procurement dashboard chart"
+                        ),
+                    ),
                     content_type="text/html; charset=utf-8",
                 )
                 chart_artifacts.append(
@@ -69,12 +84,21 @@ class VisualizationAgent:
             dashboard_payload = self._artifact_store.write_text(
                 run_id=agent_input.run_id,
                 node_id=agent_input.node_id,
-                filename="procurement_dashboard.html",
-                payload=render_dashboard_document(
-                    analysis=analysis,
-                    charts=charts,
-                    source_artifact_id=kpi_artifact.id,
-                    chart_artifact_ids=[artifact.id for artifact in chart_artifacts],
+                filename=f"{analysis_type}_dashboard.html",
+                payload=(
+                    render_generic_dashboard_document(
+                        analysis=analysis,
+                        charts=charts,
+                        source_artifact_id=kpi_artifact.id,
+                        chart_artifact_ids=[artifact.id for artifact in chart_artifacts],
+                    )
+                    if analysis_type == "generic"
+                    else render_dashboard_document(
+                        analysis=analysis,
+                        charts=charts,
+                        source_artifact_id=kpi_artifact.id,
+                        chart_artifact_ids=[artifact.id for artifact in chart_artifacts],
+                    )
                 ),
                 content_type="text/html; charset=utf-8",
             )
@@ -87,7 +111,12 @@ class VisualizationAgent:
                     "source": "visualization_agent",
                     "format": "html",
                     "chart_count": len(chart_artifacts),
-                    "title": "Procurement Dashboard",
+                    "title": (
+                        "Dataset Intelligence Dashboard"
+                        if analysis_type == "generic"
+                        else "Procurement Dashboard"
+                    ),
+                    "analysis_type": analysis_type,
                     **dashboard_payload.metadata,
                 },
                 source_artifact_ids=[
@@ -120,13 +149,13 @@ class VisualizationAgent:
         return AgentOutput(
             status="succeeded",
             summary=(
-                f"Generated procurement dashboard with {len(chart_artifacts)} chart artifacts."
+                f"Generated {analysis_type} dashboard with {len(chart_artifacts)} chart artifacts."
             ),
             artifacts=artifact_ids,
             events=[
                 {
                     "event_type": AgentEventType.LOG,
-                    "message": "Procurement chart and dashboard artifacts registered.",
+                    "message": "Chart and dashboard artifacts registered.",
                     "kpi_artifact_id": kpi_artifact.id,
                     "dashboard_artifact_id": dashboard_artifact.id,
                     "chart_artifact_ids": [artifact.id for artifact in chart_artifacts],

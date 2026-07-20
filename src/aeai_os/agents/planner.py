@@ -6,6 +6,8 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 from aeai_os.agents.base import AgentInput, AgentOutput
 from aeai_os.agents.registry import AgentRegistry, build_default_registry
+from aeai_os.data.intelligence import DatasetAnalysisPlan, build_dataset_analysis_plan
+from aeai_os.data.profiling import CsvDatasetProfile
 from aeai_os.orchestration.graph import ExecutionGraph, ExecutionNode, GraphValidationError
 from aeai_os.schemas.enums import AgentEventType
 
@@ -136,6 +138,25 @@ class PlannerAgent:
         )
         return validate_planner_output(plan.model_dump(), self._registry)
 
+    def create_dynamic_plan(
+        self,
+        run_id: str,
+        user_task: str,
+        dataset_profile: CsvDatasetProfile,
+        dataset_artifact_id: str | None = None,
+    ) -> tuple[ExecutionPlanSchema, DatasetAnalysisPlan]:
+        normalized_task = user_task.strip()
+        analysis_plan = build_dataset_analysis_plan(dataset_profile, normalized_task)
+        plan = ExecutionPlanSchema(
+            run_id=run_id,
+            user_task=normalized_task,
+            nodes=_analysis_nodes(
+                dataset_artifact_id=dataset_artifact_id,
+                analysis_plan=analysis_plan,
+            ),
+        )
+        return validate_planner_output(plan.model_dump(), self._registry), analysis_plan
+
 
 def validate_planner_output(
     payload: dict[str, Any],
@@ -173,14 +194,37 @@ def _looks_like_procurement_dashboard_task(user_task: str) -> bool:
 
 
 def _procurement_dashboard_nodes(dataset_artifact_id: str | None) -> list[PlanNodeSchema]:
+    return _analysis_nodes(
+        dataset_artifact_id,
+        DatasetAnalysisPlan(
+            recipe="procurement",
+            domain="procurement",
+            confidence=1,
+            measures=[],
+            dimensions=[],
+            time_columns=[],
+            identifiers=[],
+            semantic_mappings={},
+            goals=["summary", "trend", "outliers"],
+            warnings=[],
+        ),
+    )
+
+
+def _analysis_nodes(
+    dataset_artifact_id: str | None,
+    analysis_plan: DatasetAnalysisPlan,
+) -> list[PlanNodeSchema]:
     dataset_context = (
         f" using dataset artifact {dataset_artifact_id}" if dataset_artifact_id else ""
     )
+    recipe = analysis_plan.recipe
+    label = "procurement" if recipe == "procurement" else "general-purpose"
     return [
         PlanNodeSchema(
             id="data_profile",
             agent="data_retrieval",
-            task=f"Profile the procurement dataset{dataset_context}.",
+            task=(f"Profile the dataset{dataset_context} and apply the {recipe} analysis recipe."),
             required_tools=["dataset_reader", "schema_profiler", "quality_checker"],
             expected_artifacts=["schema_profile", "quality_report"],
             risk="low",
@@ -188,10 +232,7 @@ def _procurement_dashboard_nodes(dataset_artifact_id: str | None) -> list[PlanNo
         PlanNodeSchema(
             id="analytics",
             agent="analytics_code",
-            task=(
-                "Compute procurement KPIs, supplier spend, category trends, outliers, "
-                "and savings opportunities."
-            ),
+            task=f"Compute governed {label} analytics using the {recipe} analysis recipe.",
             depends_on=["data_profile"],
             required_tools=["dataframe_query", "python_analysis", "code_artifact_writer"],
             expected_artifacts=["kpi_table", "code"],
@@ -200,10 +241,7 @@ def _procurement_dashboard_nodes(dataset_artifact_id: str | None) -> list[PlanNo
         PlanNodeSchema(
             id="visualization",
             agent="visualization",
-            task=(
-                "Create charts and a dashboard for procurement KPIs, trends, supplier "
-                "concentration, categories, and anomalies."
-            ),
+            task=f"Create relevant charts and a dashboard for the {recipe} analysis recipe.",
             depends_on=["analytics"],
             required_tools=["chart_renderer", "dashboard_renderer"],
             expected_artifacts=["chart", "dashboard"],

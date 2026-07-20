@@ -3,7 +3,8 @@
 An MVP for a durable multi-agent workflow platform where specialized AI agents collaborate on
 enterprise analytics tasks.
 
-The first vertical slice is a procurement analytics workflow:
+The first specialized recipe is a procurement analytics workflow. The primary execution endpoint can
+also inspect unfamiliar tabular datasets and run a governed exploratory-analysis recipe:
 
 1. A user submits a request and dataset.
 2. A planner agent creates an execution graph.
@@ -20,6 +21,7 @@ The first vertical slice is a procurement analytics workflow:
 - Security policy gates for required tools and risky actions
 - Explainable procurement anomaly scoring and investigator-ready risk queues
 - Audited investigation case management, baseline spend forecasting, and supplier risk profiles
+- Schema-aware automatic routing between procurement and general exploratory analytics
 - API-driven workflow execution, approval decisions, failed-node retry, and run inspection
 - OpenTelemetry trace IDs, Prometheus-compatible metrics, and optional MLflow/LangSmith tracking
 - Docker Compose for API, workflow worker, Postgres, Redis, and MinIO
@@ -143,6 +145,7 @@ detail responses and is also available at `/runs/{run_id}/audit-events`.
 | `POST /runs/{run_id}/datasets/reference` | Attach an external dataset reference |
 | `POST /runs/{run_id}/datasets/upload` | Upload a local dataset file |
 | `POST /runs/{run_id}/execute/procurement` | Execute synchronously in local mode or enqueue when `AEAI_WORKFLOW_EXECUTION_MODE=async` |
+| `POST /runs/{run_id}/execute` | Inspect the schema and automatically select a governed analysis recipe |
 | `POST /runs/{run_id}/execute/procurement/async` | Queue the procurement workflow explicitly |
 | `GET /runs/{run_id}/workflow-jobs` | Inspect queued workflow jobs |
 | `POST /runs/{run_id}/workflow-jobs/{job_id}/retry` | Requeue a dead-lettered workflow job for manual recovery |
@@ -256,6 +259,27 @@ Supplier, category, amount, and date remain the core procurement fields. The bas
 at least three monthly observations. Learned tenant-specific models should be enabled only after enough
 history and reviewer outcomes are available for time-based validation, drift monitoring, and
 false-positive measurement.
+
+## Dynamic Dataset Intelligence
+
+The primary `POST /runs/{run_id}/execute` route profiles the attached CSV or warehouse relation before
+building the agent graph. It identifies likely measures, dimensions, dates, and identifiers using
+column names, observed types, cardinality, and the user's objective. Procurement-shaped data is routed
+to the specialized procurement recipe; other tabular data uses a general exploratory recipe.
+
+The exploratory recipe produces dataset-quality KPIs, numeric summaries, leading segment
+distributions, time aggregation when a usable date exists, robust numeric outlier checks, charts, a
+responsive dashboard, a report, and deterministic evaluation results. Its schema artifact records the
+selected recipe, confidence, inferred roles, goals, and warnings so users can understand the plan.
+
+Try both bundled examples from the workflow console:
+
+- `examples/procurement_demo.csv` for the specialized procurement workflow
+- `examples/sales_demo.csv` for automatic general-purpose analysis
+
+This foundation accepts varying column names, order, and extra fields. It does not claim that every
+domain-specific business metric can be inferred without context; low-information datasets receive a
+generic descriptive analysis and disclose when dates, measures, or clarification are missing.
 
 Credential references use provider-owned identifiers such as
 `aws-secrets://acme/snowflake-finance` or `vault://acme/data-platform`. Resolution of these references

@@ -2,6 +2,7 @@
 
 from aeai_os.evaluation.quality_gates import (
     EvaluationOutcome,
+    evaluate_generic_outputs,
     evaluate_procurement_outputs,
     extract_embedded_chart_payload,
 )
@@ -11,6 +12,7 @@ __all__ = [
     "DEFAULT_MVP_CHECKS",
     "EvaluationCheck",
     "EvaluationOutcome",
+    "evaluate_generic_outputs",
     "evaluate_procurement_outputs",
     "extract_embedded_chart_payload",
 ]

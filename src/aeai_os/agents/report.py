@@ -5,7 +5,7 @@ from typing import Any
 
 from aeai_os.agents.base import AgentInput, AgentOutput
 from aeai_os.artifacts import ArtifactLineageService
-from aeai_os.reports import render_procurement_markdown_report
+from aeai_os.reports import render_generic_markdown_report, render_procurement_markdown_report
 from aeai_os.runs.models import ArtifactRecord
 from aeai_os.runs.repository import ArtifactNotFoundError, InMemoryRunRepository
 from aeai_os.schemas.enums import AgentEventType, ArtifactType
@@ -60,7 +60,13 @@ class ReportAgent:
                 self._repository.get_artifact(agent_input.run_id, artifact_id)
                 for artifact_id in source_artifact_ids
             ]
-            report_markdown = render_procurement_markdown_report(
+            analysis_type = str(analysis.get("analysis_type") or "procurement")
+            report_renderer = (
+                render_generic_markdown_report
+                if analysis_type == "generic"
+                else render_procurement_markdown_report
+            )
+            report_markdown = report_renderer(
                 analysis=analysis,
                 artifacts=lineage_artifacts,
                 schema_profile=(
@@ -79,7 +85,7 @@ class ReportAgent:
             report_payload = self._artifact_store.write_text(
                 run_id=agent_input.run_id,
                 node_id=agent_input.node_id,
-                filename="procurement_report.md",
+                filename=f"{analysis_type}_report.md",
                 payload=report_markdown,
                 content_type="text/markdown; charset=utf-8",
             )
@@ -91,7 +97,12 @@ class ReportAgent:
                 metadata={
                     "source": "report_agent",
                     "format": "markdown",
-                    "title": "Procurement Analysis Report",
+                    "title": (
+                        "Exploratory Dataset Analysis Report"
+                        if analysis_type == "generic"
+                        else "Procurement Analysis Report"
+                    ),
+                    "analysis_type": analysis_type,
                     "chart_count": len(chart_artifacts),
                     "source_artifact_count": len(source_artifact_ids),
                     "included_sections": [
@@ -112,7 +123,7 @@ class ReportAgent:
         except (ArtifactNotFoundError, ArtifactStorageError, KeyError, OSError, ValueError) as exc:
             return AgentOutput(
                 status="failed",
-                summary="Report agent failed to generate the procurement report.",
+                summary="Report agent failed to generate the analysis report.",
                 errors=[str(exc)],
                 events=[
                     {
@@ -124,12 +135,12 @@ class ReportAgent:
 
         return AgentOutput(
             status="succeeded",
-            summary="Generated procurement Markdown report with artifact lineage.",
+            summary=f"Generated {analysis_type} Markdown report with artifact lineage.",
             artifacts=[report_artifact.id],
             events=[
                 {
                     "event_type": AgentEventType.LOG,
-                    "message": "Procurement report artifact registered.",
+                    "message": "Analysis report artifact registered.",
                     "report_artifact_id": report_artifact.id,
                     "source_artifact_ids": source_artifact_ids,
                 }

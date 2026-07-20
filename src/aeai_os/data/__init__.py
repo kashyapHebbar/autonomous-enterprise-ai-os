@@ -1,6 +1,11 @@
 """Dataset ingestion and retrieval helpers."""
 
 from aeai_os.data.adapters import CsvDatasetAdapter, DatasetQueryAdapter
+from aeai_os.data.intelligence import (
+    DatasetAnalysisPlan,
+    analysis_plan_from_schema,
+    build_dataset_analysis_plan,
+)
 from aeai_os.data.profiling import (
     CsvDatasetProfile,
     DataIngestionError,
@@ -47,6 +52,7 @@ __all__ = [
     "DataSourceValidationError",
     "DataSourceValidationResult",
     "DatasetQueryAdapter",
+    "DatasetAnalysisPlan",
     "DatasetReferenceInfo",
     "SnowflakeSettings",
     "SnowflakeWarehouseConnector",
@@ -60,6 +66,8 @@ __all__ = [
     "WarehouseDatasetReference",
     "WarehouseQueryResult",
     "dataset_reference_from_metadata",
+    "analysis_plan_from_schema",
+    "build_dataset_analysis_plan",
     "default_warehouse_registry",
     "is_warehouse_dataset",
     "profile_csv_dataset",

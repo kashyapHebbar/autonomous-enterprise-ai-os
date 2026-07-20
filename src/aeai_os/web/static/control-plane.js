@@ -15,6 +15,8 @@ const els = {
   createRunForm: document.querySelector("#createRunForm"),
   createRunButton: document.querySelector("#createRunButton"),
   taskInput: document.querySelector("#taskInput"),
+  demoField: document.querySelector("#demoField"),
+  demoDatasetSelect: document.querySelector("#demoDatasetSelect"),
   sourceField: document.querySelector("#sourceField"),
   uriField: document.querySelector("#uriField"),
   dataSourceSelect: document.querySelector("#dataSourceSelect"),
@@ -164,6 +166,7 @@ function selectedDatasetMode() {
 
 function updateDatasetFields() {
   const mode = selectedDatasetMode();
+  els.demoField.hidden = mode !== "demo";
   els.sourceField.hidden = mode !== "source";
   els.uriField.hidden = mode !== "uri";
   els.dataSourceSelect.disabled = mode !== "source";
@@ -283,7 +286,7 @@ function buildCreatePayload() {
   };
   const mode = selectedDatasetMode();
   if (mode === "demo") {
-    payload.dataset_uri = "examples/procurement_demo.csv";
+    payload.dataset_uri = els.demoDatasetSelect.value;
     payload.metadata.dataset_origin = "demo";
   }
   if (mode === "source") {
@@ -325,8 +328,8 @@ async function handleCreateRun(event) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    setFormStatus("Running five agent stages.", "");
-    await requestJson(`/runs/${encodeURIComponent(run.id)}/execute/procurement`, {
+    setFormStatus("Inspecting the schema and planning the agent workflow.", "");
+    await requestJson(`/runs/${encodeURIComponent(run.id)}/execute`, {
       method: "POST",
     });
     const completedRun = await requestJson(`/runs/${encodeURIComponent(run.id)}`);
