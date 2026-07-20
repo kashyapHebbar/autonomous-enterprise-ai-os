@@ -142,12 +142,13 @@ def create_app(
             workflow_execution_mode=settings.workflow_execution_mode,
             procurement_workflow_max_attempts=settings.procurement_workflow_max_attempts,
             data_source_registry=data_source_registry,
+            connector_registry=connector_registry,
         )
     )
     app.include_router(build_metrics_router(run_repository))
     app.include_router(build_auth_router())
     app.include_router(build_investigations_router(run_repository, artifact_store))
-    app.include_router(build_connectors_router(connector_registry))
+    app.include_router(build_connectors_router(connector_registry, data_source_registry))
     app.include_router(build_data_sources_router(data_source_registry))
     app.include_router(
         build_admin_router(

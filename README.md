@@ -172,7 +172,10 @@ detail responses and is also available at `/runs/{run_id}/audit-events`.
 | `GET /connectors/credential-profiles` | List sanitized credential profile references |
 | `POST /connectors/installations` | Save an organization-owned connector installation |
 | `GET /connectors/installations` | List installations in the authenticated tenant workspace |
-| `POST /connectors/installations/{installation_id}/test` | Test an installation in the authenticated tenant workspace |
+| `POST /connectors/installations/{installation_id}/test?probe=true` | Run a live, tenant-scoped connection probe |
+| `GET /connectors/installations/{installation_id}/browse` | Browse permitted folders, tables, schemas, or object prefixes |
+| `POST /connectors/installations/{installation_id}/preview` | Preview up to 100 rows without exposing credentials |
+| `POST /connectors/installations/{installation_id}/sources` | Publish a discovered file or table to the workflow catalog |
 | `GET /connectors/{connector_id}/health` | Inspect connector configuration health |
 | `POST /data-sources` | Register and validate a reusable enterprise dataset source |
 | `GET /data-sources` | List registered dataset sources |
@@ -221,6 +224,13 @@ are scoped to an organization and optional workspace. The installation API rejec
 and never accepts raw passwords, tokens, access keys, or private keys as connector configuration.
 Organization and workspace scope comes only from verified identity; request bodies and query strings
 cannot select a different tenant.
+
+The hub supports live reachability probes, bounded previews, local folder navigation, SQLite table
+discovery, configured Snowflake database/schema/table navigation, and S3-compatible prefix/object
+browsing. Files and warehouse tables can be published as reusable sources and then selected from the
+workflow composer. Local paths are constrained to the installation root, Snowflake assets are
+constrained to its configured database and schema, and object keys are constrained to the configured
+prefix. Credential references are resolved only inside connector operations.
 
 ## Enterprise Identity And Tenant Isolation
 
@@ -430,8 +440,8 @@ or dataset URI, browse recent runs, and open any run directly in Run Inspector.
 Open `http://127.0.0.1:8000/app/artifacts` to browse generated artifacts by run and producer node,
 preview HTML dashboards/charts and markdown reports, inspect lineage, and copy or download safe
 artifact links.
-Open `http://127.0.0.1:8000/app/admin` to inspect registered agents, connector health,
-credential profiles, policy rules, and connector/policy affected runs from one operations view.
+Open `http://127.0.0.1:8000/app/admin` to configure and test saved connections, browse permitted
+datasets, preview rows, publish workflow sources, and inspect agents, credentials, and policy state.
 
 Open `http://127.0.0.1:8000/run-inspector/runs/${RUN_ID}` to inspect graph nodes,
 events, artifact lineage, approval history, evaluation/MLflow status, deployment history, and

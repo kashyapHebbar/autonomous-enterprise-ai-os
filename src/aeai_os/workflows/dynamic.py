@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from aeai_os.agents.planner import PlannerAgent, PlannerValidationError
+from aeai_os.connectors import ConnectorRegistry
+from aeai_os.connectors.explorer import ConnectorExplorer
 from aeai_os.data import (
     WarehouseDatasetAdapter,
     dataset_reference_from_metadata,
@@ -26,6 +28,7 @@ def execute_dynamic_workflow(
     artifact_root: str | Path,
     run_id: str,
     artifact_store: ArtifactStore,
+    connector_registry: ConnectorRegistry | None = None,
 ) -> OrchestrationResult:
     run = repository.get_run(run_id)
     if not run.dataset_artifact_id:
@@ -41,7 +44,12 @@ def execute_dynamic_workflow(
     ):
         try:
             with start_span("planner.inspect_dataset"):
-                profile = _profile_dataset(dataset.uri, dataset.metadata, artifact_store)
+                profile = _profile_dataset(
+                    dataset.uri,
+                    dataset.metadata,
+                    artifact_store,
+                    connector_registry,
+                )
                 plan, analysis_plan = PlannerAgent().create_dynamic_plan(
                     run_id=run.id,
                     user_task=run.task,
@@ -53,17 +61,26 @@ def execute_dynamic_workflow(
                 repository,
                 artifact_root,
                 artifact_store=artifact_store,
+                connector_registry=connector_registry,
             ).execute_run(run.id, plan.to_execution_graph())
         except (OSError, ValueError, PlannerValidationError) as exc:
             raise DynamicWorkflowError(str(exc)) from exc
 
 
-def _profile_dataset(uri, metadata, artifact_store):
+def _profile_dataset(uri, metadata, artifact_store, connector_registry=None):
     reference = dataset_reference_from_metadata(uri, metadata)
     if reference.kind == "warehouse":
         if reference.warehouse is None:
             raise DynamicWorkflowError("Warehouse source details are missing.")
-        connector = default_warehouse_registry().connector_for_reference(reference.warehouse)
+        installation_id = str(metadata.get("installation_id") or "").strip()
+        if installation_id and connector_registry is not None:
+            organization_id = str(metadata.get("organization_id") or "local-org")
+            installation = connector_registry.get_installation(
+                installation_id, organization_id
+            )
+            connector = ConnectorExplorer(connector_registry).warehouse_connector(installation)
+        else:
+            connector = default_warehouse_registry().connector_for_reference(reference.warehouse)
         adapter = WarehouseDatasetAdapter(connector, reference.warehouse, row_limit=10_000)
         return profile_tabular_rows(uri, adapter.rows(), adapter.columns())
     return profile_csv_dataset(artifact_store.local_path(uri))

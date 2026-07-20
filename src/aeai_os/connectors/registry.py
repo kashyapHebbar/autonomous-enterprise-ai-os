@@ -241,6 +241,22 @@ class ConnectorRegistry:
     ) -> ConnectorHealth:
         installation = self.get_installation(installation_id, organization_id)
         connector = self.get_connector(installation.connector_id)
+        try:
+            effective_env = self.resolve_installation_environment(installation)
+        except ConnectorInstallationError as exc:
+            return self._record_installation_health(
+                installation,
+                _credential_error_health(connector, str(exc)),
+            )
+        return self._record_installation_health(
+            installation,
+            connector.health(effective_env),
+        )
+
+    def resolve_installation_environment(
+        self, installation: ConnectorInstallation
+    ) -> dict[str, str]:
+        connector = self.get_connector(installation.connector_id)
         effective_env = dict(self._env)
         for config_field in connector.configuration_fields:
             if config_field.env_key and config_field.key in installation.configuration:
@@ -249,26 +265,27 @@ class ConnectorRegistry:
                 ]
         if installation.credential_reference:
             if self._credential_resolver is None:
-                return self._record_installation_health(
-                    installation,
-                    _credential_error_health(
-                        connector,
-                        "No credential provider registry is configured.",
-                    ),
+                raise ConnectorInstallationError(
+                    "No credential provider registry is configured."
                 )
             try:
                 effective_env.update(
                     self._credential_resolver.resolve(installation.credential_reference)
                 )
             except ValueError as exc:
-                return self._record_installation_health(
-                    installation,
-                    _credential_error_health(connector, str(exc)),
+                raise ConnectorInstallationError(str(exc)) from exc
+        if connector.id == "artifact-store":
+            if effective_env.get("AWS_ACCESS_KEY_ID"):
+                effective_env.setdefault(
+                    "AEAI_ARTIFACT_S3_ACCESS_KEY_ID",
+                    effective_env["AWS_ACCESS_KEY_ID"],
                 )
-        return self._record_installation_health(
-            installation,
-            connector.health(effective_env),
-        )
+            if effective_env.get("AWS_SECRET_ACCESS_KEY"):
+                effective_env.setdefault(
+                    "AEAI_ARTIFACT_S3_SECRET_ACCESS_KEY",
+                    effective_env["AWS_SECRET_ACCESS_KEY"],
+                )
+        return effective_env
 
     def _record_installation_health(
         self,
@@ -430,7 +447,13 @@ def build_default_connector_registry(
             provider=artifact_backend or "local",
             kind="object_storage",
             credential_profile_id=artifact_profile,
-            capabilities=("write_artifact", "read_artifact", "cache_artifact"),
+            capabilities=(
+                "write_artifact",
+                "read_artifact",
+                "cache_artifact",
+                "browse_objects",
+                "preview",
+            ),
             required_env_keys=_artifact_required_env_keys(artifact_backend),
             optional_env_keys=(
                 "AEAI_ARTIFACT_S3_PREFIX",
@@ -438,10 +461,26 @@ def build_default_connector_registry(
                 "AEAI_ARTIFACT_S3_REGION",
             ),
             configuration_fields=(
-                ConnectorConfigurationField("bucket", "Bucket", required=True),
-                ConnectorConfigurationField("region", "Region", required=True),
-                ConnectorConfigurationField("prefix", "Prefix"),
-                ConnectorConfigurationField("endpoint_url", "Endpoint URL"),
+                ConnectorConfigurationField(
+                    "bucket",
+                    "Bucket",
+                    required=True,
+                    env_key="AEAI_ARTIFACT_S3_BUCKET",
+                ),
+                ConnectorConfigurationField(
+                    "region",
+                    "Region",
+                    required=True,
+                    env_key="AEAI_ARTIFACT_S3_REGION",
+                ),
+                ConnectorConfigurationField(
+                    "prefix", "Prefix", env_key="AEAI_ARTIFACT_S3_PREFIX"
+                ),
+                ConnectorConfigurationField(
+                    "endpoint_url",
+                    "Endpoint URL",
+                    env_key="AEAI_ARTIFACT_S3_ENDPOINT_URL",
+                ),
             ),
             credential_required=True,
             auth_methods=("iam_role", "access_key"),

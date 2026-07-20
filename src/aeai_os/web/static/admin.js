@@ -25,9 +25,28 @@ const elements = {
   configurationFields: document.querySelector("#configurationFields"),
   connectorFormMessage: document.querySelector("#connectorFormMessage"),
   installationsList: document.querySelector("#installationsList"),
+  installationCount: document.querySelector("#installationCount"),
+  explorerInstallation: document.querySelector("#explorerInstallation"),
+  browseUp: document.querySelector("#browseUp"),
+  refreshAssets: document.querySelector("#refreshAssets"),
+  explorerPath: document.querySelector("#explorerPath"),
+  assetList: document.querySelector("#assetList"),
+  previewTitle: document.querySelector("#previewTitle"),
+  previewStatus: document.querySelector("#previewStatus"),
+  previewTable: document.querySelector("#previewTable"),
+  sourceForm: document.querySelector("#sourceForm"),
+  sourceId: document.querySelector("#sourceId"),
+  sourceName: document.querySelector("#sourceName"),
+  sourceOwner: document.querySelector("#sourceOwner"),
+  explorerMessage: document.querySelector("#explorerMessage"),
 };
 
-const connectorHub = { connectors: [], installations: [] };
+const connectorHub = {
+  connectors: [],
+  installations: [],
+  explorerPath: "",
+  selectedAsset: null,
+};
 
 async function requestJson(path, options = {}) {
   const headers = { Accept: "application/json", ...(options.headers || {}) };
@@ -43,7 +62,9 @@ async function requestJson(path, options = {}) {
 async function readError(response) {
   try {
     const payload = await response.json();
-    return payload.detail || response.statusText;
+    if (typeof payload.detail === "string") return payload.detail;
+    if (payload.detail?.message) return payload.detail.message;
+    return response.statusText;
   } catch {
     return response.statusText;
   }
@@ -206,6 +227,8 @@ function renderConnectorOptions(connectors) {
     .join("");
   if (connectors.some((connector) => connector.id === previous)) {
     elements.connectorId.value = previous;
+  } else if (connectors.some((connector) => connector.id === "local-file")) {
+    elements.connectorId.value = "local-file";
   }
   renderConfigurationFields();
 }
@@ -236,6 +259,7 @@ function renderConfigurationFields() {
 }
 
 function renderInstallations(installations) {
+  setText(elements.installationCount, installations.length);
   if (!installations.length) {
     elements.installationsList.innerHTML = empty("No saved connections for this organization.");
     return;
@@ -260,6 +284,13 @@ function renderInstallations(installations) {
             <strong>${escapeHtml(installation.credential_reference || "Not required")}</strong>
           </div>
           <div class="installation-actions">
+            ${isBrowsableInstallation(installation) ? `
+              <button
+                class="secondary-button browse-connection"
+                type="button"
+                data-installation-id="${escapeHtml(installation.id)}"
+              >Browse data</button>
+            ` : ""}
             <button
               class="command-button test-connection"
               type="button"
@@ -272,12 +303,167 @@ function renderInstallations(installations) {
     .join("");
 }
 
+function isBrowsableInstallation(installation) {
+  return ["local-file", "sqlite-local", "snowflake-default", "artifact-store"].includes(
+    installation.connector_id
+  );
+}
+
+function renderExplorerInstallations(installations) {
+  const available = installations.filter(isBrowsableInstallation);
+  const previous = elements.explorerInstallation.value;
+  elements.explorerInstallation.innerHTML = available.length
+    ? available
+        .map(
+          (installation) =>
+            `<option value="${escapeHtml(installation.id)}">${escapeHtml(
+              installation.name
+            )} (${escapeHtml(titleLabel(installation.connector_id))})</option>`
+        )
+        .join("")
+    : '<option value="">No browsable connections</option>';
+  if (available.some((installation) => installation.id === previous)) {
+    elements.explorerInstallation.value = previous;
+  }
+  elements.explorerInstallation.disabled = !available.length;
+  elements.refreshAssets.disabled = !available.length;
+  if (!available.length) {
+    elements.assetList.innerHTML = empty("No browsable connections yet.");
+    resetPreview();
+  }
+}
+
 async function loadInstallations() {
   const installations = await requestJson("/connectors/installations");
   connectorHub.installations = installations;
   renderInstallations(installations);
+  renderExplorerInstallations(installations);
   setStatus(elements.installationStatus, installations.length ? "ok" : "not_configured");
+  if (elements.explorerInstallation.value) await loadAssets("");
   return installations;
+}
+
+async function loadAssets(path = "") {
+  const installationId = elements.explorerInstallation.value;
+  if (!installationId) return;
+  connectorHub.explorerPath = path;
+  connectorHub.selectedAsset = null;
+  elements.assetList.innerHTML = empty("Loading catalog...");
+  elements.explorerMessage.textContent = "";
+  resetPreview();
+  try {
+    const result = await requestJson(
+      `/connectors/installations/${encodeURIComponent(installationId)}/browse?path=${encodeURIComponent(
+        path
+      )}`
+    );
+    connectorHub.explorerPath = result.path || "";
+    elements.explorerPath.textContent = result.path || "Catalog root";
+    elements.browseUp.disabled = !result.path;
+    renderAssets(result.assets || []);
+  } catch (error) {
+    elements.assetList.innerHTML = errorBox(error.message);
+    elements.explorerMessage.textContent = error.message;
+  }
+}
+
+function renderAssets(assets) {
+  elements.assetList.innerHTML = assets.length
+    ? assets
+        .map(
+          (asset) => `
+            <button
+              class="asset-row"
+              type="button"
+              data-asset-id="${escapeHtml(asset.id)}"
+              data-asset-name="${escapeHtml(asset.name)}"
+              data-can-browse="${asset.can_browse}"
+              data-can-preview="${asset.can_preview}"
+              data-can-select="${asset.can_select}"
+            >
+              <span class="asset-icon" aria-hidden="true">${escapeHtml(
+                String(asset.kind).slice(0, 3)
+              )}</span>
+              <span class="asset-copy">
+                <strong>${escapeHtml(asset.name)}</strong>
+                <span>${escapeHtml(titleLabel(asset.kind))}</span>
+              </span>
+              <span class="asset-arrow" aria-hidden="true">${asset.can_browse ? "&#8594;" : ""}</span>
+            </button>
+          `
+        )
+        .join("")
+    : empty("No permitted datasets found at this location.");
+}
+
+async function previewAsset(asset) {
+  const installationId = elements.explorerInstallation.value;
+  connectorHub.selectedAsset = asset;
+  elements.previewTitle.textContent = asset.name;
+  setStatus(elements.previewStatus, "loading");
+  elements.previewTable.innerHTML = empty("Loading preview...");
+  elements.sourceForm.hidden = true;
+  try {
+    const preview = await requestJson(
+      `/connectors/installations/${encodeURIComponent(installationId)}/preview`,
+      {
+        method: "POST",
+        body: JSON.stringify({ asset_id: asset.id, limit: 25 }),
+      }
+    );
+    renderPreviewTable(preview);
+    setStatus(elements.previewStatus, "ok");
+    elements.sourceForm.hidden = !asset.canSelect;
+    elements.sourceId.value = slugify(asset.name);
+    elements.sourceName.value = titleLabel(asset.name.replace(/\.[^.]+$/, ""));
+    elements.explorerMessage.textContent = preview.truncated
+      ? "Showing the first 25 records."
+      : `${preview.rows.length} record${preview.rows.length === 1 ? "" : "s"}.`;
+  } catch (error) {
+    elements.previewTable.innerHTML = errorBox(error.message);
+    setStatus(elements.previewStatus, "failed");
+    elements.explorerMessage.textContent = error.message;
+  }
+}
+
+function renderPreviewTable(preview) {
+  const columns = (preview.columns || []).map((column) => column.name);
+  if (!columns.length) {
+    elements.previewTable.innerHTML = empty("The dataset has no visible columns.");
+    return;
+  }
+  const header = columns.map((column) => `<th>${escapeHtml(titleLabel(column))}</th>`).join("");
+  const rows = (preview.rows || [])
+    .map(
+      (row) =>
+        `<tr>${columns
+          .map((column) => `<td title="${escapeHtml(cellValue(row[column]))}">${escapeHtml(cellValue(row[column]))}</td>`)
+          .join("")}</tr>`
+    )
+    .join("");
+  elements.previewTable.innerHTML = `<table class="preview-table"><thead><tr>${header}</tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function cellValue(value) {
+  if (value === null || value === undefined || value === "") return "-";
+  return typeof value === "object" ? JSON.stringify(value) : String(value);
+}
+
+function slugify(value) {
+  return String(value)
+    .toLowerCase()
+    .replace(/\.[^.]+$/, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 100);
+}
+
+function resetPreview() {
+  connectorHub.selectedAsset = null;
+  elements.previewTitle.textContent = "Select a dataset";
+  elements.previewTable.innerHTML = empty("No preview selected.");
+  elements.sourceForm.hidden = true;
+  setStatus(elements.previewStatus, "waiting");
 }
 
 function renderEnvDetails(details) {
@@ -514,12 +700,19 @@ elements.connectorForm.addEventListener("submit", async (event) => {
   }
 });
 elements.installationsList.addEventListener("click", async (event) => {
+  const browseButton = event.target.closest(".browse-connection");
+  if (browseButton) {
+    elements.explorerInstallation.value = browseButton.dataset.installationId;
+    await loadAssets("");
+    document.querySelector("#dataExplorerTitle").scrollIntoView({ behavior: "smooth" });
+    return;
+  }
   const button = event.target.closest(".test-connection");
   if (!button) return;
   button.disabled = true;
   try {
     const health = await requestJson(
-      `/connectors/installations/${encodeURIComponent(button.dataset.installationId)}/test`,
+      `/connectors/installations/${encodeURIComponent(button.dataset.installationId)}/test?probe=true`,
       { method: "POST" }
     );
     elements.connectorFormMessage.textContent = health.message;
@@ -528,6 +721,61 @@ elements.installationsList.addEventListener("click", async (event) => {
     showHubError(error);
   } finally {
     button.disabled = false;
+  }
+});
+elements.explorerInstallation.addEventListener("change", () => loadAssets(""));
+elements.refreshAssets.addEventListener("click", () => loadAssets(connectorHub.explorerPath));
+elements.browseUp.addEventListener("click", () => {
+  const parts = connectorHub.explorerPath.split("/").filter(Boolean);
+  parts.pop();
+  loadAssets(parts.join("/"));
+});
+elements.assetList.addEventListener("click", async (event) => {
+  const row = event.target.closest(".asset-row");
+  if (!row) return;
+  if (row.dataset.canBrowse === "true") {
+    await loadAssets(row.dataset.assetId);
+    return;
+  }
+  if (row.dataset.canPreview === "true") {
+    elements.assetList.querySelectorAll(".asset-row").forEach((item) => {
+      item.classList.toggle("is-selected", item === row);
+    });
+    await previewAsset({
+      id: row.dataset.assetId,
+      name: row.dataset.assetName,
+      canSelect: row.dataset.canSelect === "true",
+    });
+  }
+});
+elements.sourceForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const asset = connectorHub.selectedAsset;
+  const installationId = elements.explorerInstallation.value;
+  if (!asset || !installationId) return;
+  elements.explorerMessage.textContent = "Publishing source...";
+  const submit = elements.sourceForm.querySelector('button[type="submit"]');
+  submit.disabled = true;
+  try {
+    const source = await requestJson(
+      `/connectors/installations/${encodeURIComponent(installationId)}/sources`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          asset_id: asset.id,
+          data_source_id: elements.sourceId.value.trim(),
+          name: elements.sourceName.value.trim(),
+          owner: elements.sourceOwner.value.trim(),
+        }),
+      }
+    );
+    elements.explorerMessage.innerHTML = `Source <strong>${escapeHtml(
+      source.name
+    )}</strong> is ready. <a class="run-link" href="/app">Open workflows</a>`;
+  } catch (error) {
+    elements.explorerMessage.textContent = error.message;
+  } finally {
+    submit.disabled = false;
   }
 });
 

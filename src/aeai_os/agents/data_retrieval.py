@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from aeai_os.agents.base import AgentInput, AgentOutput
+from aeai_os.connectors import ConnectorRegistry
+from aeai_os.connectors.explorer import ConnectorExplorer
 from aeai_os.data import (
     CsvDatasetAdapter,
     DataIngestionError,
@@ -30,11 +32,13 @@ class DataRetrievalAgent:
         warehouse_registry: WarehouseConnectorRegistry | None = None,
         warehouse_profile_row_limit: int = 10_000,
         artifact_store: ArtifactStore | None = None,
+        connector_registry: ConnectorRegistry | None = None,
     ) -> None:
         self._repository = repository
         self._artifact_store = artifact_store or LocalArtifactStore(artifact_root)
         self._warehouse_registry = warehouse_registry or default_warehouse_registry()
         self._warehouse_profile_row_limit = warehouse_profile_row_limit
+        self._connector_registry = connector_registry
 
     def execute(self, agent_input: AgentInput) -> AgentOutput:
         try:
@@ -45,9 +49,7 @@ class DataRetrievalAgent:
                     raise DataIngestionError(
                         "Warehouse dataset reference is missing source details."
                     )
-                connector = self._warehouse_registry.connector_for_reference(
-                    dataset_reference.warehouse
-                )
+                connector = self._warehouse_connector(dataset, dataset_reference.warehouse)
                 adapter = WarehouseDatasetAdapter(
                     connector=connector,
                     reference=dataset_reference.warehouse,
@@ -166,6 +168,16 @@ class DataRetrievalAgent:
                 "analysis_confidence": analysis_plan.confidence,
             },
         )
+
+    def _warehouse_connector(self, dataset, reference):
+        installation_id = str(dataset.metadata.get("installation_id") or "").strip()
+        if installation_id and self._connector_registry is not None:
+            organization_id = str(dataset.metadata.get("organization_id") or "local-org")
+            installation = self._connector_registry.get_installation(
+                installation_id, organization_id
+            )
+            return ConnectorExplorer(self._connector_registry).warehouse_connector(installation)
+        return self._warehouse_registry.connector_for_reference(reference)
 
     def _resolve_dataset_artifact(self, agent_input: AgentInput) -> ArtifactRecord:
         artifact_id = (

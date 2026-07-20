@@ -9,6 +9,7 @@ from aeai_os.agents.planner import PlannerAgent, PlannerValidationError
 from aeai_os.agents.registry import build_default_registry
 from aeai_os.agents.report import ReportAgent
 from aeai_os.agents.visualization import VisualizationAgent
+from aeai_os.connectors import ConnectorRegistry
 from aeai_os.observability.tracing import start_span, trace_context
 from aeai_os.orchestration.service import OrchestrationResult, OrchestratorService
 from aeai_os.runs.repository import InMemoryRunRepository, RunNotFoundError
@@ -24,6 +25,7 @@ def execute_procurement_workflow(
     artifact_root: str | Path,
     run_id: str,
     artifact_store: ArtifactStore | None = None,
+    connector_registry: ConnectorRegistry | None = None,
 ) -> OrchestrationResult:
     try:
         run = repository.get_run(run_id)
@@ -59,6 +61,7 @@ def execute_procurement_workflow(
                 repository,
                 artifact_root,
                 artifact_store=artifact_store,
+                connector_registry=connector_registry,
             ).execute_run(run.id, plan.to_execution_graph())
 
 
@@ -66,6 +69,7 @@ def build_procurement_orchestrator(
     repository: InMemoryRunRepository,
     artifact_root: str | Path,
     artifact_store: ArtifactStore | None = None,
+    connector_registry: ConnectorRegistry | None = None,
 ) -> OrchestratorService:
     artifact_root = Path(artifact_root)
     artifact_store = artifact_store or LocalArtifactStore(artifact_root)
@@ -77,11 +81,13 @@ def build_procurement_orchestrator(
                 repository,
                 artifact_root,
                 artifact_store=artifact_store,
+                connector_registry=connector_registry,
             ),
             "analytics_code": AnalyticsCodeAgent(
                 repository,
                 artifact_root,
                 artifact_store=artifact_store,
+                connector_registry=connector_registry,
             ),
             "visualization": VisualizationAgent(
                 repository,

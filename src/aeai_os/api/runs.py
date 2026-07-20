@@ -42,6 +42,7 @@ from aeai_os.api.run_schemas import (
     workflow_job_to_response,
 )
 from aeai_os.artifacts import ArtifactLineageService
+from aeai_os.connectors import ConnectorRegistry
 from aeai_os.data.sources import (
     DataSourceNotFoundError,
     DataSourceRegistry,
@@ -109,6 +110,7 @@ def build_runs_router(
     workflow_execution_mode: str = "sync",
     procurement_workflow_max_attempts: int = 3,
     data_source_registry: DataSourceRegistry | None = None,
+    connector_registry: ConnectorRegistry | None = None,
 ):
     router = APIRouter(prefix="/runs", tags=["runs"])
     lineage_service = ArtifactLineageService(repository)
@@ -298,6 +300,7 @@ def build_runs_router(
                 artifact_root=artifact_root,
                 run_id=run_id,
                 artifact_store=artifact_store,
+                connector_registry=connector_registry,
             )
         except DynamicWorkflowError as exc:
             raise HTTPException(
@@ -338,6 +341,7 @@ def build_runs_router(
                 artifact_root=artifact_root,
                 run_id=run_id,
                 artifact_store=artifact_store,
+                connector_registry=connector_registry,
             )
         except ProcurementWorkflowError as exc:
             raise HTTPException(
@@ -599,6 +603,7 @@ def build_runs_router(
             repository,
             artifact_root,
             artifact_store=artifact_store,
+            connector_registry=connector_registry,
         )
         try:
             result = service.approve_node(
@@ -630,6 +635,7 @@ def build_runs_router(
             repository,
             artifact_root,
             artifact_store=artifact_store,
+            connector_registry=connector_registry,
         )
         try:
             result = service.retry_failed_node(run_id=run_id, node_id=node_id)
