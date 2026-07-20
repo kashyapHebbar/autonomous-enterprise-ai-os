@@ -1,0 +1,11 @@
+order_id,region,product,revenue,units,order_date
+SO-1001,North,Analytics Suite,12800,12,2026-01-05
+SO-1002,South,Workflow Cloud,9400,9,2026-01-12
+SO-1003,North,Analytics Suite,14600,13,2026-02-03
+SO-1004,West,Enterprise Services,48200,18,2026-02-20
+SO-1005,South,Workflow Cloud,11200,11,2026-03-02
+SO-1006,North,Governance Hub,16750,15,2026-03-18
+SO-1007,East,Analytics Suite,13100,12,2026-04-07
+SO-1008,West,Governance Hub,18200,16,2026-04-22
+SO-1009,East,Workflow Cloud,10500,10,2026-05-11
+SO-1010,North,Enterprise Services,21500,17,2026-05-28

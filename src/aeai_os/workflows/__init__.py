@@ -1,3 +1,4 @@
+from aeai_os.workflows.dynamic import DynamicWorkflowError, execute_dynamic_workflow
 from aeai_os.workflows.procurement import (
     ProcurementWorkflowError,
     build_procurement_orchestrator,
@@ -17,6 +18,7 @@ from aeai_os.workflows.worker import (
 
 __all__ = [
     "PROCUREMENT_WORKFLOW_NAME",
+    "DynamicWorkflowError",
     "ProcurementWorkflowError",
     "RedisWorkflowQueue",
     "RepositoryWorkflowQueue",
@@ -26,4 +28,5 @@ __all__ = [
     "build_workflow_queue",
     "enqueue_procurement_workflow",
     "execute_procurement_workflow",
+    "execute_dynamic_workflow",
 ]

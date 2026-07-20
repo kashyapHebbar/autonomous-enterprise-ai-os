@@ -8,6 +8,7 @@ from aeai_os.data import (
     DataIngestionError,
     WarehouseConnectorRegistry,
     WarehouseDatasetAdapter,
+    build_dataset_analysis_plan,
     dataset_reference_from_metadata,
     default_warehouse_registry,
     profile_csv_dataset,
@@ -70,11 +71,19 @@ class DataRetrievalAgent:
 
             schema_artifact_id = self._repository.next_artifact_id()
             quality_artifact_id = self._repository.next_artifact_id()
+            preferred_recipe = "procurement" if "procurement" in agent_input.task.lower() else None
+            analysis_plan = build_dataset_analysis_plan(
+                profile,
+                str(agent_input.context.get("state", {}).get("task") or agent_input.task),
+                preferred_recipe=preferred_recipe,
+            )
+            schema_document = profile.schema_artifact()
+            schema_document["analysis_plan"] = analysis_plan.model_dump()
             schema_payload = self._artifact_store.write_json(
                 run_id=agent_input.run_id,
                 node_id=agent_input.node_id,
                 filename="schema_profile.json",
-                payload=profile.schema_artifact(),
+                payload=schema_document,
             )
             quality_payload = self._artifact_store.write_json(
                 run_id=agent_input.run_id,
@@ -116,7 +125,7 @@ class DataRetrievalAgent:
                 producer_node_id=agent_input.node_id,
             )
 
-        except (ArtifactStorageError, DataIngestionError, KeyError, OSError) as exc:
+        except (ArtifactStorageError, DataIngestionError, KeyError, OSError, ValueError) as exc:
             return AgentOutput(
                 status="failed",
                 summary="Data retrieval agent failed to ingest the dataset.",
@@ -153,6 +162,8 @@ class DataRetrievalAgent:
                 "preview": adapter.preview(limit=3),
                 "adapter": adapter_name,
                 "dataset_kind": dataset_kind,
+                "analysis_recipe": analysis_plan.recipe,
+                "analysis_confidence": analysis_plan.confidence,
             },
         )
 

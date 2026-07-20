@@ -54,3 +54,30 @@ def main():
 if __name__ == "__main__":
     main()
 '''
+
+
+def generate_generic_analysis_code() -> str:
+    return '''#!/usr/bin/env python3
+"""Reproduce type-aware descriptive summaries from a CSV file."""
+
+import csv
+import json
+import argparse
+
+
+def analyze(csv_path):
+    with open(csv_path, newline="", encoding="utf-8-sig") as handle:
+        rows = list(csv.DictReader(handle))
+    return {
+        "row_count": len(rows),
+        "column_count": len(rows[0]) if rows else 0,
+        "columns": list(rows[0]) if rows else [],
+    }
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("csv_path")
+    args = parser.parse_args()
+    print(json.dumps(analyze(args.csv_path), indent=2, sort_keys=True))
+'''

@@ -5,7 +5,11 @@ from typing import Any
 from uuid import uuid4
 
 from aeai_os.agents.base import AgentInput, AgentOutput
-from aeai_os.evaluation import evaluate_procurement_outputs, extract_embedded_chart_payload
+from aeai_os.evaluation import (
+    evaluate_generic_outputs,
+    evaluate_procurement_outputs,
+    extract_embedded_chart_payload,
+)
 from aeai_os.runs.models import ArtifactRecord, EvaluationResultRecord
 from aeai_os.runs.repository import ArtifactNotFoundError, InMemoryRunRepository
 from aeai_os.schemas.enums import AgentEventType, ArtifactType
@@ -36,7 +40,12 @@ class EvaluationAgent:
             report_markdown = self._artifact_store.read_text(report_artifact.uri)
             chart_payloads = _read_chart_payloads(chart_artifacts, self._artifact_store)
 
-            outcome = evaluate_procurement_outputs(
+            evaluator = (
+                evaluate_generic_outputs
+                if analysis.get("analysis_type") == "generic"
+                else evaluate_procurement_outputs
+            )
+            outcome = evaluator(
                 analysis=analysis,
                 report_markdown=report_markdown,
                 artifacts=artifacts,

@@ -74,8 +74,10 @@ from aeai_os.schemas.enums import AgentEventType, ArtifactType
 from aeai_os.security.auth import AuthenticatedUser
 from aeai_os.storage import ArtifactStorageError, ArtifactStore
 from aeai_os.workflows import (
+    DynamicWorkflowError,
     ProcurementWorkflowError,
     build_procurement_orchestrator,
+    execute_dynamic_workflow,
     execute_procurement_workflow,
 )
 from aeai_os.workflows.queue import WorkflowQueueBackend
@@ -274,6 +276,35 @@ def build_runs_router(
             repository.list_evaluations(run_id),
             repository.list_events(run_id),
         )
+
+    @router.post(
+        "/{run_id}/execute",
+        response_model=RunExecutionResponse,
+    )
+    def execute_dynamic_analysis(
+        run_id: str,
+        actor: RunWriter,
+    ) -> RunExecutionResponse:
+        _get_run_or_404(repository, run_id, actor)
+        _record_audit_event(
+            repository,
+            run_id,
+            actor,
+            action="run.execute_dynamic_analysis",
+        )
+        try:
+            result = execute_dynamic_workflow(
+                repository=repository,
+                artifact_root=artifact_root,
+                run_id=run_id,
+                artifact_store=artifact_store,
+            )
+        except DynamicWorkflowError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(exc),
+            ) from exc
+        return _execution_response(repository, run_id, result)
 
     @router.post(
         "/{run_id}/execute/procurement",

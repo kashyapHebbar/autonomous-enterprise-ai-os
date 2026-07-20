@@ -77,7 +77,7 @@
                   required
                   minlength="3"
                   maxlength="4000"
-                  placeholder="Analyze procurement spend, identify supplier risk, and prepare an executive dashboard."
+                  placeholder="Analyze this dataset, identify important patterns, and prepare a dashboard."
                 ></textarea>
               </label>
 
@@ -97,6 +97,14 @@
                 </label>
               </fieldset>
 
+              <label class="field" id="demoField">
+                <span>Sample dataset</span>
+                <select id="demoDatasetSelect" name="demoDataset">
+                  <option value="examples/procurement_demo.csv">Procurement operations</option>
+                  <option value="examples/sales_demo.csv">Regional sales</option>
+                </select>
+              </label>
+
               <label class="field" id="sourceField" hidden>
                 <span>Registered source</span>
                 <select id="dataSourceSelect" name="dataSourceId"></select>
@@ -109,7 +117,7 @@
                   name="datasetUri"
                   type="text"
                   maxlength="2048"
-                  placeholder="https://example.com/procurement.csv"
+                  placeholder="https://example.com/data.csv"
                 />
               </label>
 

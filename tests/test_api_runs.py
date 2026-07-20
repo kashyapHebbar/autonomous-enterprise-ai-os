@@ -102,9 +102,7 @@ def seed_waiting_data_profile_run(repository, artifact_root, tmp_path):
             )
         ],
     )
-    result = build_procurement_orchestrator(repository, artifact_root).execute_run(
-        run.id, graph
-    )
+    result = build_procurement_orchestrator(repository, artifact_root).execute_run(run.id, graph)
     assert result.waiting_for_approval_node_id == "data_profile"
     return run
 
@@ -118,7 +116,8 @@ def test_auth_disabled_allows_local_run_creation_and_records_local_actor(tmp_pat
 
     body = response.json()
     audit_event = next(
-        event for event in repository.list_events(body["id"])
+        event
+        for event in repository.list_events(body["id"])
         if event.event_type == AgentEventType.AUDIT.value
     )
     assert response.status_code == 201
@@ -181,7 +180,8 @@ def test_role_permissions_constrain_read_write_and_approval_actions(tmp_path, mo
 
     body = operator_write.json()
     audit_event = next(
-        event for event in repository.list_events(body["id"])
+        event
+        for event in repository.list_events(body["id"])
         if event.event_type == AgentEventType.AUDIT.value
     )
     run_detail = client.get(f"/runs/{body['id']}", headers=VIEWER_HEADERS).json()
@@ -308,6 +308,8 @@ def test_control_plane_page_and_assets_are_served(tmp_path):
     assert 'id="createRunForm"' in page_response.text
     assert 'id="runsList"' in page_response.text
     assert 'value="demo"' in page_response.text
+    assert 'id="demoDatasetSelect"' in page_response.text
+    assert "examples/sales_demo.csv" in page_response.text
     assert "/app/app-shell.css" in page_response.text
     assert "/app/control-plane.js" in page_response.text
     assert artifact_page_response.status_code == 200
@@ -356,7 +358,7 @@ def test_control_plane_script_creates_and_links_runs(tmp_path):
     assert "data_source_id" in response.text
     assert "dataset_uri" in response.text
     assert "/run-inspector/runs/${encodeURIComponent(runId)}" in response.text
-    assert "/execute/procurement" in response.text
+    assert "`/runs/${encodeURIComponent(run.id)}/execute`" in response.text
 
 
 def test_artifact_browser_script_previews_downloads_and_links_lineage(tmp_path):
@@ -367,15 +369,14 @@ def test_artifact_browser_script_previews_downloads_and_links_lineage(tmp_path):
     assert response.status_code == 200
     assert "/artifacts/${artifactId}/content" in response.text
     assert "download=true" in response.text
-    assert "sandbox=\"\"" in response.text
+    assert 'sandbox=""' in response.text
     assert "renderMarkdown" in response.text
     assert "/lineage" in response.text
     assert "navigator.clipboard.writeText" in response.text
     assert 'requestJson("/connectors")' in response.text
     assert "renderStructuredPreview" in response.text
     assert (
-        "Artifact type ${escapeHtml(titleLabel(artifact.type))} is not available"
-        in response.text
+        "Artifact type ${escapeHtml(titleLabel(artifact.type))} is not available" in response.text
     )
 
 
@@ -506,9 +507,7 @@ def test_artifact_content_endpoint_serves_previewable_payloads_and_blocks_datase
     )
 
     dashboard_response = client.get(f"/runs/{run.id}/artifacts/{dashboard.id}/content")
-    report_response = client.get(
-        f"/runs/{run.id}/artifacts/{report.id}/content?download=true"
-    )
+    report_response = client.get(f"/runs/{run.id}/artifacts/{report.id}/content?download=true")
     dataset_response = client.get(f"/runs/{run.id}/artifacts/{dataset.id}/content")
     missing_response = client.get(f"/runs/{run.id}/artifacts/{missing.id}/content")
 
@@ -551,9 +550,9 @@ def test_run_inspector_script_exposes_detail_approval_and_retry_controls(tmp_pat
     assert "mlflow_status" in response.text
     assert "Source artifacts" in response.text
     assert "renderFlowStory" in response.text
-    assert "How the agents completed this task" in client.get(
-        "/run-inspector/runs/run_example"
-    ).text
+    assert (
+        "How the agents completed this task" in client.get("/run-inspector/runs/run_example").text
+    )
     assert "/app/artifacts?run_id=" in response.text
     assert "executed immediately in local mode" in response.text
     assert 'item.kind !== "agent_event"' in response.text
@@ -678,8 +677,7 @@ def test_sqlalchemy_artifact_lineage_endpoint_survives_app_recreation(tmp_path, 
     body = response.json()
     upstream_ids = {artifact["id"] for artifact in body["upstream_artifacts"]}
     edge_pairs = {
-        (edge["source_artifact_id"], edge["target_artifact_id"])
-        for edge in body["edges"]
+        (edge["source_artifact_id"], edge["target_artifact_id"]) for edge in body["edges"]
     }
 
     assert response.status_code == 200
@@ -892,9 +890,7 @@ def test_deny_waiting_graph_node_from_api_marks_run_failed(tmp_path):
     assert response.status_code == 200
     assert body["status"] == "failed"
     assert body["failed_node_ids"] == ["data_profile"]
-    assert repository.get_checkpoint(run.id).state["approvals"] == {
-        "data_profile": "denied"
-    }
+    assert repository.get_checkpoint(run.id).state["approvals"] == {"data_profile": "denied"}
 
 
 def test_approval_endpoint_rejects_node_that_is_not_waiting(tmp_path):
@@ -941,7 +937,8 @@ def test_approval_requires_approver_role_and_audits_actor(tmp_path, monkeypatch)
     audit_response = client.get(f"/runs/{run.id}/audit-events", headers=VIEWER_HEADERS)
 
     audit_events = [
-        event for event in repository.list_events(run.id)
+        event
+        for event in repository.list_events(run.id)
         if event.event_type == AgentEventType.AUDIT.value
         and event.payload["action"] == "graph_node.approval"
     ]
@@ -1037,10 +1034,7 @@ def test_create_deployment_request_waits_for_approval_and_records_audit_event(tm
     assert body["payload"]["artifact_ids"] == [report.id]
     assert body["payload"]["deployment_status"] == "waiting_for_approval"
     assert body["payload"]["policy_decision"]["decision"] == "approval_required"
-    assert (
-        body["payload"]["policy_decision"]["policy_rule_id"]
-        == "deployment-promotion-approval"
-    )
+    assert body["payload"]["policy_decision"]["policy_rule_id"] == "deployment-promotion-approval"
     assert repository.get_run(run.id).status == RunStatus.WAITING_FOR_APPROVAL
     assert approval_events[0].payload["decision"] == "pending"
     assert approval_events[0].payload["requested_by"] == "analytics-lead"
@@ -1141,8 +1135,7 @@ def test_deny_deployment_request_fails_job_without_promotion_artifact(tmp_path):
     assert body["payload"]["approval"]["decision"] == "denied"
     assert repository.get_run(run.id).status == RunStatus.FAILED
     assert all(
-        artifact.type != ArtifactType.DEPLOYMENT
-        for artifact in repository.list_artifacts(run.id)
+        artifact.type != ArtifactType.DEPLOYMENT for artifact in repository.list_artifacts(run.id)
     )
 
 
@@ -1243,7 +1236,8 @@ def test_primary_procurement_execution_endpoint_enqueues_in_async_mode(tmp_path,
 
     body = response.json()
     audit_events = [
-        event for event in repository.list_events(run["id"])
+        event
+        for event in repository.list_events(run["id"])
         if event.event_type == AgentEventType.AUDIT.value
         and event.payload["action"] == "workflow.enqueue_procurement"
     ]
@@ -1292,8 +1286,7 @@ def test_dead_letter_workflow_job_can_be_retried_and_dismissed_from_api(tmp_path
     dismiss_body = dismiss_response.json()
     audit_actions = [
         event.payload["action"]
-        for event in repository.list_events(retry_run.id)
-        + repository.list_events(dismiss_run.id)
+        for event in repository.list_events(retry_run.id) + repository.list_events(dismiss_run.id)
         if event.event_type == AgentEventType.AUDIT.value
     ]
     assert retry_response.status_code == 200

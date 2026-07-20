@@ -122,13 +122,17 @@ def build_procurement_chart_specs(analysis: dict[str, Any]) -> list[ProcurementC
     ]
 
 
-def render_chart_document(chart: ProcurementChartSpec, source_artifact_id: str) -> str:
+def render_chart_document(
+    chart: ProcurementChartSpec,
+    source_artifact_id: str,
+    eyebrow: str = "Procurement dashboard chart",
+) -> str:
     return _document_shell(
         title=chart.title,
         body=f"""
         <main class="chart-page" data-source-artifact-id="{escape(source_artifact_id)}">
           <header>
-            <p class="eyebrow">Procurement dashboard chart</p>
+            <p class="eyebrow">{escape(eyebrow)}</p>
             <h1>{escape(chart.title)}</h1>
             <p>{escape(chart.description)}</p>
           </header>
@@ -471,38 +475,36 @@ def _forecast_table(forecast: dict[str, Any], currency_symbol: str = "$") -> str
     )
     return (
         f'<p class="forecast-note">{escape(str(forecast.get("direction", "stable")).title())}'
-        f' trend · {escape(_percent(_number(forecast.get("confidence", 0))))} confidence</p>'
+        f" trend · {escape(_percent(_number(forecast.get('confidence', 0))))} confidence</p>"
         '<div class="table-wrap"><table><thead><tr><th>Month</th><th>Forecast</th>'
-        f'<th>Lower</th><th>Upper</th></tr></thead><tbody>{body}</tbody></table></div>'
+        f"<th>Lower</th><th>Upper</th></tr></thead><tbody>{body}</tbody></table></div>"
     )
 
 
-def _supplier_risk_table(
-    profiles: list[dict[str, Any]], currency_symbol: str = "$"
-) -> str:
+def _supplier_risk_table(profiles: list[dict[str, Any]], currency_symbol: str = "$") -> str:
     if not profiles:
         return '<p class="empty-state">No supplier risk profiles are available.</p>'
     rows = "".join(
-        f'<tr><td><strong>{escape(str(item["supplier"]))}</strong></td>'
-        f'<td>{escape(str(item["risk_score"]))}/100</td>'
+        f"<tr><td><strong>{escape(str(item['supplier']))}</strong></td>"
+        f"<td>{escape(str(item['risk_score']))}/100</td>"
         f'<td><span class="severity severity-{escape(str(item["risk_level"]))}">'
-        f'{escape(str(item["risk_level"]).title())}</span></td>'
-        f'<td>{escape(_money(item["spend"], currency_symbol))}</td>'
-        f'<td>{escape(_money(item["anomaly_exposure"], currency_symbol))}</td>'
-        f'<td>{escape("; ".join(item["risk_factors"]))}</td></tr>'
+        f"{escape(str(item['risk_level']).title())}</span></td>"
+        f"<td>{escape(_money(item['spend'], currency_symbol))}</td>"
+        f"<td>{escape(_money(item['anomaly_exposure'], currency_symbol))}</td>"
+        f"<td>{escape('; '.join(item['risk_factors']))}</td></tr>"
         for item in profiles[:20]
     )
     return (
         '<div class="table-wrap"><table><thead><tr><th>Supplier</th><th>Score</th>'
-        '<th>Level</th><th>Spend</th><th>Flagged exposure</th><th>Factors</th></tr>'
-        f'</thead><tbody>{rows}</tbody></table></div>'
+        "<th>Level</th><th>Spend</th><th>Flagged exposure</th><th>Factors</th></tr>"
+        f"</thead><tbody>{rows}</tbody></table></div>"
     )
 
 
 def _signal_items(item: dict[str, Any]) -> str:
     return "".join(
-        f'<li><span>+{escape(str(signal.get("weight", 0)))}</span>'
-        f'{escape(str(signal.get("evidence", signal.get("label", ""))))}</li>'
+        f"<li><span>+{escape(str(signal.get('weight', 0)))}</span>"
+        f"{escape(str(signal.get('evidence', signal.get('label', ''))))}</li>"
         for signal in item.get("signals", [])
     )
 
