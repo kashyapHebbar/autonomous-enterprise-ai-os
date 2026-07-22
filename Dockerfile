@@ -13,7 +13,7 @@ COPY docs ./docs
 COPY examples ./examples
 COPY scripts ./scripts
 
-RUN python -m pip install --upgrade pip \
+RUN python -m pip install --upgrade pip "setuptools>=83" "wheel>=0.46.2" \
     && python -m pip install --no-cache-dir -e ".[analysis,identity,observability,secrets,storage,warehouse]" \
     && groupadd --gid 10001 aeai \
     && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin aeai \
