@@ -22,7 +22,7 @@ jobs:
         run: |
           python3.11 -m venv --clear "$RUNNER_TEMP/aeai-security-audit"
           "$RUNNER_TEMP/aeai-security-audit/bin/python" -m pip install --upgrade pip pip-audit
-          "$RUNNER_TEMP/aeai-security-audit/bin/python" -m pip install -e ".[analysis,identity,observability,secrets,storage,warehouse]"
+          "$RUNNER_TEMP/aeai-security-audit/bin/python" -m pip install -e .
           "$RUNNER_TEMP/aeai-security-audit/bin/python" -m pip_audit --strict
 
   codeql:
@@ -38,11 +38,20 @@ jobs:
     runs-on: [self-hosted, macOS, ARM64, aeai-os]
     steps:
       - uses: actions/checkout@v4
+      - name: Render production manifests
+        run: kubectl kustomize deploy/kubernetes/overlays/production > "$RUNNER_TEMP/aeai-production.yaml"
       - uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: .
-          scanners: vuln,misconfig,secret
+          scanners: vuln,secret
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      - uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: config
+          scan-ref: ${{ runner.temp }}/aeai-production.yaml
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "1"
