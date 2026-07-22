@@ -21,7 +21,7 @@ jobs:
       - name: Audit Python dependencies
         run: |
           python3.11 -m venv --clear "$RUNNER_TEMP/aeai-security-audit"
-          "$RUNNER_TEMP/aeai-security-audit/bin/python" -m pip install --upgrade pip pip-audit
+          "$RUNNER_TEMP/aeai-security-audit/bin/python" -m pip install --upgrade pip pip-audit "setuptools>=83"
           "$RUNNER_TEMP/aeai-security-audit/bin/python" -m pip install -e .
           "$RUNNER_TEMP/aeai-security-audit/bin/python" -m pip_audit --skip-editable
 
@@ -68,6 +68,8 @@ jobs:
           printf 'DOCKER_CONFIG=%s\n' "$docker_config" >> "$GITHUB_ENV"
       - name: Verify Docker Desktop
         run: docker info
+      - name: Pull public base image
+        run: docker pull python:3.11-slim
       - name: Build candidate image
         run: docker build -t aeai-os:security-scan .
       - uses: aquasecurity/trivy-action@v0.36.0
