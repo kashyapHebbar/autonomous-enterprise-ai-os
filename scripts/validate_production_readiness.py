@@ -72,7 +72,7 @@ def validate_production_readiness() -> list[str]:
             errors.append(f"Alert {alert['alert']} has no runbook URL.")
 
     security_workflow = _read(ROOT / ".github/workflows/security.yml")
-    for token in ["codeql-action", "dependency-review-action", "trivy-action"]:
+    for token in ["codeql-action", "pip-audit", "trivy-action"]:
         if token not in security_workflow:
             errors.append(f"Security workflow is missing {token}.")
 

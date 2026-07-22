@@ -62,29 +62,30 @@ def test_security_gate_requires_expected_headers(monkeypatch):
 
 def test_release_manifest_rendering_replaces_public_values():
     template = (
-        "host: api.example.com\n"
+        "host: REPLACE_WITH_PUBLIC_HOSTNAME\n"
         "certificate: REPLACE_WITH_ACM_CERTIFICATE_ARN\n"
         "waf: REPLACE_WITH_WAF_ACL_ARN\n"
     )
     rendered = render_production_manifest(
         template,
         {
-            "AEAI_PUBLIC_HOSTNAME": "ai.example.org",
+            "AEAI_PUBLIC_HOSTNAME": "production-host",
             "AEAI_ACM_CERTIFICATE_ARN": "arn:aws:acm:certificate/test",
             "AEAI_WAF_ACL_ARN": "arn:aws:wafv2:webacl/test",
         },
     )
 
-    assert "ai.example.org" in rendered
+    assert "production-host" in rendered
     assert "REPLACE_WITH" not in rendered
 
 
 def test_release_manifest_rendering_rejects_missing_values():
     with pytest.raises(ValueError, match="AEAI_WAF_ACL_ARN"):
         render_production_manifest(
-            "api.example.com REPLACE_WITH_ACM_CERTIFICATE_ARN REPLACE_WITH_WAF_ACL_ARN",
+            "REPLACE_WITH_PUBLIC_HOSTNAME REPLACE_WITH_ACM_CERTIFICATE_ARN "
+            "REPLACE_WITH_WAF_ACL_ARN",
             {
-                "AEAI_PUBLIC_HOSTNAME": "ai.example.org",
+                "AEAI_PUBLIC_HOSTNAME": "production-host",
                 "AEAI_ACM_CERTIFICATE_ARN": "arn:aws:acm:certificate/test",
             },
         )

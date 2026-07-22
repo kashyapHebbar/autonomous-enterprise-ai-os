@@ -14,14 +14,16 @@ permissions:
   security-events: write
 
 jobs:
-  dependency-review:
-    if: github.event_name == 'pull_request'
+  dependency-audit:
     runs-on: [self-hosted, macOS, ARM64, aeai-os]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/dependency-review-action@v4
-        with:
-          fail-on-severity: high
+      - name: Audit Python dependencies
+        run: |
+          python3.11 -m venv --clear "$RUNNER_TEMP/aeai-security-audit"
+          "$RUNNER_TEMP/aeai-security-audit/bin/python" -m pip install --upgrade pip pip-audit
+          "$RUNNER_TEMP/aeai-security-audit/bin/python" -m pip install -e ".[analysis,identity,observability,secrets,storage,warehouse]"
+          "$RUNNER_TEMP/aeai-security-audit/bin/python" -m pip_audit --strict
 
   codeql:
     runs-on: [self-hosted, macOS, ARM64, aeai-os]
@@ -36,7 +38,7 @@ jobs:
     runs-on: [self-hosted, macOS, ARM64, aeai-os]
     steps:
       - uses: actions/checkout@v4
-      - uses: aquasecurity/trivy-action@0.33.1
+      - uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -53,7 +55,7 @@ jobs:
         run: docker info
       - name: Build candidate image
         run: docker build -t aeai-os:security-scan .
-      - uses: aquasecurity/trivy-action@0.33.1
+      - uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: aeai-os:security-scan
           severity: HIGH,CRITICAL

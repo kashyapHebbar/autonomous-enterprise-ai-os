@@ -23,7 +23,7 @@ REQUIRED_RENDER_VALUES = {
     "REPLACE_WITH_PRODUCTION_OTLP_ENDPOINT": "AEAI_OTEL_EXPORTER_OTLP_ENDPOINT",
     "REPLACE_WITH_RUNTIME_SECRET_NAME": "AEAI_RUNTIME_SECRET_NAME",
     "REPLACE_WITH_WAF_ACL_ARN": "AEAI_WAF_ACL_ARN",
-    "api.example.com": "AEAI_PUBLIC_HOSTNAME",
+    "REPLACE_WITH_PUBLIC_HOSTNAME": "AEAI_PUBLIC_HOSTNAME",
     "ghcr.io/kashyaphebbar/autonomous-enterprise-ai-os:production": "AEAI_IMAGE_REFERENCE",
 }
 
@@ -42,7 +42,7 @@ def render_production_manifest(template: str, env: Mapping[str, str]) -> str:
             rendered = rendered.replace(placeholder, value)
     if missing:
         raise ValueError("Missing production render values: " + ", ".join(sorted(missing)))
-    if "REPLACE_WITH_" in rendered or "api.example.com" in rendered:
+    if "REPLACE_WITH_" in rendered:
         raise ValueError("Rendered manifest still contains production placeholders.")
     return rendered
 
