@@ -16,6 +16,14 @@ PACKAGE_FILES = [
     ("docs/release/v1.0-release-notes.md", "docs/release/v1.0-release-notes.md"),
     ("docs/release/v1.0-demo-walkthrough.md", "docs/release/v1.0-demo-walkthrough.md"),
     ("docs/release/v1.0-demo-assets.md", "docs/release/v1.0-demo-assets.md"),
+    ("docs/operations/production-readiness.md", "docs/operations/production-readiness.md"),
+    ("docs/operations/incident-runbooks.md", "docs/operations/incident-runbooks.md"),
+    ("docs/operations/backup-and-recovery.md", "docs/operations/backup-and-recovery.md"),
+    ("docs/operations/security-validation.md", "docs/operations/security-validation.md"),
+    (
+        "docs/operations/readiness-evidence-template.md",
+        "docs/operations/readiness-evidence-template.md",
+    ),
     ("deploy/kubernetes/README.md", "deploy/kubernetes/README.md"),
     ("deploy/cloud/aws/README.md", "deploy/cloud/aws/README.md"),
     ("examples/procurement_demo.csv", "examples/procurement_demo.csv"),
@@ -69,6 +77,7 @@ def build_release_package(output_dir: Path = DEFAULT_OUTPUT_DIR) -> Path:
             "make demo",
             "make k8s-validate",
             "make cloud-validate",
+            "make production-validate",
             "make release-package",
         ],
         "ui_links": [

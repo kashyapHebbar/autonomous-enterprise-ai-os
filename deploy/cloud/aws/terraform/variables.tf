@@ -105,3 +105,14 @@ variable "github_container_registry" {
   type        = string
   default     = "ghcr.io/kashyaphebbar/autonomous-enterprise-ai-os"
 }
+
+variable "waf_requests_per_five_minutes" {
+  description = "Maximum requests accepted from one client IP in a five-minute window."
+  type        = number
+  default     = 2000
+
+  validation {
+    condition     = var.waf_requests_per_five_minutes >= 100
+    error_message = "The WAF rate limit must be at least 100 requests per five minutes."
+  }
+}

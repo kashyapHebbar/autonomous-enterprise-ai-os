@@ -531,6 +531,10 @@ PYTHONPATH=src .venv/bin/python scripts/manage_database.py \
 - Development guide: [docs/development.md](docs/development.md)
 - Kubernetes baseline: [deploy/kubernetes/README.md](deploy/kubernetes/README.md)
 - AWS deployment path: [deploy/cloud/aws/README.md](deploy/cloud/aws/README.md)
+- Production readiness: [docs/operations/production-readiness.md](docs/operations/production-readiness.md)
+- Incident runbooks: [docs/operations/incident-runbooks.md](docs/operations/incident-runbooks.md)
+- Backup and recovery: [docs/operations/backup-and-recovery.md](docs/operations/backup-and-recovery.md)
+- Security validation: [docs/operations/security-validation.md](docs/operations/security-validation.md)
 
 ## Tests
 

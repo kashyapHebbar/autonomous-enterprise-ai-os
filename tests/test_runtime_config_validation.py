@@ -22,6 +22,9 @@ def test_runtime_config_accepts_staging_api_configuration():
         "AEAI_AUTH_TOKEN_PROFILES": "admin-token=admin-1|Admin One|admin",
         "AEAI_TRACE_EXPORTER": "otlp_http",
         "AEAI_OTEL_EXPORTER_OTLP_ENDPOINT": "http://otel:4318/v1/traces",
+        "AEAI_SECURE_HEADERS_ENABLED": "true",
+        "AEAI_MAX_REQUEST_BODY_BYTES": "10485760",
+        "AEAI_HSTS_MAX_AGE_SECONDS": "31536000",
     }
 
     assert validate_runtime_config(env, component="api") == []
@@ -59,6 +62,9 @@ def test_runtime_config_accepts_oidc_identity_configuration():
         "AEAI_OIDC_ISSUER": "https://identity.example.com",
         "AEAI_OIDC_AUDIENCE": "aeai-os",
         "AEAI_OIDC_JWKS_URL": "https://identity.example.com/.well-known/jwks.json",
+        "AEAI_SECURE_HEADERS_ENABLED": "true",
+        "AEAI_MAX_REQUEST_BODY_BYTES": "10485760",
+        "AEAI_HSTS_MAX_AGE_SECONDS": "31536000",
     }
 
     assert validate_runtime_config(env, component="api") == []
@@ -82,6 +88,9 @@ def test_runtime_config_rejects_production_placeholders():
         "AEAI_AUTH_TOKEN_PROFILES": "REPLACE_WITH_AUTH_TOKEN_PROFILES",
         "AEAI_TRACE_EXPORTER": "otlp_grpc",
         "AEAI_OTEL_EXPORTER_OTLP_ENDPOINT": "REPLACE_WITH_OTLP_ENDPOINT",
+        "AEAI_SECURE_HEADERS_ENABLED": "true",
+        "AEAI_MAX_REQUEST_BODY_BYTES": "10485760",
+        "AEAI_HSTS_MAX_AGE_SECONDS": "31536000",
     }
 
     errors = validate_runtime_config(env, component="api")
