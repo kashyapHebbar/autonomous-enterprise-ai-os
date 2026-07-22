@@ -16,7 +16,7 @@ permissions:
 jobs:
   dependency-review:
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, macOS, ARM64, aeai-os]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/dependency-review-action@v4
@@ -24,7 +24,7 @@ jobs:
           fail-on-severity: high
 
   codeql:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, macOS, ARM64, aeai-os]
     steps:
       - uses: actions/checkout@v4
       - uses: github/codeql-action/init@v4
@@ -33,7 +33,7 @@ jobs:
       - uses: github/codeql-action/analyze@v4
 
   filesystem-and-iac:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, macOS, ARM64, aeai-os]
     steps:
       - uses: actions/checkout@v4
       - uses: aquasecurity/trivy-action@0.33.1
@@ -46,9 +46,11 @@ jobs:
           exit-code: "1"
 
   container:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, macOS, ARM64, aeai-os]
     steps:
       - uses: actions/checkout@v4
+      - name: Verify Docker Desktop
+        run: docker info
       - name: Build candidate image
         run: docker build -t aeai-os:security-scan .
       - uses: aquasecurity/trivy-action@0.33.1
