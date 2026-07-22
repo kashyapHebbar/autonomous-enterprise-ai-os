@@ -72,6 +72,42 @@ def create_app(
     app.state.agent_registry = agent_registry
     app.state.policy_registry = policy_registry
 
+    @app.middleware("http")
+    async def harden_http(request, call_next):
+        content_length = request.headers.get("content-length")
+        if content_length:
+            try:
+                request_size = int(content_length)
+            except ValueError:
+                return JSONResponse(status_code=400, content={"detail": "Invalid Content-Length."})
+            if request_size > settings.max_request_body_bytes:
+                return JSONResponse(
+                    status_code=413,
+                    content={"detail": "Request body exceeds the configured limit."},
+                )
+
+        response = await call_next(request)
+        if settings.secure_headers_enabled:
+            response.headers["x-content-type-options"] = "nosniff"
+            response.headers["x-frame-options"] = "DENY"
+            response.headers["referrer-policy"] = "no-referrer"
+            response.headers["permissions-policy"] = (
+                "camera=(), geolocation=(), microphone=(), payment=(), usb=()"
+            )
+            response.headers["content-security-policy"] = (
+                "default-src 'self'; object-src 'none'; base-uri 'self'; "
+                "frame-ancestors 'none'; form-action 'self'; "
+                "script-src 'self' https://cdn.jsdelivr.net; "
+                "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+                "img-src 'self' data: https://fastapi.tiangolo.com; connect-src 'self'"
+            )
+            forwarded_proto = request.headers.get("x-forwarded-proto", "").lower()
+            if settings.environment.lower() in {"production", "prod"} or forwarded_proto == "https":
+                response.headers["strict-transport-security"] = (
+                    f"max-age={settings.hsts_max_age_seconds}; includeSubDomains"
+                )
+        return response
+
     @app.exception_handler(HTTPException)
     async def redacted_http_exception(request, exc):
         del request

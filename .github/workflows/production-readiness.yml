@@ -1,0 +1,56 @@
+name: Production Readiness
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "41 4 * * 2"
+
+permissions:
+  contents: read
+
+jobs:
+  readiness:
+    runs-on: [self-hosted, macOS, ARM64, aeai-os]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install validation dependencies
+        run: python -m pip install -e ".[dev]"
+      - name: Validate production package
+        run: make production-validate
+      - name: Start release candidate
+        run: |
+          PYTHONPATH=src python -m uvicorn aeai_os.api.app:create_app \
+            --factory --host 127.0.0.1 --port 8000 > /tmp/aeai-readiness.log 2>&1 &
+          echo $! > /tmp/aeai-readiness.pid
+      - name: Wait for health
+        run: |
+          for attempt in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8000/health && exit 0
+            sleep 1
+          done
+          cat /tmp/aeai-readiness.log
+          exit 1
+      - name: Validate security headers
+        run: >-
+          python scripts/production_readiness.py security
+          --url http://127.0.0.1:8000/health --allow-http
+      - name: Run bounded load gate
+        run: >-
+          python scripts/production_readiness.py load
+          --url http://127.0.0.1:8000/health
+          --requests 300 --concurrency 15
+          --max-error-rate 0 --max-p95-ms 500
+          --output artifacts/readiness/load.json
+      - name: Upload readiness evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-readiness-evidence
+          path: |
+            artifacts/readiness
+            /tmp/aeai-readiness.log

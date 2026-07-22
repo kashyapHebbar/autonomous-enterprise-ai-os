@@ -20,10 +20,15 @@ def test_aws_cloud_docs_and_terraform_define_required_runtime_path():
     assert "ElastiCache" in readme
     assert "Secrets Manager" in readme
     assert "Smoke Test The Deployment" in readme
-    assert "kubectl apply -k deploy/kubernetes/overlays/production" in readme
+    assert "python scripts/release_operations.py deploy" in readme
+    assert "AWS WAFv2" in readme
     assert "aws_eks_cluster" in main_tf
     assert "aws_db_instance" in main_tf
     assert "aws_elasticache_replication_group" in main_tf
     assert "aws_s3_bucket" in main_tf
     assert "aws_secretsmanager_secret_version" in main_tf
+    assert "aws_wafv2_web_acl" in main_tf
+    assert "backup_retention_period" in main_tf
+    assert "multi_az" in main_tf
     assert "runtime_secret_name" in outputs_tf
+    assert "waf_web_acl_arn" in outputs_tf

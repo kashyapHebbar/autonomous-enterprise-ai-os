@@ -14,6 +14,8 @@ Included resources:
 - API and worker runtime configuration validation init containers
 - Local, staging, and production-style kustomize overlays
 - Observability environment variables with optional OTLP settings
+- Production ALB ingress, TLS/WAF attachment, autoscaling, disruption budgets, network policies,
+  Prometheus discovery, and owned alert rules
 
 ## Environments
 
@@ -22,7 +24,7 @@ Included resources:
 | Base | `deploy/kubernetes` | Local-cluster baseline with API, worker, Postgres, Redis, and MinIO |
 | Local | `deploy/kubernetes/overlays/local` | Explicit local demo settings with auth disabled and tracing exporter disabled |
 | Staging | `deploy/kubernetes/overlays/staging` | Production-like API and worker replicas, auth enabled, Redis queue, MinIO artifacts, and OTLP traces |
-| Production | `deploy/kubernetes/overlays/production` | Higher API/worker resources, auth enabled, external S3-style artifact config, OTLP gRPC traces, and schema creation disabled |
+| Production | `deploy/kubernetes/overlays/production` | Public TLS ingress, WAF attachment, autoscaling, availability controls, OIDC, managed data services, S3 artifacts, and OTLP traces |
 
 ## Validate Locally
 
@@ -117,6 +119,8 @@ attempts, and duration, so worker progress appears in Prometheus without a separ
 endpoint. Import or provision
 `deploy/grafana/provisioning/dashboards/aeai-operational-dashboard.json` to inspect run throughput,
 failures, latency, evaluation quality, agent state, workflow jobs, and artifact counts.
+The production SLO view is
+`deploy/grafana/provisioning/dashboards/aeai-slo-dashboard.json`.
 
 ## Staging Apply
 
@@ -164,6 +168,37 @@ it to a real cluster:
 - Configure `AEAI_AUTH_MODE=oidc` and replace the OIDC issuer, audience, and JWKS URL placeholders.
 - Run database migrations before rolling out because the production overlay sets
   `AEAI_RUN_REPOSITORY_CREATE_SCHEMA=false`.
+- Install the AWS Load Balancer Controller, metrics-server, Prometheus Operator CRDs, and
+  ExternalDNS before applying the production resources.
+- Provide the public hostname, ACM certificate ARN, and WAF web ACL ARN to the versioned release
+  command. Do not apply the production kustomization directly while placeholders remain.
+
+Render and deploy the reviewed production overlay with:
+
+```bash
+export AEAI_PUBLIC_HOSTNAME=api.example.com
+export AEAI_ACM_CERTIFICATE_ARN=arn:aws:acm:region:account:certificate/id
+export AEAI_WAF_ACL_ARN=arn:aws:wafv2:region:account:regional/webacl/name/id
+export AEAI_ARTIFACT_BUCKET=aeai-production-artifacts
+export AEAI_AWS_REGION=us-east-1
+export AEAI_RUNTIME_SECRET_NAME=aeai-os-production/runtime
+export AEAI_IMAGE_REFERENCE=ghcr.io/kashyaphebbar/autonomous-enterprise-ai-os@sha256:<digest>
+export AEAI_OIDC_ISSUER=https://identity.example.com
+export AEAI_OIDC_AUDIENCE=aeai-os
+export AEAI_OIDC_JWKS_URL=https://identity.example.com/.well-known/jwks.json
+export AEAI_OTEL_EXPORTER_OTLP_ENDPOINT=https://otel.example.com:4317
+python scripts/release_operations.py render > /tmp/aeai-production.yaml
+python scripts/release_operations.py deploy
+```
+
+The application containers run as UID 10001, drop Linux capabilities, disable privilege
+escalation and service-account token mounting, use RuntimeDefault seccomp, and mount only a bounded
+temporary writable volume over a read-only root filesystem.
+
+The production overlay references an `ExternalSecret` backed by the `aws-secrets-manager`
+`ClusterSecretStore`; install External Secrets Operator and configure that store before deployment.
+Local Postgres, Redis, MinIO, and placeholder Secret resources are removed from the production
+render, so only managed service endpoints enter through the external runtime secret.
 
 ## Required Values
 

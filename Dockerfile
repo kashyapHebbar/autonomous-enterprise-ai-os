@@ -2,6 +2,8 @@ FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+ENV HOME=/tmp
+ENV MPLCONFIGDIR=/tmp/matplotlib
 
 WORKDIR /app
 
@@ -11,8 +13,14 @@ COPY docs ./docs
 COPY examples ./examples
 COPY scripts ./scripts
 
-RUN python -m pip install --upgrade pip \
-    && python -m pip install --no-cache-dir -e ".[dev,identity,observability,secrets,storage]"
+RUN python -m pip install --upgrade pip "setuptools>=83" "wheel>=0.46.2" \
+    && python -m pip install --no-cache-dir -e ".[analysis,identity,observability,secrets,storage,warehouse]" \
+    && groupadd --gid 10001 aeai \
+    && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin aeai \
+    && mkdir -p /app/artifacts /tmp/matplotlib \
+    && chown -R 10001:10001 /app/artifacts /tmp/matplotlib
+
+USER 10001:10001
 
 EXPOSE 8000
 

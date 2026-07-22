@@ -41,6 +41,18 @@ def validate_runtime_config(env: Mapping[str, str], *, component: str) -> list[s
         "AEAI_WORKFLOW_EXECUTION_MODE",
         "AEAI_WORKFLOW_QUEUE_BACKEND",
     }
+    if normalized_env in PRODUCTION_ENVS:
+        required.update(
+            {
+                "AEAI_HSTS_MAX_AGE_SECONDS",
+                "AEAI_MAX_REQUEST_BODY_BYTES",
+                "AEAI_SECURE_HEADERS_ENABLED",
+            }
+        )
+        if not _is_truthy(_value(env, "AEAI_SECURE_HEADERS_ENABLED")):
+            errors.append("Production-like environments require secure HTTP headers.")
+        _validate_positive_integer(env, "AEAI_HSTS_MAX_AGE_SECONDS", errors)
+        _validate_positive_integer(env, "AEAI_MAX_REQUEST_BODY_BYTES", errors)
 
     repository_backend = _value(env, "AEAI_RUN_REPOSITORY_BACKEND").lower()
     if repository_backend == "sqlalchemy":
@@ -106,6 +118,19 @@ def _is_truthy(value: str) -> bool:
 def _is_placeholder(value: str) -> bool:
     normalized = value.strip().lower()
     return any(normalized.startswith(prefix) for prefix in PLACEHOLDER_PREFIXES)
+
+
+def _validate_positive_integer(env: Mapping[str, str], key: str, errors: list[str]) -> None:
+    value = _value(env, key)
+    if not value:
+        return
+    try:
+        parsed = int(value)
+    except ValueError:
+        errors.append(f"Environment variable {key} must be a positive integer.")
+        return
+    if parsed <= 0:
+        errors.append(f"Environment variable {key} must be a positive integer.")
 
 
 if __name__ == "__main__":
