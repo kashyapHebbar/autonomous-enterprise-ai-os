@@ -254,6 +254,13 @@ resource "aws_db_instance" "postgres" {
   db_subnet_group_name   = aws_db_subnet_group.main.name
   vpc_security_group_ids = [aws_security_group.data.id]
   skip_final_snapshot    = var.environment != "production"
+  final_snapshot_identifier = "${local.name_prefix}-postgres-final"
+  backup_retention_period   = var.environment == "production" ? 30 : 7
+  backup_window             = "03:00-04:00"
+  maintenance_window        = "sun:04:00-sun:05:00"
+  multi_az                  = var.environment == "production"
+  deletion_protection       = var.environment == "production"
+  auto_minor_version_upgrade = true
   storage_encrypted      = true
 }
 
@@ -267,8 +274,11 @@ resource "aws_elasticache_replication_group" "redis" {
   description                = "Redis workflow queue for Autonomous Enterprise AI OS"
   engine                     = "redis"
   node_type                  = var.redis_node_type
-  num_cache_clusters         = 1
-  automatic_failover_enabled = false
+  num_cache_clusters         = var.environment == "production" ? 2 : 1
+  automatic_failover_enabled = var.environment == "production"
+  multi_az_enabled           = var.environment == "production"
+  snapshot_retention_limit   = var.environment == "production" ? 14 : 1
+  snapshot_window            = "02:00-03:00"
   subnet_group_name          = aws_elasticache_subnet_group.main.name
   security_group_ids         = [aws_security_group.data.id]
   at_rest_encryption_enabled = true
@@ -302,6 +312,85 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "artifacts" {
     apply_server_side_encryption_by_default {
       sse_algorithm = "AES256"
     }
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "artifacts" {
+  bucket = aws_s3_bucket.artifacts.id
+
+  rule {
+    id     = "retain-recoverable-versions"
+    status = "Enabled"
+
+    filter {}
+
+    noncurrent_version_expiration {
+      noncurrent_days = var.environment == "production" ? 90 : 30
+    }
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
+  }
+}
+
+resource "aws_wafv2_web_acl" "public_api" {
+  name        = "${local.name_prefix}-public-api"
+  description = "Managed protections and abuse controls for the public API"
+  scope       = "REGIONAL"
+
+  default_action {
+    allow {}
+  }
+
+  rule {
+    name     = "managed-common-threats"
+    priority = 10
+
+    override_action {
+      none {}
+    }
+
+    statement {
+      managed_rule_group_statement {
+        name        = "AWSManagedRulesCommonRuleSet"
+        vendor_name = "AWS"
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "${local.name_prefix}-managed-common-threats"
+      sampled_requests_enabled   = true
+    }
+  }
+
+  rule {
+    name     = "per-ip-rate-limit"
+    priority = 20
+
+    action {
+      block {}
+    }
+
+    statement {
+      rate_based_statement {
+        aggregate_key_type = "IP"
+        limit              = var.waf_requests_per_five_minutes
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "${local.name_prefix}-rate-limit"
+      sampled_requests_enabled   = true
+    }
+  }
+
+  visibility_config {
+    cloudwatch_metrics_enabled = true
+    metric_name                = "${local.name_prefix}-public-api"
+    sampled_requests_enabled   = true
   }
 }
 

@@ -25,6 +25,7 @@ REQUIRED_TERRAFORM_TOKENS = {
     "aws_s3_bucket",
     "aws_s3_bucket_public_access_block",
     "aws_secretsmanager_secret",
+    "aws_wafv2_web_acl",
     "aws_iam_access_key",
     "aws_vpc",
     "aws_subnet",
@@ -38,7 +39,8 @@ REQUIRED_DOC_TOKENS = {
     "Secrets Manager",
     "terraform plan",
     "terraform apply",
-    "kubectl apply -k deploy/kubernetes/overlays/production",
+    "python scripts/release_operations.py deploy",
+    "AWS WAFv2",
     "/health",
     "/app",
     "/app/admin",
@@ -88,6 +90,7 @@ def validate_cloud_deployment(target: str = "aws") -> list[str]:
         "eks_update_kubeconfig_command",
         "artifact_bucket_name",
         "runtime_secret_name",
+        "waf_web_acl_arn",
     ]:
         if output_name not in outputs_tf:
             errors.append(f"Terraform outputs.tf missing output: {output_name}")

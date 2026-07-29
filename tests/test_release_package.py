@@ -78,8 +78,14 @@ def test_release_package_builder_creates_portable_manifest(tmp_path):
         "docs/release/v1.0-release-notes.md",
         "docs/release/v1.0-demo-walkthrough.md",
         "docs/release/v1.0-demo-assets.md",
+        "docs/operations/production-readiness.md",
+        "docs/operations/incident-runbooks.md",
+        "docs/operations/backup-and-recovery.md",
+        "docs/operations/security-validation.md",
+        "docs/operations/readiness-evidence-template.md",
         "examples/procurement_demo.csv",
     }
     assert expected_files.issubset(set(manifest["files"]))
     assert "make release-package" in manifest["validation_commands"]
+    assert "make production-validate" in manifest["validation_commands"]
     assert "http://127.0.0.1:8000/app/admin" in manifest["ui_links"]

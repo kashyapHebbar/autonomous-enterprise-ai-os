@@ -282,11 +282,15 @@ cd deploy/cloud/aws/terraform
 terraform init
 terraform plan -out=tfplan
 terraform apply tfplan
-kubectl apply -k deploy/kubernetes/overlays/production
+python scripts/release_operations.py deploy
 ```
 
 See `deploy/cloud/aws/README.md` for required AWS permissions, Terraform variables, secret sync,
 database migration, rollout, and deployed API/UI smoke checks.
+
+Production reliability, security, load, failure, recovery, launch, and rollback gates are documented
+in `docs/operations/production-readiness.md`. Validate the complete package with
+`make production-validate`.
 
 ## Orchestrator Kernel
 

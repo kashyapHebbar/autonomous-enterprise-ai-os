@@ -42,6 +42,9 @@ class AppSettings:
     oidc_organization_claim: str = "organization_id"
     oidc_workspaces_claim: str = "workspace_ids"
     run_repository_create_schema: bool = True
+    secure_headers_enabled: bool = True
+    max_request_body_bytes: int = 10 * 1024 * 1024
+    hsts_max_age_seconds: int = 31_536_000
 
 
 def get_settings() -> AppSettings:
@@ -108,6 +111,14 @@ def get_settings() -> AppSettings:
             "AEAI_OIDC_ORGANIZATION_CLAIM", "organization_id"
         ),
         oidc_workspaces_claim=os.getenv("AEAI_OIDC_WORKSPACES_CLAIM", "workspace_ids"),
+        secure_headers_enabled=_parse_bool(
+            os.getenv("AEAI_SECURE_HEADERS_ENABLED"),
+            default=True,
+        ),
+        max_request_body_bytes=int(
+            os.getenv("AEAI_MAX_REQUEST_BODY_BYTES", str(10 * 1024 * 1024))
+        ),
+        hsts_max_age_seconds=int(os.getenv("AEAI_HSTS_MAX_AGE_SECONDS", "31536000")),
     )
 
 

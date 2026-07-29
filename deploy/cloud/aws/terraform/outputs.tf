@@ -37,3 +37,8 @@ output "container_image_repository" {
   description = "Container image repository expected by Kubernetes overlays."
   value       = var.github_container_registry
 }
+
+output "waf_web_acl_arn" {
+  description = "WAFv2 web ACL ARN to attach to the production ALB ingress."
+  value       = aws_wafv2_web_acl.public_api.arn
+}

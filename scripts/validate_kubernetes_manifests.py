@@ -40,6 +40,9 @@ REQUIRED_CONFIG_KEYS = {
     "AEAI_WORKFLOW_QUEUE_KEY_PREFIX",
     "AEAI_REDIS_URL",
     "AEAI_AUTH_ENABLED",
+    "AEAI_SECURE_HEADERS_ENABLED",
+    "AEAI_MAX_REQUEST_BODY_BYTES",
+    "AEAI_HSTS_MAX_AGE_SECONDS",
     "AEAI_TRACING_ENABLED",
     "AEAI_TRACE_EXPORTER",
     "AEAI_OTEL_EXPORTER_OTLP_ENDPOINT",
@@ -99,7 +102,32 @@ def validate_manifest_dir(manifest_dir: Path) -> list[str]:
         (str(document.get("kind")), str(document.get("metadata", {}).get("name"))): document
         for document in documents
     }
-    missing = REQUIRED_RESOURCES - set(resource_map)
+    required_resources = set(REQUIRED_RESOURCES)
+    if manifest_dir.name == "production":
+        required_resources -= {
+            ("Secret", "aeai-secrets"),
+            ("Deployment", "postgres"),
+            ("Deployment", "redis"),
+            ("Deployment", "minio"),
+            ("Service", "postgres"),
+            ("Service", "redis"),
+            ("Service", "minio"),
+        }
+        required_resources.add(("ExternalSecret", "aeai-secrets"))
+        forbidden_local_resources = {
+            ("Secret", "aeai-secrets"),
+            ("Deployment", "postgres"),
+            ("Deployment", "redis"),
+            ("Deployment", "minio"),
+            ("Service", "postgres"),
+            ("Service", "redis"),
+            ("Service", "minio"),
+        }
+        errors.extend(
+            f"production overlay must not include local resource: {kind}/{name}"
+            for kind, name in sorted(forbidden_local_resources & set(resource_map))
+        )
+    missing = required_resources - set(resource_map)
     errors.extend(f"required resource is missing: {kind}/{name}" for kind, name in sorted(missing))
 
     for document in documents:
@@ -117,12 +145,13 @@ def validate_manifest_dir(manifest_dir: Path) -> list[str]:
         for key in sorted(REQUIRED_CONFIG_KEYS - config_keys)
     )
 
-    secret = resource_map.get(("Secret", "aeai-secrets"), {})
-    secret_keys = set((secret.get("stringData") or {}).keys())
-    errors.extend(
-        f"Secret aeai-secrets missing key: {key}"
-        for key in sorted(REQUIRED_SECRET_KEYS - secret_keys)
-    )
+    secret = resource_map.get(("Secret", "aeai-secrets"))
+    if secret is not None:
+        secret_keys = set((secret.get("stringData") or {}).keys())
+        errors.extend(
+            f"Secret aeai-secrets missing key: {key}"
+            for key in sorted(REQUIRED_SECRET_KEYS - secret_keys)
+        )
 
     for deployment_name in ["aeai-api", "aeai-worker", "postgres", "redis", "minio"]:
         deployment = resource_map.get(("Deployment", deployment_name))
@@ -165,6 +194,7 @@ def _validate_deployment(deployment: dict[str, Any]) -> list[str]:
         if "requests" not in resources or "limits" not in resources:
             errors.append(f"Deployment/{name} container {container_name} missing resources.")
     if name in {"aeai-api", "aeai-worker"}:
+        pod_spec = template.get("spec", {})
         init_containers = template.get("spec", {}).get("initContainers", [])
         if not any(
             container.get("name") == "validate-runtime-config"
@@ -183,6 +213,20 @@ def _validate_deployment(deployment: dict[str, Any]) -> list[str]:
             errors.append(f"Deployment/{name} must load Secret aeai-secrets.")
         if "startupProbe" not in containers[0]:
             errors.append(f"Deployment/{name} must define a startupProbe.")
+        if pod_spec.get("automountServiceAccountToken") is not False:
+            errors.append(f"Deployment/{name} must disable service account token mounting.")
+        pod_security = pod_spec.get("securityContext", {})
+        if pod_security.get("runAsNonRoot") is not True:
+            errors.append(f"Deployment/{name} must run as a non-root user.")
+        if pod_security.get("seccompProfile", {}).get("type") != "RuntimeDefault":
+            errors.append(f"Deployment/{name} must use the RuntimeDefault seccomp profile.")
+        container_security = containers[0].get("securityContext", {})
+        if container_security.get("allowPrivilegeEscalation") is not False:
+            errors.append(f"Deployment/{name} must disable privilege escalation.")
+        if container_security.get("readOnlyRootFilesystem") is not True:
+            errors.append(f"Deployment/{name} must use a read-only root filesystem.")
+        if "ALL" not in container_security.get("capabilities", {}).get("drop", []):
+            errors.append(f"Deployment/{name} must drop all Linux capabilities.")
     return errors
 
 
@@ -216,11 +260,23 @@ def _collect_kustomization_documents(
         if not resource_path.exists():
             raise ValueError(f"kustomization resource is missing: {resource_path}")
         if resource_path.is_dir():
+            if resource_path.resolve() in resolved_dir.parents:
+                raise ValueError(
+                    "kustomization resource cannot reference an ancestor directory: "
+                    f"{resource_path}"
+                )
             documents.extend(_collect_kustomization_documents(resource_path, seen=seen))
         else:
             documents.extend(_load_yaml_documents(resource_path))
 
-    for patch_path in kustomization.get("patchesStrategicMerge") or []:
+    patch_entries = [
+        *(kustomization.get("patchesStrategicMerge") or []),
+        *(kustomization.get("patches") or []),
+    ]
+    for patch_entry in patch_entries:
+        patch_path = patch_entry.get("path") if isinstance(patch_entry, dict) else patch_entry
+        if not patch_path:
+            raise ValueError(f"Kustomization patch is missing a path: {manifest_dir}")
         for patch in _load_yaml_documents(manifest_dir / str(patch_path)):
             _apply_strategic_merge_patch(documents, patch)
 
@@ -249,7 +305,10 @@ def _apply_strategic_merge_patch(
         raise ValueError(
             f"Expected one patch target for {patch_kind}/{patch_name}, found {len(matches)}."
         )
-    _merge_mapping(matches[0], patch)
+    if patch.get("$patch") == "delete":
+        documents.remove(matches[0])
+    else:
+        _merge_mapping(matches[0], patch)
 
 
 def _merge_mapping(target: dict[str, Any], patch: dict[str, Any]) -> None:

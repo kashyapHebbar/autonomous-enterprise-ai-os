@@ -1,0 +1,21 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: aeai-api
+  namespace: aeai-os
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: aeai-api
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: aeai-worker
+  namespace: aeai-os
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: aeai-worker

@@ -1,0 +1,16 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: aeai-api
+  namespace: aeai-os
+  labels:
+    app.kubernetes.io/part-of: autonomous-enterprise-ai-os
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: aeai-api
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 5s

@@ -17,7 +17,15 @@ spec:
         app.kubernetes.io/name: aeai-api
         app.kubernetes.io/part-of: autonomous-enterprise-ai-os
     spec:
+      automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
       initContainers:
         - name: validate-runtime-config
           image: ghcr.io/kashyaphebbar/autonomous-enterprise-ai-os:latest
@@ -33,6 +41,12 @@ spec:
                 name: aeai-config
             - secretRef:
                 name: aeai-secrets
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
           resources:
             requests:
               cpu: 25m
@@ -76,10 +90,13 @@ spec:
             failureThreshold: 3
           securityContext:
             allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: false
+            readOnlyRootFilesystem: true
             capabilities:
               drop:
                 - ALL
+          volumeMounts:
+            - name: temporary-files
+              mountPath: /tmp
           resources:
             requests:
               cpu: 100m
@@ -87,3 +104,7 @@ spec:
             limits:
               cpu: 500m
               memory: 512Mi
+      volumes:
+        - name: temporary-files
+          emptyDir:
+            sizeLimit: 256Mi

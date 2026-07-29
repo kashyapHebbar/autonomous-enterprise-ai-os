@@ -13,8 +13,10 @@ for managed infrastructure and the production Kubernetes overlay for the app run
 | Queue | ElastiCache Redis | Pending workflow job queue for async API/worker execution |
 | Object storage | S3 | Generated dashboards, reports, charts, code, evaluations, and deployment artifacts |
 | Secrets | Secrets Manager | Runtime values for database URL, admin token profile, Redis URL, and S3 credentials |
+| Edge security | ALB ingress, ACM, AWS WAFv2 | HTTPS termination, managed threat rules, and per-IP abuse limits |
 | Networking | VPC, public/private subnets, NAT gateway, security groups | Isolates data services and gives private workloads outbound access |
 | Observability | OTLP endpoint configured through Kubernetes | Sends traces to a collector or vendor endpoint |
+| Recovery | RDS backups and multi-AZ, Redis snapshots/failover, versioned S3 | Supports restore and regional recovery drills |
 
 ## Required Tools
 
@@ -32,6 +34,7 @@ Use an IAM role or user that can manage:
 - RDS PostgreSQL instances and subnet groups
 - ElastiCache Redis replication groups and subnet groups
 - S3 buckets, bucket versioning, and bucket encryption
+- WAFv2 web ACLs and CloudWatch WAF metrics
 - Secrets Manager secrets and secret versions
 - IAM roles, policies, users, and access keys created by the Terraform stack
 
@@ -80,6 +83,7 @@ terraform apply tfplan
 terraform output eks_update_kubeconfig_command
 terraform output runtime_secret_name
 terraform output artifact_bucket_name
+terraform output waf_web_acl_arn
 ```
 
 Configure kubectl using the output:
@@ -130,16 +134,44 @@ PYTHONPATH=src python3.11 scripts/manage_database.py upgrade
 PYTHONPATH=src python3.11 scripts/manage_database.py validate
 ```
 
-Apply the Kubernetes production overlay:
+Provide the public edge values and deploy through the versioned release command:
 
 ```bash
-kubectl apply -k deploy/kubernetes/overlays/production
-kubectl -n aeai-os rollout status deployment/aeai-api
-kubectl -n aeai-os rollout status deployment/aeai-worker
+export AEAI_PUBLIC_HOSTNAME=api.example.com
+export AEAI_ACM_CERTIFICATE_ARN=arn:aws:acm:region:account:certificate/id
+export AEAI_WAF_ACL_ARN="$(terraform output -raw waf_web_acl_arn)"
+export AEAI_ARTIFACT_BUCKET="$(terraform output -raw artifact_bucket_name)"
+export AEAI_AWS_REGION="$(terraform output -raw aws_region)"
+export AEAI_RUNTIME_SECRET_NAME="$(terraform output -raw runtime_secret_name)"
+export AEAI_IMAGE_REFERENCE=ghcr.io/kashyaphebbar/autonomous-enterprise-ai-os@sha256:<digest>
+export AEAI_OIDC_ISSUER=https://identity.example.com
+export AEAI_OIDC_AUDIENCE=aeai-os
+export AEAI_OIDC_JWKS_URL=https://identity.example.com/.well-known/jwks.json
+export AEAI_OTEL_EXPORTER_OTLP_ENDPOINT=https://otel.example.com:4317
+python scripts/release_operations.py render > /tmp/aeai-production.yaml
+python scripts/release_operations.py deploy
 ```
 
 The API and worker init containers run `scripts/validate_runtime_config.py` first. If secrets or
 required production config are missing, the pods fail before the application starts.
+
+The release command replaces and verifies the hostname, certificate, and WAF placeholders before
+applying anything. Roll back both application deployments with
+`python scripts/release_operations.py rollback`.
+The cluster must have External Secrets Operator and an `aws-secrets-manager` `ClusterSecretStore`
+authorized to read the Terraform runtime secret. Production manifests do not include raw Secret
+values or local Postgres, Redis, and MinIO workloads.
+
+## Recovery And Readiness
+
+Production RDS enables multi-AZ, deletion protection, a final snapshot, and 30-day automated backup
+retention. Redis enables multi-AZ automatic failover and 14-day snapshots. S3 retains recoverable
+noncurrent object versions for 90 days. Exercise portable database restore and regional recovery by
+following `docs/operations/backup-and-recovery.md`.
+
+Before launch, run `make production-validate`, staging security/load gates, the guarded pod failure
+drill, and the 24-hour soak described in `docs/operations/production-readiness.md`. Alert ownership
+and response steps are in `docs/operations/incident-runbooks.md`.
 
 ## Smoke Test The Deployment
 

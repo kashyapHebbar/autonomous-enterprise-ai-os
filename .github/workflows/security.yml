@@ -1,0 +1,80 @@
+name: Security
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  dependency-audit:
+    runs-on: [self-hosted, macOS, ARM64, aeai-os]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Audit Python dependencies
+        run: |
+          python3.11 -m venv --clear "$RUNNER_TEMP/aeai-security-audit"
+          "$RUNNER_TEMP/aeai-security-audit/bin/python" -m pip install --upgrade pip pip-audit "setuptools>=83"
+          "$RUNNER_TEMP/aeai-security-audit/bin/python" -m pip install -e .
+          "$RUNNER_TEMP/aeai-security-audit/bin/python" -m pip_audit --skip-editable
+
+  codeql:
+    runs-on: [self-hosted, macOS, ARM64, aeai-os]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: python
+      - uses: github/codeql-action/analyze@v4
+
+  filesystem-and-iac:
+    runs-on: [self-hosted, macOS, ARM64, aeai-os]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Render production manifests
+        run: kubectl kustomize deploy/kubernetes/overlays/production > "$RUNNER_TEMP/aeai-production.yaml"
+      - uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      - uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: config
+          scan-ref: ${{ runner.temp }}/aeai-production.yaml
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+  container:
+    runs-on: [self-hosted, macOS, ARM64, aeai-os]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure non-interactive Docker access
+        run: |
+          docker_config="$RUNNER_TEMP/aeai-docker-config"
+          mkdir -p "$docker_config"
+          printf '%s\n' '{}' > "$docker_config/config.json"
+          printf 'DOCKER_CONFIG=%s\n' "$docker_config" >> "$GITHUB_ENV"
+      - name: Verify Docker Desktop
+        run: docker info
+      - name: Pull public base image
+        run: docker pull python:3.11-slim
+      - name: Build candidate image
+        run: docker build -t aeai-os:security-scan .
+      - uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: aeai-os:security-scan
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"

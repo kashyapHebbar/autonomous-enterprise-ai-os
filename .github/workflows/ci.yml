@@ -45,3 +45,6 @@ jobs:
 
       - name: Cloud deployment validation
         run: make cloud-validate
+
+      - name: Production readiness validation
+        run: make production-validate

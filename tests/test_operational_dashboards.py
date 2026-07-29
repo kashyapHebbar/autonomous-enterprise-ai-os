@@ -45,6 +45,24 @@ def test_grafana_dashboard_import_json_references_expected_metrics():
     assert "aeai_artifacts_by_type" in expressions
 
 
+def test_slo_dashboard_references_production_objectives():
+    dashboard_path = ROOT / "deploy/grafana/provisioning/dashboards/aeai-slo-dashboard.json"
+    dashboard = json.loads(dashboard_path.read_text(encoding="utf-8"))
+    panel_titles = {panel["title"] for panel in dashboard["panels"]}
+    expressions = " ".join(
+        target["expr"]
+        for panel in dashboard["panels"]
+        for target in panel.get("targets", [])
+    )
+
+    assert dashboard["uid"] == "aeai-os-slos"
+    assert "30-day API Availability" in panel_titles
+    assert "Workflow p95 Latency" in panel_titles
+    assert "Workflow Failure Ratio" in panel_titles
+    assert "up" in expressions
+    assert "aeai_run_duration_seconds_bucket" in expressions
+
+
 def test_prometheus_metrics_include_workflow_and_histogram_series():
     repository = InMemoryRunRepository()
     run = repository.create_run("Analyze procurement spend.")
