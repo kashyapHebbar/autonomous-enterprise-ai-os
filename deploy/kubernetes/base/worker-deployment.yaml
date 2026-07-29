@@ -107,6 +107,8 @@ spec:
           volumeMounts:
             - name: temporary-files
               mountPath: /tmp
+            - name: artifact-cache
+              mountPath: /app/artifacts
           resources:
             requests:
               cpu: 100m
@@ -118,3 +120,6 @@ spec:
         - name: temporary-files
           emptyDir:
             sizeLimit: 512Mi
+        - name: artifact-cache
+          emptyDir:
+            sizeLimit: 1Gi

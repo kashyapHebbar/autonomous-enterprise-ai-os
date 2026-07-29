@@ -72,6 +72,50 @@ def create_app(
     app.state.agent_registry = agent_registry
     app.state.policy_registry = policy_registry
 
+    class RequestBodyLimitMiddleware:
+        def __init__(self, wrapped_app, max_body_bytes: int):
+            self.app = wrapped_app
+            self.max_body_bytes = max_body_bytes
+
+        async def __call__(self, scope, receive, send):
+            if scope["type"] != "http":
+                await self.app(scope, receive, send)
+                return
+
+            received_bytes = 0
+            response_started = False
+
+            async def limited_receive():
+                nonlocal received_bytes
+                message = await receive()
+                if message["type"] == "http.request":
+                    received_bytes += len(message.get("body", b""))
+                    if received_bytes > self.max_body_bytes:
+                        raise HTTPException(
+                            status_code=413,
+                            detail="Request body exceeds the configured limit.",
+                        )
+                return message
+
+            async def tracked_send(message):
+                nonlocal response_started
+                if message["type"] == "http.response.start":
+                    response_started = True
+                await send(message)
+
+            try:
+                await self.app(scope, limited_receive, tracked_send)
+            except HTTPException as exc:
+                if exc.status_code != 413 or response_started:
+                    raise
+                response = JSONResponse(status_code=413, content={"detail": exc.detail})
+                await response(scope, receive, send)
+
+    app.add_middleware(
+        RequestBodyLimitMiddleware,
+        max_body_bytes=settings.max_request_body_bytes,
+    )
+
     @app.middleware("http")
     async def harden_http(request, call_next):
         content_length = request.headers.get("content-length")

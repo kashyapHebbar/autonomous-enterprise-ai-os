@@ -26,3 +26,20 @@ def test_api_rejects_oversized_request_before_reading_body(monkeypatch):
 
     assert response.status_code == 413
     assert response.json() == {"detail": "Request body exceeds the configured limit."}
+
+
+def test_api_rejects_oversized_streamed_request_without_content_length(monkeypatch):
+    monkeypatch.setenv("AEAI_MAX_REQUEST_BODY_BYTES", "16")
+
+    def streamed_body():
+        yield b"x" * 8
+        yield b"x" * 9
+
+    response = TestClient(create_app()).post(
+        "/runs",
+        content=streamed_body(),
+        headers={"content-type": "application/json"},
+    )
+
+    assert response.status_code == 413
+    assert response.json() == {"detail": "Request body exceeds the configured limit."}

@@ -65,6 +65,19 @@ def test_application_workloads_use_restricted_container_security():
         assert container["securityContext"]["capabilities"]["drop"] == ["ALL"]
 
 
+def test_worker_mounts_writable_artifact_cache():
+    deployment = yaml.safe_load(
+        Path("deploy/kubernetes/base/worker-deployment.yaml").read_text(encoding="utf-8")
+    )
+    pod_spec = deployment["spec"]["template"]["spec"]
+    container = pod_spec["containers"][0]
+    mounts = {mount["name"]: mount["mountPath"] for mount in container["volumeMounts"]}
+    volumes = {volume["name"]: volume for volume in pod_spec["volumes"]}
+
+    assert mounts["artifact-cache"] == "/app/artifacts"
+    assert volumes["artifact-cache"]["emptyDir"]["sizeLimit"] == "1Gi"
+
+
 def test_validator_rejects_overlay_that_references_ancestor_directory(tmp_path):
     overlay = tmp_path / "overlays" / "production"
     overlay.mkdir(parents=True)
