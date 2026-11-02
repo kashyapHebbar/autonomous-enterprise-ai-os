@@ -1,4 +1,6 @@
-import type { AgentEvent, AgentRegistration, Analysis, Artifact, Connector, DataSource, Evaluation, GraphNode, Investigation, InvestigationSummary, PolicyRegistry, Run, RunDetail, UserSession } from './types';
+import type { RiskScreeningJob } from './risk-types';
+import type { ScalableSummary } from './scaling-types';
+import type { AgentEvent, AgentRegistration, Analysis, Artifact, Connector, DataSource, Evaluation, GraphNode, Investigation, InvestigationSummary, PolicyRegistry, Run, RunDetail, RunQuestion, AnalystCalculation, UserSession, WorkflowJob, IntelligenceOverview, WorkspaceHealth, VisualizationCube, Monitor, MonitorAlert, MonitoringSummary, MonitorExecution, OperationsStatus, PerformanceSummary, RunVerification } from './types';
 
 export class ApiError extends Error { constructor(message: string, readonly status: number) { super(message); this.name = 'ApiError'; } }
 function humanError(detail: unknown): string {
@@ -25,12 +27,28 @@ const json = (body: unknown): RequestInit => ({ method: 'POST', headers: { 'Cont
 const enc = encodeURIComponent;
 export const api = {
   health: () => request<Record<string, unknown>>('/health'),
+  operations: () => request<OperationsStatus>('/operations/status'),
+  performanceSummary: () => request<PerformanceSummary>('/performance/summary'),
+  scalableSummary: (runId:string) => request<ScalableSummary>(`/scaling/runs/${enc(runId)}/financial-overview`),
+  computeScalableSummary: (runId:string) => request<ScalableSummary>(`/scaling/runs/${enc(runId)}/financial-overview`, {method:'POST'}),
+  riskScan: (runId:string) => request<RiskScreeningJob>(`/scaling/runs/${enc(runId)}/risk-scan`),
+  startRiskScan: (runId:string) => request<RiskScreeningJob>(`/scaling/runs/${enc(runId)}/risk-scan`,{method:'POST'}),
+  riskScanAction: (runId:string,scanId:string,action:'cancel'|'resume') => request<RiskScreeningJob>(`/scaling/runs/${enc(runId)}/risk-scan/${enc(scanId)}/${action}`,{method:'POST'}),
+  runVerification: (runId: string) => request<RunVerification>(`/performance/runs/${enc(runId)}/verification`),
+  retryDeadLetter: (runId:string, jobId:string, reason:string) => request<WorkflowJob>(`/runs/${enc(runId)}/workflow-jobs/${enc(jobId)}/retry`,json({reason})),
   me: () => request<UserSession>('/auth/me'),
   runs: () => request<Run[]>('/runs'),
   run: (id: string) => request<RunDetail>(`/runs/${enc(id)}`),
   createRun: (payload: {task: string; dataset_uri?: string; data_source_id?: string; metadata: Record<string, unknown>}) => request<RunDetail>('/runs', json(payload)),
   executeRun: (id: string) => request<RunDetail>(`/runs/${enc(id)}/execute`, {method: 'POST'}),
+  enqueueRun: (id: string) => request<WorkflowJob>(`/runs/${enc(id)}/execute/async`, {method: 'POST'}),
+  jobs: (id: string) => request<WorkflowJob[]>(`/runs/${enc(id)}/workflow-jobs`),
+  streamUrl: (id: string) => `/runs/${enc(id)}/stream`,
   graph: (id: string) => request<GraphNode[]>(`/runs/${enc(id)}/graph-nodes`),
+  analystCalculations: (id: string) => request<AnalystCalculation[]>(`/runs/${enc(id)}/analyst-tools`),
+  calculateFollowup: (id: string, question: string) => request<AnalystCalculation>(`/runs/${enc(id)}/analyst-tools`, json({question})),
+  runQuestions: (id: string) => request<RunQuestion[]>(`/runs/${enc(id)}/questions`),
+  askRun: (id: string, question: string) => request<RunQuestion>(`/runs/${enc(id)}/questions`, json({question})),
   events: (id: string) => request<AgentEvent[]>(`/runs/${enc(id)}/events`),
   artifacts: (id: string) => request<Artifact[]>(`/runs/${enc(id)}/artifacts`),
   evaluations: (id: string) => request<Evaluation[]>(`/runs/${enc(id)}/evaluations`),
@@ -43,9 +61,20 @@ export const api = {
   validateDataSource: (id: string) => request<{status: string; message: string}>(`/data-sources/${enc(id)}/validate`, {method: 'POST'}),
   connectors: () => request<Connector[]>('/connectors'),
   investigations: () => request<Investigation[]>('/investigations'),
+  intelligenceOverview: () => request<IntelligenceOverview>('/investigations/intelligence-overview'),
+  visualizationCube: (runId: string) => request<VisualizationCube>(`/runs/${enc(runId)}/visualization-cube`),
+  workspaceHealth: () => request<WorkspaceHealth>('/investigations/workspace-health'),
   investigationSummary: () => request<InvestigationSummary>('/investigations/summary'),
   updateInvestigation: (runId: string, anomalyId: string, payload: {status: string; comment?: string; assignee?: string}) => request<Investigation>(`/investigations/${enc(runId)}/${enc(anomalyId)}`, {method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)}),
   agents: () => request<AgentRegistration[]>('/admin/agents'),
   policies: () => request<PolicyRegistry>('/admin/policies'),
+  monitoringSummary: () => request<MonitoringSummary>('/monitoring/summary'),
+  monitors: () => request<Monitor[]>('/monitoring/monitors'),
+  createMonitor: (payload: {name:string;task:string;source_id:string;interval:string;only_on_change:boolean;anomaly_limit:number;spend_change_pct:number;minimum_completeness:number;ai_escalation?:boolean}) => request<Monitor>('/monitoring/monitors',json(payload)),
+  enableMonitor: (id:string,enabled:boolean) => request<Monitor>(`/monitoring/monitors/${enc(id)}/enabled`, {method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled})}),
+  runMonitor: (id:string) => request<{queued:boolean;message:string}>(`/monitoring/monitors/${enc(id)}/run-now`,{method:'POST'}),
+  monitorHistory: (id:string) => request<MonitorExecution[]>(`/monitoring/monitors/${enc(id)}/history`),
+  monitorAlerts: () => request<MonitorAlert[]>('/monitoring/alerts'),
+  updateMonitorAlert: (id:string,status:'open'|'acknowledged'|'resolved') => request<{id:string;status:string}>(`/monitoring/alerts/${enc(id)}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status})}),
   metrics: () => request<string>('/metrics'),
 };

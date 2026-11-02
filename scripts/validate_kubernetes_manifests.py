@@ -197,14 +197,12 @@ def _validate_deployment(deployment: dict[str, Any]) -> list[str]:
         pod_spec = template.get("spec", {})
         init_containers = template.get("spec", {}).get("initContainers", [])
         if not any(
-            container.get("name") == "validate-runtime-config"
-            for container in init_containers
+            container.get("name") == "validate-runtime-config" for container in init_containers
         ):
             errors.append(f"Deployment/{name} must define validate-runtime-config initContainer.")
         env_sources = containers[0].get("envFrom", [])
         refs = {
-            source.get("configMapRef", {}).get("name")
-            or source.get("secretRef", {}).get("name")
+            source.get("configMapRef", {}).get("name") or source.get("secretRef", {}).get("name")
             for source in env_sources
         }
         if "aeai-config" not in refs:
@@ -329,10 +327,7 @@ def _merge_list(target: list[Any], patch: list[Any]) -> list[Any]:
         merged = list(target)
         for patch_item in patch:
             for index, target_item in enumerate(merged):
-                if (
-                    isinstance(target_item, dict)
-                    and target_item.get("name") == patch_item["name"]
-                ):
+                if isinstance(target_item, dict) and target_item.get("name") == patch_item["name"]:
                     updated = dict(target_item)
                     _merge_mapping(updated, patch_item)
                     merged[index] = updated

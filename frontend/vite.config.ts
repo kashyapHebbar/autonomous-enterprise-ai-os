@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react';
 // Only the React UI is served by Vite. All backend URLs remain owned by FastAPI.
 const backend = process.env.AEAI_BACKEND_URL || 'http://127.0.0.1:8000';
 export default defineConfig({
+  base: '/app/',
   plugins: [react()],
   server: {
     host: '127.0.0.1',

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from html import escape
 from typing import Any
 
@@ -18,6 +18,7 @@ class ProcurementChartSpec:
     description: str
     data: list[dict[str, Any]]
     body_html: str
+    currency_symbol: str = "$"
 
 
 def build_procurement_chart_specs(analysis: dict[str, Any]) -> list[ProcurementChartSpec]:
@@ -32,7 +33,7 @@ def build_procurement_chart_specs(analysis: dict[str, Any]) -> list[ProcurementC
     supplier_risks = list(analysis.get("supplier_risk_profiles") or [])
     currency_symbol = analysis.get("dataset", {}).get("currency_symbol", "$")
 
-    return [
+    specs = [
         ProcurementChartSpec(
             slug="kpi-summary",
             title="Key Procurement KPIs",
@@ -120,6 +121,7 @@ def build_procurement_chart_specs(analysis: dict[str, Any]) -> list[ProcurementC
             body_html=_supplier_risk_table(supplier_risks, currency_symbol),
         ),
     ]
+    return [replace(spec, currency_symbol=currency_symbol) for spec in specs]
 
 
 def render_chart_document(
@@ -127,24 +129,9 @@ def render_chart_document(
     source_artifact_id: str,
     eyebrow: str = "Procurement dashboard chart",
 ) -> str:
-    return _document_shell(
-        title=chart.title,
-        body=f"""
-        <main class="chart-page" data-source-artifact-id="{escape(source_artifact_id)}">
-          <header>
-            <p class="eyebrow">{escape(eyebrow)}</p>
-            <h1>{escape(chart.title)}</h1>
-            <p>{escape(chart.description)}</p>
-          </header>
-          <section class="chart-panel">
-            {chart.body_html}
-          </section>
-          <script type="application/json" data-role="chart-data">
-            {_json_script({"source_artifact_id": source_artifact_id, "data": chart.data})}
-          </script>
-        </main>
-        """,
-    )
+    from aeai_os.visualization.premium import render_premium_chart_document
+
+    return render_premium_chart_document(chart, source_artifact_id, eyebrow)
 
 
 def render_dashboard_document(
@@ -153,95 +140,11 @@ def render_dashboard_document(
     source_artifact_id: str,
     chart_artifact_ids: list[str] | None = None,
 ) -> str:
+    from aeai_os.visualization.premium import render_premium_dashboard_document
+
     _validate_analysis_payload(analysis)
-    chart_ids = list(chart_artifact_ids or [])
-    chart_sections = "\n".join(
-        f"""
-        <section class="dashboard-chart" data-chart-type="{escape(chart.chart_type)}">
-          <div class="chart-heading">
-            <h2>{escape(chart.title)}</h2>
-            <p>{escape(chart.description)}</p>
-          </div>
-          {chart.body_html}
-        </section>
-        """
-        for chart in charts
-    )
-    insights = "\n".join(
-        f"<li>{escape(str(insight))}</li>" for insight in analysis.get("insights", [])
-    )
-    source_payload = {
-        "source_artifact_id": source_artifact_id,
-        "chart_artifact_ids": chart_ids,
-        "analysis": analysis,
-    }
-    kpis = analysis["kpis"]
-    row_count = analysis.get("dataset", {}).get("row_count", 0)
-    currency_symbol = analysis.get("dataset", {}).get("currency_symbol", "$")
-    anomaly_count = kpis.get("anomaly_count", len(analysis.get("anomalies", [])))
-
-    return _document_shell(
-        title="Procurement Dashboard",
-        body=f"""
-        <main class="dashboard" data-source-artifact-id="{escape(source_artifact_id)}">
-          <header class="dashboard-hero">
-            <p class="eyebrow">Executive procurement intelligence</p>
-            <h1>Procurement Dashboard</h1>
-            <p>
-              Decision-ready analysis of {escape(str(row_count))} procurement transactions with
-              traceable metrics, anomalies, and savings opportunities.
-            </p>
-          </header>
-
-          <section class="dashboard-kpis">
-            <div>
-              <span>Total spend</span>
-              <strong>{escape(_money(kpis["total_spend"], currency_symbol))}</strong>
-            </div>
-            <div>
-              <span>Suppliers</span>
-              <strong>{escape(str(kpis["supplier_count"]))}</strong>
-            </div>
-            <div>
-              <span>Categories</span>
-              <strong>{escape(str(kpis["category_count"]))}</strong>
-            </div>
-            <div>
-              <span>Estimated savings</span>
-              <strong>{escape(_money(kpis["estimated_savings"], currency_symbol))}</strong>
-            </div>
-            <div>
-              <span>Flagged transactions</span>
-              <strong>{escape(str(anomaly_count))}</strong>
-            </div>
-            <div>
-              <span>Risk exposure</span>
-              <strong>{escape(_money(kpis.get("risk_exposure", 0), currency_symbol))}</strong>
-            </div>
-            <div>
-              <span>Next month forecast</span>
-              <strong>{escape(_money(kpis.get("forecast_next_month", 0), currency_symbol))}</strong>
-            </div>
-            <div>
-              <span>At-risk suppliers</span>
-              <strong>{escape(str(kpis.get("at_risk_supplier_count", 0)))}</strong>
-            </div>
-          </section>
-
-          <section class="insights">
-            <h2>Executive Insights</h2>
-            <ul>{insights}</ul>
-          </section>
-
-          <section class="chart-grid">
-            {chart_sections}
-          </section>
-
-          <script type="application/json" data-role="dashboard-data">
-            {_json_script(source_payload)}
-          </script>
-        </main>
-        """,
+    return render_premium_dashboard_document(
+        analysis, charts, source_artifact_id, chart_artifact_ids
     )
 
 

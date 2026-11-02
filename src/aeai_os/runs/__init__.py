@@ -30,6 +30,7 @@ def __getattr__(name: str):
     globals()[name] = SQLAlchemyRunRepository
     return SQLAlchemyRunRepository
 
+
 __all__ = [
     "AgentEventRecord",
     "ArtifactNotFoundError",

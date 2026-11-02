@@ -126,7 +126,7 @@ def render_prometheus_metrics(repository: InMemoryRunRepository) -> str:
 
     for (agent, status), count in sorted(node_counts.items()):
         lines.append(
-            'aeai_agent_node_executions_total{'
+            "aeai_agent_node_executions_total{"
             f'agent="{_escape_label(agent)}",status="{_escape_label(status)}"'
             f"}} {count}"
         )
@@ -236,9 +236,9 @@ def _histogram_lines(
     for bucket in sorted_buckets:
         count = sum(1 for value in observations if value <= bucket)
         lines.append(
-            f'{name}_bucket{_label_suffix(labels, {"le": _format_number(bucket)})} {count}'
+            f"{name}_bucket{_label_suffix(labels, {'le': _format_number(bucket)})} {count}"
         )
-    lines.append(f'{name}_bucket{_label_suffix(labels, {"le": "+Inf"})} {len(observations)}')
+    lines.append(f"{name}_bucket{_label_suffix(labels, {'le': '+Inf'})} {len(observations)}")
     lines.append(f"{name}_sum{_label_suffix(labels)} {sum(observations):.6f}")
     lines.append(f"{name}_count{_label_suffix(labels)} {len(observations)}")
     return lines
@@ -251,10 +251,7 @@ def _label_suffix(
     merged = {**(labels or {}), **(extra or {})}
     if not merged:
         return ""
-    items = ",".join(
-        f'{key}="{_escape_label(value)}"'
-        for key, value in sorted(merged.items())
-    )
+    items = ",".join(f'{key}="{_escape_label(value)}"' for key, value in sorted(merged.items()))
     return "{" + items + "}"
 
 

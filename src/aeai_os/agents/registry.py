@@ -61,6 +61,12 @@ def build_default_registry() -> AgentRegistry:
                 ("kpi_generation", "analysis_code", "deterministic_metrics"),
             ),
             AgentRegistration(
+                "investigation",
+                "Executes governed read-only evidence checks selected by a model.",
+                "low",
+                ("bounded_tool_selection", "verified_evidence", "investigation_report"),
+            ),
+            AgentRegistration(
                 "visualization",
                 "Creates chart and dashboard artifacts.",
                 "low",

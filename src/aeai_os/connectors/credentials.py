@@ -34,8 +34,7 @@ class EnvironmentCredentialProvider:
         missing = [key for key in keys if not str(self.env.get(key, "")).strip()]
         if missing:
             raise CredentialResolutionError(
-                "Environment credential reference is missing required keys: "
-                + ", ".join(missing)
+                "Environment credential reference is missing required keys: " + ", ".join(missing)
             )
         return {key: str(self.env[key]).strip() for key in keys}
 

@@ -151,6 +151,15 @@ class EvaluationAgent:
         artifacts: list[ArtifactRecord],
         artifact_type: ArtifactType,
     ) -> ArtifactRecord:
+        # Numerical quality gates explicitly validate Markdown content.
+        # Prefer it when multiple human-friendly report editions exist.
+        if artifact_type == ArtifactType.REPORT:
+            for artifact in reversed(artifacts):
+                if (
+                    artifact.type == ArtifactType.REPORT
+                    and artifact.metadata.get("format") == "markdown"
+                ):
+                    return artifact
         for artifact in reversed(artifacts):
             if artifact.type == artifact_type:
                 return artifact

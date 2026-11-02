@@ -127,9 +127,7 @@ class InMemoryRunRepository:
             self._artifacts[run.id] = [deepcopy(artifact) for artifact in artifacts or []]
             self._graph_nodes[run.id] = [deepcopy(node) for node in graph_nodes or []]
             self._events[run.id] = [deepcopy(event) for event in events or []]
-            self._evaluations[run.id] = [
-                deepcopy(evaluation) for evaluation in evaluations or []
-            ]
+            self._evaluations[run.id] = [deepcopy(evaluation) for evaluation in evaluations or []]
             self._workflow_job_order = [
                 job_id
                 for job_id in self._workflow_job_order
@@ -355,9 +353,7 @@ class InMemoryRunRepository:
             now = utc_now()
             should_retry = retry and job.attempt_count < job.max_attempts
             next_status = (
-                WorkflowJobStatus.QUEUED
-                if should_retry
-                else WorkflowJobStatus.DEAD_LETTER
+                WorkflowJobStatus.QUEUED if should_retry else WorkflowJobStatus.DEAD_LETTER
             )
             payload = _append_workflow_failure(
                 job.payload,
@@ -482,14 +478,10 @@ class InMemoryRunRepository:
                 if heartbeat_at > cutoff:
                     continue
 
-                error_summary = (
-                    f"Workflow job heartbeat timed out after {timeout_seconds} seconds."
-                )
+                error_summary = f"Workflow job heartbeat timed out after {timeout_seconds} seconds."
                 should_retry = job.attempt_count < job.max_attempts
                 next_status = (
-                    WorkflowJobStatus.QUEUED
-                    if should_retry
-                    else WorkflowJobStatus.DEAD_LETTER
+                    WorkflowJobStatus.QUEUED if should_retry else WorkflowJobStatus.DEAD_LETTER
                 )
                 payload = _append_workflow_failure(
                     job.payload,
@@ -783,9 +775,7 @@ def _optional_int(value: Any) -> int | None:
 
 def _ensure_job_owned_by_worker(job: WorkflowJobRecord, worker_id: str) -> None:
     if job.status != WorkflowJobStatus.RUNNING:
-        raise WorkflowJobStateError(
-            f"Workflow job {job.id} is {job.status.value}, not running."
-        )
+        raise WorkflowJobStateError(f"Workflow job {job.id} is {job.status.value}, not running.")
     if job.worker_id != worker_id:
         raise WorkflowJobOwnershipError(
             f"Workflow job {job.id} is owned by {job.worker_id}, not {worker_id}."

@@ -21,17 +21,13 @@ def test_health_payload_has_expected_shape():
     } <= component_names
 
     run_repository = next(
-        component
-        for component in payload["components"]
-        if component["name"] == "run_repository"
+        component for component in payload["components"] if component["name"] == "run_repository"
     )
     assert run_repository["backend"] == "memory"
     assert run_repository["create_schema"] is True
 
     tracing = next(
-        component
-        for component in payload["components"]
-        if component["name"] == "tracing"
+        component for component in payload["components"] if component["name"] == "tracing"
     )
     assert tracing["exporter"] == "none"
     assert tracing["status"] == "not_configured"

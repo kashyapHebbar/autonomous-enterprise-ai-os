@@ -1,0 +1,40 @@
+/* Upgrade 11: business-first intelligence, preserving Upgrade 9.5 tokens and layout */
+.ux11-intelligence{margin:26px 0 30px}
+.ux11-section-top{display:flex;justify-content:space-between;align-items:end;gap:16px;margin-bottom:17px}
+.ux11-section-top h2{font-size:clamp(21px,2vw,28px);letter-spacing:-.035em;margin:7px 0 5px;color:var(--text)}
+.ux11-section-top p{color:var(--text-muted);font-size:13px;margin:0}
+.ux11-section-top .eyebrow{display:inline-flex;gap:7px;align-items:center}
+.ux11-source-row{display:flex;gap:12px;align-items:center;flex-wrap:wrap;background:var(--surface);border:1px solid var(--border);padding:12px 16px;border-radius:13px;margin-bottom:12px}
+.ux11-source-row label{font-size:12px;font-weight:600;color:var(--text-muted)}
+.ux11-source-row select{flex:1;min-width:200px;max-width:560px;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:9px;color:var(--text);font:inherit;font-size:13px}
+.ux11-source-row a{font-size:12px;color:#a7a0ff;text-decoration:none;display:flex;gap:6px;align-items:center;font-weight:700}
+.ux11-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:14px}
+.ux11-kpi{min-width:0;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:17px 18px}
+.ux11-kpi-label{color:var(--text-muted);font-size:12px;display:flex;gap:8px;align-items:center}
+.ux11-kpi-label svg{color:#a399fd}
+.ux11-kpi strong{display:block;font-size:clamp(19px,2.2vw,27px);letter-spacing:-.04em;margin:12px 0 5px;font-variant-numeric:tabular-nums}
+.ux11-kpi small{color:var(--text-muted);font-size:11px;line-height:1.4}
+.ux11-grid{display:grid;grid-template-columns:1.1fr .9fr;gap:14px;align-items:stretch}
+.ux11-chart{height:250px;min-width:0;padding:18px 10px 8px 0}
+.ux11-tabs{display:flex;gap:6px;flex-wrap:wrap;padding:15px 14px 8px}
+.ux11-tabs button{background:transparent;border:1px solid var(--border);color:var(--text-muted);border-radius:20px;padding:7px 10px;font:inherit;font-size:11px;cursor:pointer}
+.ux11-tabs button.active{border-color:#7469da;color:var(--text);background:rgba(126,109,231,.16)}
+.ux11-findings{padding:4px 16px 16px;max-height:275px;overflow-y:auto}
+.ux11-finding{display:flex;gap:11px;padding:11px 0;border-bottom:1px solid var(--border);color:var(--text);font-size:12px;line-height:1.65}
+.ux11-finding:last-child{border-bottom:0}
+.ux11-finding svg{flex-shrink:0;margin-top:3px;color:#73c9b8}
+.ux11-finding strong{display:block;color:#a99aff;margin-top:2px}
+.ux11-empty-mini{padding:23px 16px;color:var(--text-muted);font-size:12px;line-height:1.6}
+.ux11-storage{margin-top:13px;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 17px;border:1px solid var(--border);border-radius:12px;background:var(--surface);font-size:12px}
+.ux11-storage>div{display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-width:0}
+.ux11-storage span{color:var(--text-muted)}
+.ux11-storage-good svg{color:#41c9ac}.ux11-storage-warn svg{color:#e6b45b}
+.ux11-disclaimer{color:var(--text-muted);font-size:11px;margin-top:10px;line-height:1.6}
+@media(max-width:1050px){.ux11-grid{grid-template-columns:1fr}.ux11-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.ux11-kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.ux11-kpi{padding:12px}.ux11-kpi strong{font-size:20px}.ux11-storage{align-items:flex-start;flex-direction:column}.ux11-section-top{align-items:flex-start;flex-direction:column}}
+
+.ux11-drilldown{display:flex;align-items:end;gap:12px;flex-wrap:wrap;margin:12px 0}
+.ux11-drilldown label{display:flex;flex-direction:column;gap:8px;font-size:12px;font-weight:600;color:var(--text-muted);flex:1;min-width:200px}
+.ux11-drilldown label svg{display:inline-block;vertical-align:middle;margin-right:5px}
+.ux11-drilldown input,.ux11-drilldown select{font:inherit;color:var(--text);border:1px solid var(--border);background:var(--surface);border-radius:8px;padding:9px 11px;width:100%}
+.ux11-filter-note,.ux11-conversation-note{color:var(--text-muted);font-size:12px;line-height:1.65;margin:10px 0}

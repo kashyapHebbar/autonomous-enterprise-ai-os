@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
@@ -45,6 +45,33 @@ class AppSettings:
     secure_headers_enabled: bool = True
     max_request_body_bytes: int = 10 * 1024 * 1024
     hsts_max_age_seconds: int = 31_536_000
+    llm_enabled: bool = False
+    llm_provider: str = "huggingface"
+    llm_model: str = "Qwen/Qwen3-32B"
+    llm_planner_model: str = ""
+    llm_briefing_model: str = ""
+    llm_api_key: str = field(default="", repr=False)
+    llm_timeout_seconds: int = 45
+    # Upgrade 6: conservative, app-side per-workflow/monthly estimate budgets.
+    llm_workflow_budget_usd: float = 0.05
+    llm_monthly_budget_usd: float = 4.50
+    llm_max_calls_per_run: int = 3
+    llm_max_output_tokens: int = 1800
+    llm_input_usd_per_million: float = 0.08
+    llm_output_usd_per_million: float = 0.25
+    llm_usage_ledger_path: str = "artifacts/llm_usage.jsonl"
+    dynamic_reasoning_enabled: bool = False
+    dynamic_reasoning_review_enabled: bool = False
+    # Upgrade 8: optional one-round evidence-grounded follow-up investigation.
+    reasoning_followups_enabled: bool = False
+    reasoning_max_followup_checks: int = 2
+    # Upgrade 9: explicit, user-triggered questions on completed runs.
+    run_questions_enabled: bool = False
+    run_questions_max_per_run: int = 20
+    # Upgrade 10: new, governed calculations on completed local CSV runs.
+    analyst_tools_enabled: bool = False
+    analyst_tools_max_per_run: int = 15
+    analyst_commentary_enabled: bool = True
 
 
 def get_settings() -> AppSettings:
@@ -86,9 +113,7 @@ def get_settings() -> AppSettings:
         procurement_workflow_max_attempts=int(
             os.getenv("AEAI_PROCUREMENT_WORKFLOW_MAX_ATTEMPTS", "3")
         ),
-        workflow_queue_timeout_seconds=int(
-            os.getenv("AEAI_WORKFLOW_QUEUE_TIMEOUT_SECONDS", "300")
-        ),
+        workflow_queue_timeout_seconds=int(os.getenv("AEAI_WORKFLOW_QUEUE_TIMEOUT_SECONDS", "300")),
         workflow_queue_key_prefix=os.getenv(
             "AEAI_WORKFLOW_QUEUE_KEY_PREFIX",
             "aeai:workflow",
@@ -107,18 +132,55 @@ def get_settings() -> AppSettings:
         oidc_audience=os.getenv("AEAI_OIDC_AUDIENCE", ""),
         oidc_jwks_url=os.getenv("AEAI_OIDC_JWKS_URL", ""),
         oidc_roles_claim=os.getenv("AEAI_OIDC_ROLES_CLAIM", "roles"),
-        oidc_organization_claim=os.getenv(
-            "AEAI_OIDC_ORGANIZATION_CLAIM", "organization_id"
-        ),
+        oidc_organization_claim=os.getenv("AEAI_OIDC_ORGANIZATION_CLAIM", "organization_id"),
         oidc_workspaces_claim=os.getenv("AEAI_OIDC_WORKSPACES_CLAIM", "workspace_ids"),
         secure_headers_enabled=_parse_bool(
             os.getenv("AEAI_SECURE_HEADERS_ENABLED"),
             default=True,
         ),
-        max_request_body_bytes=int(
-            os.getenv("AEAI_MAX_REQUEST_BODY_BYTES", str(10 * 1024 * 1024))
-        ),
+        max_request_body_bytes=int(os.getenv("AEAI_MAX_REQUEST_BODY_BYTES", str(10 * 1024 * 1024))),
         hsts_max_age_seconds=int(os.getenv("AEAI_HSTS_MAX_AGE_SECONDS", "31536000")),
+        llm_enabled=_parse_bool(os.getenv("AEAI_LLM_ENABLED"), default=False),
+        llm_provider=os.getenv("AEAI_LLM_PROVIDER", "huggingface").strip().lower(),
+        llm_model=os.getenv("AEAI_LLM_MODEL", "Qwen/Qwen3-32B").strip(),
+        llm_planner_model=os.getenv("AEAI_HF_PLANNER_MODEL", "").strip(),
+        llm_briefing_model=os.getenv("AEAI_HF_BRIEFING_MODEL", "").strip(),
+        llm_api_key=get_env_secret("HF_TOKEN", "HUGGING_FACE_HUB_TOKEN", "HF_API_TOKEN"),
+        llm_timeout_seconds=int(os.getenv("AEAI_LLM_TIMEOUT_SECONDS", "45")),
+        llm_workflow_budget_usd=float(os.getenv("AEAI_LLM_WORKFLOW_BUDGET_USD", "0.05")),
+        llm_monthly_budget_usd=float(os.getenv("AEAI_LLM_MONTHLY_BUDGET_USD", "4.50")),
+        llm_max_calls_per_run=int(os.getenv("AEAI_LLM_MAX_CALLS_PER_RUN", "3")),
+        llm_max_output_tokens=int(os.getenv("AEAI_LLM_MAX_OUTPUT_TOKENS", "1800")),
+        llm_input_usd_per_million=float(os.getenv("AEAI_HF_INPUT_USD_PER_MILLION", "0.08")),
+        llm_output_usd_per_million=float(os.getenv("AEAI_HF_OUTPUT_USD_PER_MILLION", "0.25")),
+        llm_usage_ledger_path=os.getenv("AEAI_LLM_USAGE_LEDGER_PATH", "artifacts/llm_usage.jsonl"),
+        dynamic_reasoning_enabled=_parse_bool(
+            os.getenv("AEAI_DYNAMIC_REASONING_ENABLED"),
+            default=False,
+        ),
+        dynamic_reasoning_review_enabled=_parse_bool(
+            os.getenv("AEAI_REASONING_REVIEW_ENABLED"),
+            default=False,
+        ),
+        reasoning_followups_enabled=_parse_bool(
+            os.getenv("AEAI_REASONING_FOLLOWUPS_ENABLED"),
+            default=False,
+        ),
+        reasoning_max_followup_checks=int(os.getenv("AEAI_REASONING_MAX_FOLLOWUP_CHECKS", "2")),
+        run_questions_enabled=_parse_bool(
+            os.getenv("AEAI_RUN_QUESTIONS_ENABLED"),
+            default=False,
+        ),
+        run_questions_max_per_run=int(os.getenv("AEAI_RUN_QUESTIONS_MAX_PER_RUN", "20")),
+        analyst_tools_enabled=_parse_bool(
+            os.getenv("AEAI_ANALYST_TOOLS_ENABLED"),
+            default=False,
+        ),
+        analyst_tools_max_per_run=int(os.getenv("AEAI_ANALYST_TOOLS_MAX_PER_RUN", "15")),
+        analyst_commentary_enabled=_parse_bool(
+            os.getenv("AEAI_ANALYST_COMMENTARY_ENABLED"),
+            default=True,
+        ),
     )
 
 

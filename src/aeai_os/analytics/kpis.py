@@ -176,13 +176,10 @@ def analyze_procurement_dataset(adapter: DatasetQueryAdapter) -> ProcurementAnal
                 ),
                 "risk_exposure": anomaly_result["summary"]["risk_exposure"],
                 "forecast_next_month": (
-                    forecast["forecast"][0]["predicted_spend"]
-                    if forecast.get("forecast")
-                    else None
+                    forecast["forecast"][0]["predicted_spend"] if forecast.get("forecast") else None
                 ),
                 "at_risk_supplier_count": sum(
-                    profile["risk_level"] in {"high", "medium"}
-                    for profile in supplier_risks
+                    profile["risk_level"] in {"high", "medium"} for profile in supplier_risks
                 ),
                 "estimated_savings": round(sum(item["estimated_savings"] for item in savings), 4),
             },
@@ -258,9 +255,7 @@ def _detect_currency(amount_column: str | None, rows: list[dict[str, str]]) -> s
 
 
 def _currency_symbol(currency: str) -> str:
-    return {"GBP": "£", "EUR": "€", "INR": "₹", "JPY": "¥", "USD": "$"}.get(
-        currency, "$"
-    )
+    return {"GBP": "£", "EUR": "€", "INR": "₹", "JPY": "¥", "USD": "$"}.get(currency, "$")
 
 
 def _parse_month(value: str | None) -> str | None:

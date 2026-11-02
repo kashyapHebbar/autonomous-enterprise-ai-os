@@ -1,12 +1,28 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { ArrowDownToLine, ExternalLink, FileBarChart2, FileCode2, FileJson, FileText, FolderOpen } from 'lucide-react';
+import { ArrowRight, BarChart3, CheckCircle2, FolderOpen, ShieldCheck, Sparkles } from 'lucide-react';
 import { api } from '../api';
-import { Empty, ErrorBox, External, Loading, PageHeader, Panel, Status, nice, timeAgo } from '../components/Ui';
+import { ArtifactExplorer } from '../components/ArtifactExplorer';
+import { Empty, ErrorBox, Loading, PageHeader, Status } from '../components/Ui';
 import type { Artifact } from '../types';
-const icon=(type:string)=> type==='report'?FileText:type==='code'?FileCode2:type==='chart'||type==='dashboard'?FileBarChart2:FileJson;
-export default function Artifacts(){const {data:runs=[]}=useQuery({queryKey:['runs'],queryFn:api.runs});const sorted=[...runs].sort((a,b)=>+new Date(b.updated_at)-+new Date(a.updated_at));const [id,setId]=useState(''),[type,setType]=useState('all');const activeId=id||sorted[0]?.id||'';const query=useQuery({queryKey:['artifacts',activeId],queryFn:()=>api.artifacts(activeId),enabled:!!activeId});const artifacts=(query.data||[]).filter(a=>type==='all'||a.type===type);
-  return <div className="page"><PageHeader eyebrow="OUTPUT MANAGEMENT" title="Reports & artifacts" description="Inspect and download the files your AI workflows generate." action={<div className="select-shell run-selector"><FolderOpen size={16}/><select aria-label="Select workflow artifacts" value={activeId} onChange={e=>setId(e.target.value)}><option value="" disabled>Select workflow</option>{sorted.map(r=><option key={r.id} value={r.id}>{r.task.slice(0,66)}</option>)}</select></div>}/>{activeId?<Panel title="Artifact browser" description="Output content is served securely by your existing FastAPI artifact endpoints" action={<Status status={sorted.find(r=>r.id===activeId)?.status||'pending'}/>}><div className="filter-row"><div className="select-shell"><select value={type} onChange={e=>setType(e.target.value)} aria-label="Filter artifact type">{['all','dataset','schema_profile','quality_report','kpi_table','chart','dashboard','report','code','evaluation'].map(x=><option key={x} value={x}>{x==='all'?'All artifact types':nice(x)}</option>)}</select></div><Link className="text-action" to={`/workflows/${encodeURIComponent(activeId)}`}>Open workflow <ExternalLink size={14}/></Link></div>{query.isLoading?<Loading/>:query.isError?<ErrorBox error={query.error}/>:artifacts.length?<div className="artifact-grid">{artifacts.map(a=><ArtifactCard a={a} key={a.id}/>)}</div>:<Empty title="No artifacts found" description="Try a different filter or run a new workflow."/>}</Panel>:<Empty title="No workflows yet" description="Start a workflow to create dataset profiles, charts, reports, and evaluations." action={<Link to="/" className="btn btn-primary">Start a workflow</Link>}/>}</div>;
+import './report-gallery.css';
+
+export default function Artifacts() {
+  const {data: runs = [], isError: runsError, error: runsFailure} = useQuery({queryKey:['runs'],queryFn:api.runs});
+  const sorted=useMemo(()=>[...runs].sort((a,b)=>+new Date(b.updated_at)-+new Date(a.updated_at)),[runs]);
+  const [selectedRun,setSelectedRun]=useState('');
+  const activeRun=selectedRun||sorted[0]?.id||'';
+  const query=useQuery({queryKey:['artifacts',activeRun],queryFn:()=>api.artifacts(activeRun),enabled:Boolean(activeRun)});
+  const artifacts:Artifact[]=query.data??[];
+  const visualCount=artifacts.filter(a=>['report','dashboard','chart'].includes(a.type)).length;
+  const currentRun=sorted.find(r=>r.id===activeRun);
+  return <div className="page reports-page">
+    <PageHeader eyebrow="INTELLIGENCE LIBRARY" title="Reports & artifacts" description="Find every output by category, preview it without leaving the app, or download the original generated file." action={<label className="select-shell run-selector"><FolderOpen size={16}/><select aria-label="Choose workflow" value={activeRun} onChange={e=>setSelectedRun(e.target.value)}><option value="" disabled>Choose a workflow</option>{sorted.map(r=><option key={r.id} value={r.id}>{r.task.slice(0,72)}</option>)}</select></label>}/>
+    {runsError?<ErrorBox error={runsFailure}/>:!activeRun?<Empty title="No workflows yet" description="Start an analysis to generate reports, charts, dashboards and quality evidence." action={<Link to="/" className="btn btn-primary"><Sparkles size={16}/> Create an analysis</Link>}/>:query.isLoading?<Loading label="Loading saved artifacts…"/>:query.isError?<ErrorBox error={query.error}/>:<>
+      <section className="reports-hero"><div className="reports-hero-content"><span className="reports-kicker"><Sparkles size={13}/> ARTIFACT EXPLORER</span><h2>Every insight.<br/><em>One organized workspace.</em></h2><p>Reports, visualizations, and their evidence are grouped by purpose. Preview and download the actual outputs from your agents.</p><div className="reports-hero-foot"><span><CheckCircle2 size={15}/> {visualCount} visual outputs</span><span><ShieldCheck size={15}/> Source-linked evidence</span></div></div><div className="reports-hero-orbit" aria-hidden="true"><BarChart3 size={54}/></div></section>
+      {currentRun&&<div className="ae-library-context"><div><span>SELECTED WORKFLOW</span><strong>{currentRun.task}</strong></div><Status status={currentRun.status}/><Link to={`/workflows/${encodeURIComponent(activeRun)}`} className="btn btn-secondary">Workflow details <ArrowRight size={15}/></Link></div>}
+      <ArtifactExplorer key={activeRun} artifacts={artifacts}/>
+    </>}
+  </div>;
 }
-function ArtifactCard({a}:{a:Artifact}){const Icon=icon(a.type);const canOpen=a.type!=='dataset';return <div className="artifact-card"><div className="artifact-card-head"><div className="artifact-type-icon"><Icon size={20}/></div><span className="artifact-kind">{nice(a.type)}</span></div><h3 title={a.uri}>{String(a.metadata.filename||a.storage_key||a.uri).split('/').pop()}</h3><div className="artifact-desc"><span>{a.size_bytes!=null?`${(a.size_bytes/1024).toFixed(1)} KB`:'Referenced asset'}</span><span>{timeAgo(a.created_at)}</span></div><div className="artifact-card-actions">{canOpen?<><External href={api.artifactUrl(a.run_id,a.id)}>Preview <ExternalLink size={13}/></External><a href={api.artifactUrl(a.run_id,a.id,true)} className="text-action"><ArrowDownToLine size={14}/> Download</a></>:<span className="subtle-copy">Source reference</span>}</div></div>}

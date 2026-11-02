@@ -159,9 +159,7 @@ class ConnectorRegistry:
         credential_resolver: CredentialResolver | None = None,
     ) -> None:
         self._connectors = {connector.id: connector for connector in connectors}
-        self._credential_profiles = {
-            profile.id: profile for profile in credential_profiles
-        }
+        self._credential_profiles = {profile.id: profile for profile in credential_profiles}
         if installation_store is None:
             from aeai_os.connectors.installations import InMemoryConnectorInstallationRepository
 
@@ -231,14 +229,10 @@ class ConnectorRegistry:
         normalized_organization = _normalize_required(organization_id, "Organization id")
         return self._installation_store.list(normalized_organization)
 
-    def get_installation(
-        self, installation_id: str, organization_id: str
-    ) -> ConnectorInstallation:
+    def get_installation(self, installation_id: str, organization_id: str) -> ConnectorInstallation:
         return self._installation_store.get(installation_id, organization_id)
 
-    def test_installation(
-        self, installation_id: str, organization_id: str
-    ) -> ConnectorHealth:
+    def test_installation(self, installation_id: str, organization_id: str) -> ConnectorHealth:
         installation = self.get_installation(installation_id, organization_id)
         connector = self.get_connector(installation.connector_id)
         try:
@@ -260,14 +254,10 @@ class ConnectorRegistry:
         effective_env = dict(self._env)
         for config_field in connector.configuration_fields:
             if config_field.env_key and config_field.key in installation.configuration:
-                effective_env[config_field.env_key] = installation.configuration[
-                    config_field.key
-                ]
+                effective_env[config_field.env_key] = installation.configuration[config_field.key]
         if installation.credential_reference:
             if self._credential_resolver is None:
-                raise ConnectorInstallationError(
-                    "No credential provider registry is configured."
-                )
+                raise ConnectorInstallationError("No credential provider registry is configured.")
             try:
                 effective_env.update(
                     self._credential_resolver.resolve(installation.credential_reference)
@@ -337,9 +327,7 @@ class ConnectorRegistry:
                 + ", ".join(secret_fields)
             )
         normalized = {
-            key: str(value).strip()
-            for key, value in configuration.items()
-            if str(value).strip()
+            key: str(value).strip() for key, value in configuration.items() if str(value).strip()
         }
         missing = sorted(
             field.key
@@ -473,9 +461,7 @@ def build_default_connector_registry(
                     required=True,
                     env_key="AEAI_ARTIFACT_S3_REGION",
                 ),
-                ConnectorConfigurationField(
-                    "prefix", "Prefix", env_key="AEAI_ARTIFACT_S3_PREFIX"
-                ),
+                ConnectorConfigurationField("prefix", "Prefix", env_key="AEAI_ARTIFACT_S3_PREFIX"),
                 ConnectorConfigurationField(
                     "endpoint_url",
                     "Endpoint URL",
@@ -494,9 +480,7 @@ def build_default_connector_registry(
             credential_profile_id="github-default",
             capabilities=("repository_metadata", "issues", "pull_requests"),
             required_env_keys=_github_token_keys(values),
-            configuration_fields=(
-                ConnectorConfigurationField("organization", "Organization"),
-            ),
+            configuration_fields=(ConnectorConfigurationField("organization", "Organization"),),
             credential_required=True,
             auth_methods=("github_app", "token"),
             metadata={"token_env_options": ["GITHUB_TOKEN", "GH_TOKEN"]},
@@ -592,9 +576,7 @@ def _normalize_optional(value: str | None) -> str | None:
     return normalized or None
 
 
-def _credential_error_health(
-    connector: ConnectorDefinition, message: str
-) -> ConnectorHealth:
+def _credential_error_health(connector: ConnectorDefinition, message: str) -> ConnectorHealth:
     return ConnectorHealth(
         connector_id=connector.id,
         status="error",

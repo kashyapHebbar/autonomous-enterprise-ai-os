@@ -135,8 +135,7 @@ def build_connectors_router(
     @router.get("/credential-profiles", response_model=list[CredentialProfileResponse])
     def list_credential_profiles(user: RunReader) -> list[CredentialProfileResponse]:
         return [
-            CredentialProfileResponse(**profile)
-            for profile in registry.list_credential_profiles()
+            CredentialProfileResponse(**profile) for profile in registry.list_credential_profiles()
         ]
 
     @router.post(
@@ -232,9 +231,7 @@ def build_connectors_router(
     ) -> ConnectorPreviewResponse:
         try:
             installation = _tenant_installation(registry, installation_id, actor)
-            preview = explorer.preview(
-                installation, request.asset_id, limit=request.limit
-            )
+            preview = explorer.preview(installation, request.asset_id, limit=request.limit)
         except ConnectorInstallationNotFoundError as exc:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
         except (ConnectorInstallationError, OSError, ValueError) as exc:
@@ -350,9 +347,9 @@ def _tenant_installation(
 def _health_to_response(health: ConnectorHealth) -> ConnectorHealthResponse:
     return ConnectorHealthResponse(
         connector_id=health.connector_id,
-            status=health.status,
-            message=redact_text(health.message) or "",
-            checked_at=health.checked_at,
+        status=health.status,
+        message=redact_text(health.message) or "",
+        checked_at=health.checked_at,
         details=redact_value(health.details),
     )
 

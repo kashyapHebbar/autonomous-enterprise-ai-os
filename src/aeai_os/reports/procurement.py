@@ -136,9 +136,7 @@ def _quality_section(
     return _markdown_table(["Quality Signal", "Value"], rows)
 
 
-def _anomaly_section(
-    anomalies: list[dict[str, Any]], currency_symbol: str = "$"
-) -> str:
+def _anomaly_section(anomalies: list[dict[str, Any]], currency_symbol: str = "$") -> str:
     if not anomalies:
         return "No transactions crossed the anomaly review threshold."
     rows = [
@@ -210,7 +208,7 @@ def _supplier_risk_section(profiles: list[dict[str, Any]], currency_symbol: str)
         [
             (
                 item["supplier"],
-                f'{item["risk_score"]}/100 ({item["risk_level"]})',
+                f"{item['risk_score']}/100 ({item['risk_level']})",
                 _money(item["spend"], currency_symbol),
                 _money(item["anomaly_exposure"], currency_symbol),
                 "; ".join(item["risk_factors"]),

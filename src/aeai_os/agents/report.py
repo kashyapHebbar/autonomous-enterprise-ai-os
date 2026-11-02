@@ -5,11 +5,14 @@ from typing import Any
 
 from aeai_os.agents.base import AgentInput, AgentOutput
 from aeai_os.artifacts import ArtifactLineageService
+from aeai_os.llm import LLMError, build_llm_gateway
+from aeai_os.llm.briefing import generate_briefing, render_briefing_html
 from aeai_os.reports import render_generic_markdown_report, render_procurement_markdown_report
 from aeai_os.runs.models import ArtifactRecord
 from aeai_os.runs.repository import ArtifactNotFoundError, InMemoryRunRepository
 from aeai_os.schemas.enums import AgentEventType, ArtifactType
 from aeai_os.storage import ArtifactStorageError, ArtifactStore, LocalArtifactStore
+from aeai_os.visualization.premium import render_premium_report_document
 
 
 class ReportAgent:
@@ -41,6 +44,15 @@ class ReportAgent:
                 agent_input, ArtifactType.DASHBOARD, required=False
             )
 
+            investigation_artifact = next(
+                (
+                    item
+                    for item in reversed(self._repository.list_artifacts(agent_input.run_id))
+                    if item.type == ArtifactType.REPORT
+                    and item.metadata.get("edition") == "investigation_evidence"
+                ),
+                None,
+            )
             report_sources = [
                 artifact
                 for artifact in [
@@ -49,6 +61,7 @@ class ReportAgent:
                     quality_artifact,
                     *chart_artifacts,
                     dashboard_artifact,
+                    investigation_artifact,
                 ]
                 if artifact is not None
             ]
@@ -120,6 +133,91 @@ class ReportAgent:
                 source_artifact_ids=source_artifact_ids,
                 producer_node_id=agent_input.node_id,
             )
+
+            # Keep the machine-validated Markdown report for evaluator compatibility.
+            # The additional HTML edition is designed for humans and browser/print use.
+            html_document = render_premium_report_document(
+                analysis=analysis,
+                source_artifact_ids=source_artifact_ids,
+                schema_profile=(
+                    _read_json_artifact(schema_artifact, self._artifact_store)
+                    if schema_artifact is not None
+                    else None
+                ),
+                quality_report=(
+                    _read_json_artifact(quality_artifact, self._artifact_store)
+                    if quality_artifact is not None
+                    else None
+                ),
+            )
+            html_id = self._repository.next_artifact_id()
+            html_payload = self._artifact_store.write_text(
+                run_id=agent_input.run_id,
+                node_id=agent_input.node_id,
+                filename=f"{analysis_type}_executive_report.html",
+                payload=html_document,
+                content_type="text/html; charset=utf-8",
+            )
+            html_report = self._repository.add_artifact(
+                run_id=agent_input.run_id,
+                artifact_type=ArtifactType.REPORT,
+                artifact_id=html_id,
+                uri=html_payload.uri,
+                metadata={
+                    "source": "report_agent",
+                    "format": "html",
+                    "edition": "executive",
+                    "title": (
+                        "Exploratory Dataset Analysis Report"
+                        if analysis_type == "generic"
+                        else "Procurement Analysis Report"
+                    ),
+                    "analysis_type": analysis_type,
+                    "chart_count": len(chart_artifacts),
+                    "source_artifact_count": len(source_artifact_ids),
+                    **html_payload.metadata,
+                },
+                source_artifact_ids=source_artifact_ids,
+                producer_node_id=agent_input.node_id,
+            )
+            # Optional second model-backed reasoning step. It cannot edit the
+            # computed analysis, generated executive report or quality checks.
+            ai_briefing_artifact = None
+            ai_briefing_warning = None
+            try:
+                gateway = build_llm_gateway(purpose="briefing")
+                if gateway is not None:
+                    briefing = generate_briefing(analysis, gateway)
+                    briefing_html = render_briefing_html(briefing, gateway.model)
+                    stored_briefing = self._artifact_store.write_text(
+                        run_id=agent_input.run_id,
+                        node_id=agent_input.node_id,
+                        filename=f"{analysis_type}_ai_briefing.html",
+                        payload=briefing_html,
+                        content_type="text/html; charset=utf-8",
+                    )
+                    ai_briefing_artifact = self._repository.add_artifact(
+                        run_id=agent_input.run_id,
+                        artifact_type=ArtifactType.REPORT,
+                        artifact_id=self._repository.next_artifact_id(),
+                        uri=stored_briefing.uri,
+                        metadata={
+                            "source": "model_assisted_report_agent",
+                            "format": "html",
+                            "edition": "ai_briefing",
+                            "title": "AI Analyst Briefing",
+                            "analysis_type": analysis_type,
+                            "llm_model": gateway.model,
+                            "llm_provider": "huggingface",
+                            "verified_numerically": False,
+                            **stored_briefing.metadata,
+                        },
+                        source_artifact_ids=source_artifact_ids,
+                        producer_node_id=agent_input.node_id,
+                    )
+            except (LLMError, ValueError, OSError, TypeError, KeyError) as exc:
+                # An unavailable model must not make a successful report fail.
+                ai_briefing_warning = type(exc).__name__
         except (ArtifactNotFoundError, ArtifactStorageError, KeyError, OSError, ValueError) as exc:
             return AgentOutput(
                 status="failed",
@@ -135,20 +233,37 @@ class ReportAgent:
 
         return AgentOutput(
             status="succeeded",
-            summary=f"Generated {analysis_type} Markdown report with artifact lineage.",
-            artifacts=[report_artifact.id],
+            summary=f"Generated {analysis_type} Markdown and designed HTML reports with artifact lineage.",  # noqa: E501
+            artifacts=[
+                report_artifact.id,
+                html_report.id,
+                *([ai_briefing_artifact.id] if ai_briefing_artifact is not None else []),
+            ],
             events=[
                 {
                     "event_type": AgentEventType.LOG,
                     "message": "Analysis report artifact registered.",
                     "report_artifact_id": report_artifact.id,
+                    "executive_report_artifact_id": html_report.id,
                     "source_artifact_ids": source_artifact_ids,
+                    "ai_briefing_artifact_id": (
+                        ai_briefing_artifact.id if ai_briefing_artifact else None
+                    ),
+                    "ai_briefing_status": (
+                        "created"
+                        if ai_briefing_artifact
+                        else "fallback"
+                        if ai_briefing_warning
+                        else "disabled"
+                    ),
                 }
             ],
             metrics={
                 "report_artifact_id": report_artifact.id,
+                "executive_report_artifact_id": html_report.id,
                 "chart_count": len(chart_artifacts),
                 "source_artifact_count": len(source_artifact_ids),
+                "ai_briefing_created": ai_briefing_artifact is not None,
             },
         )
 

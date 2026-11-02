@@ -60,9 +60,7 @@ def test_connector_installation_api_creates_lists_and_tests_tenant_scoped_instal
 
     installation = response.json()
     own_list = client.get("/connectors/installations")
-    test_response = client.post(
-        f"/connectors/installations/{installation['id']}/test"
-    )
+    test_response = client.post(f"/connectors/installations/{installation['id']}/test")
 
     assert response.status_code == 201
     assert installation["status"] == "ready"

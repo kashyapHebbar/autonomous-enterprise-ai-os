@@ -146,9 +146,7 @@ def test_local_artifact_store_rejects_non_public_dataset_hosts(tmp_path, monkeyp
         ("https://data.example.com/procurement.json", "must reference a .csv file"),
     ],
 )
-def test_local_artifact_store_rejects_unsafe_public_dataset_urls(
-    tmp_path, uri, message
-):
+def test_local_artifact_store_rejects_unsafe_public_dataset_urls(tmp_path, uri, message):
     store = LocalArtifactStore(tmp_path / "artifacts")
 
     with pytest.raises(ArtifactStorageError, match=message):
@@ -231,8 +229,7 @@ def test_procurement_workflow_writes_generated_artifacts_to_s3_store(tmp_path):
     ]
     assert generated_artifacts
     assert all(
-        artifact.uri.startswith("s3://aeai-artifacts/workflow/")
-        for artifact in generated_artifacts
+        artifact.uri.startswith("s3://aeai-artifacts/workflow/") for artifact in generated_artifacts
     )
     assert all(artifact.metadata["storage_backend"] == "s3" for artifact in generated_artifacts)
     assert all(

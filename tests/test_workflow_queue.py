@@ -30,10 +30,7 @@ def test_repository_queue_concurrent_claims_do_not_duplicate_jobs():
                 claimed_job_ids.append(job.id)
 
     with ThreadPoolExecutor(max_workers=5) as executor:
-        futures = [
-            executor.submit(claim_until_empty, f"worker-{index}")
-            for index in range(5)
-        ]
+        futures = [executor.submit(claim_until_empty, f"worker-{index}") for index in range(5)]
         for future in futures:
             future.result()
 

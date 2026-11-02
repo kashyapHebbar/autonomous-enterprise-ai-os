@@ -1,0 +1,14 @@
+[
+  {
+    "id": "orders-sql",
+    "kind": "sql",
+    "organization_id": "local-org",
+    "workspace_id": "default",
+    "connection_env": "AEAI_INGESTION_SQL_URL",
+    "table": "orders",
+    "cursor_key": "id",
+    "primary_key": "id",
+    "interval_seconds": 60,
+    "output_csv": "artifacts/ingestion/default/orders.csv"
+  }
+]

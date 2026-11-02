@@ -30,7 +30,5 @@ def test_sqlalchemy_connector_installations_survive_repository_recreation():
 
     recreated = SQLAlchemyConnectorInstallationRepository.from_engine(engine)
 
-    assert recreated.get("conn_finance", "acme").configuration == {
-        "database": "ANALYTICS"
-    }
+    assert recreated.get("conn_finance", "acme").configuration == {"database": "ANALYTICS"}
     assert recreated.list("other-org") == []

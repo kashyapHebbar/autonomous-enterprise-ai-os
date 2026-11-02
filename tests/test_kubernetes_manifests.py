@@ -40,10 +40,7 @@ def test_production_overlay_defines_public_reliability_controls():
 
     rules = yaml.safe_load((root / "prometheus-rules.yaml").read_text(encoding="utf-8"))
     alerts = [
-        rule
-        for group in rules["spec"]["groups"]
-        for rule in group["rules"]
-        if "alert" in rule
+        rule for group in rules["spec"]["groups"] for rule in group["rules"] if "alert" in rule
     ]
     assert all(alert["labels"]["owner"] for alert in alerts)
     assert all(alert["annotations"]["runbook_url"] for alert in alerts)
@@ -82,10 +79,7 @@ def test_validator_rejects_overlay_that_references_ancestor_directory(tmp_path):
     overlay = tmp_path / "overlays" / "production"
     overlay.mkdir(parents=True)
     (overlay / "kustomization.yaml").write_text(
-        "apiVersion: kustomize.config.k8s.io/v1beta1\n"
-        "kind: Kustomization\n"
-        "resources:\n"
-        "  - ../..\n",
+        "apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\nresources:\n  - ../..\n",
         encoding="utf-8",
     )
     (tmp_path / "kustomization.yaml").write_text(

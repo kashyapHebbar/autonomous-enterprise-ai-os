@@ -55,9 +55,7 @@ def test_mlflow_tracking_config_defaults_to_disabled():
 
 
 def test_mlflow_tracking_reports_unavailable_when_package_is_missing():
-    config = build_mlflow_tracking_config(
-        env={"AEAI_MLFLOW_TRACKING_ENABLED": "true"}
-    )
+    config = build_mlflow_tracking_config(env={"AEAI_MLFLOW_TRACKING_ENABLED": "true"})
     tracker = build_mlflow_tracker(
         config,
         importer=lambda name: (_ for _ in ()).throw(ImportError(name)),
