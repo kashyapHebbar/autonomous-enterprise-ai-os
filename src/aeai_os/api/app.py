@@ -30,19 +30,35 @@ def create_app(
     from aeai_os.api.data_sources import build_data_sources_router
     from aeai_os.api.investigations import build_investigations_router
     from aeai_os.api.metrics import build_metrics_router
+    from aeai_os.api.monitoring import build_monitoring_router
+    from aeai_os.api.operations import build_operations_router
+    from aeai_os.api.performance import build_performance_router
     from aeai_os.api.runs import build_runs_router
+    from aeai_os.api.scaling import build_scaling_router
     from aeai_os.connectors import (
         build_connector_installation_repository,
         build_default_connector_registry,
         build_default_credential_provider_registry,
     )
     from aeai_os.data.sources import DataSourceRegistry
+    from aeai_os.monitoring.store import MonitorStore
     from aeai_os.observability.tracing import configure_tracing, current_trace_id, start_span
     from aeai_os.security import default_tool_permission_registry
     from aeai_os.security.redaction import redact_value
     from aeai_os.workflows.queue import build_workflow_queue
 
     settings = get_settings()
+    if settings.auth_mode not in {"local", "token", "oidc"}:
+        raise ValueError("Unsupported authentication mode")
+    if settings.environment.lower() in {"production", "prod", "staging"}:
+        if settings.auth_mode == "local":
+            raise ValueError("Production requires token or OIDC authentication")
+        if settings.auth_mode == "token" and not settings.auth_token_profiles:
+            raise ValueError("Production token authentication requires configured profiles")
+        if settings.auth_mode == "oidc" and not (settings.oidc_issuer and settings.oidc_audience):
+            raise ValueError("Production OIDC requires issuer and audience")
+        if not settings.secure_headers_enabled:
+            raise ValueError("Production requires secure HTTP headers")
     configure_tracing(service_name=settings.service_name)
     run_repository = repository or build_run_repository(settings)
     run_artifact_root = artifact_root or Path(settings.artifact_root)
@@ -63,6 +79,10 @@ def create_app(
         version="0.1.0",
         description="Durable multi-agent workflow platform for enterprise analytics.",
     )
+    monitoring_store = MonitorStore(
+        __import__("os").getenv("AEAI_MONITOR_DB_PATH", "artifacts/aeai-monitoring.db")
+    )
+    app.state.monitoring_store = monitoring_store
     app.state.run_repository = run_repository
     app.state.artifact_root = run_artifact_root
     app.state.workflow_queue = workflow_queue
@@ -142,7 +162,7 @@ def create_app(
                 "default-src 'self'; object-src 'none'; base-uri 'self'; "
                 "frame-ancestors 'none'; form-action 'self'; "
                 "script-src 'self' https://cdn.jsdelivr.net; "
-                "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+                "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; "  # noqa: E501
                 "img-src 'self' data: https://fastapi.tiangolo.com; connect-src 'self'"
             )
             forwarded_proto = request.headers.get("x-forwarded-proto", "").lower()
@@ -226,6 +246,13 @@ def create_app(
         )
     )
     app.include_router(build_metrics_router(run_repository))
+    app.include_router(build_operations_router(run_repository, settings))
+    app.include_router(build_performance_router(run_repository))
+    app.include_router(build_scaling_router(run_repository, artifact_store))
+    app.include_router(build_monitoring_router(monitoring_store, data_source_registry))
+    from aeai_os.api.ingestion import build_ingestion_router
+
+    app.include_router(build_ingestion_router())
     app.include_router(build_auth_router())
     app.include_router(build_investigations_router(run_repository, artifact_store))
     app.include_router(build_connectors_router(connector_registry, data_source_registry))
@@ -238,40 +265,77 @@ def create_app(
         )
     )
 
+    legacy_pages = {
+        "": "control-plane.html",
+        "artifacts": "artifact-browser.html",
+        "investigations": "investigations.html",
+        "admin": "admin.html",
+    }
+
+    legacy_assets = {
+        "app-shell.css",
+        "admin.css",
+        "admin.js",
+        "artifact-browser.css",
+        "artifact-browser.js",
+        "control-plane.css",
+        "control-plane.js",
+        "investigations.css",
+        "investigations.js",
+    }
+
+    @app.get("/legacy-app", include_in_schema=False)
+    @app.get("/legacy-app/{legacy_page:path}", include_in_schema=False)
+    def legacy_frontend(legacy_page: str = "") -> FileResponse:
+        name = legacy_pages.get(legacy_page.strip("/"))
+        if name is None:
+            raise HTTPException(status_code=404)
+        return FileResponse(static_root / name)
+
     @app.get("/app", include_in_schema=False)
-    def control_plane_page() -> FileResponse:
-        return FileResponse(static_root / "control-plane.html")
+    @app.get("/app/{resource_path:path}", include_in_schema=False)
+    def frontend_page(resource_path: str = "") -> FileResponse:
+        # Preserve old assets required by the standalone run inspector.
+        if resource_path in legacy_assets:
+            return FileResponse(static_root / resource_path)
 
-    @app.get("/app/artifacts", include_in_schema=False)
-    def artifact_browser_page() -> FileResponse:
-        return FileResponse(static_root / "artifact-browser.html")
+        # Resolve the React build relative to the project root.
+        frontend_dist = Path(__file__).resolve().parents[3] / "frontend" / "dist"
+        react_index = frontend_dist / "index.html"
 
-    @app.get("/app/investigations", include_in_schema=False)
-    def investigations_page() -> FileResponse:
-        return FileResponse(static_root / "investigations.html")
+        if react_index.is_file():
+            if resource_path:
+                asset = (frontend_dist / resource_path).resolve()
 
-    @app.get("/app/admin", include_in_schema=False)
-    def admin_page() -> FileResponse:
-        return FileResponse(static_root / "admin.html")
+                if (
+                    asset.is_relative_to(frontend_dist.resolve())
+                    and asset.is_file()
+                    and asset != react_index.resolve()
+                ):
+                    return FileResponse(asset)
 
-    @app.get("/app/{asset_name}", include_in_schema=False)
-    def control_plane_asset(asset_name: str) -> FileResponse:
-        allowed_assets = {
-            "app-shell.css",
-            "admin.css",
-            "admin.js",
-            "artifact-browser.css",
-            "artifact-browser.js",
-            "control-plane.css",
-            "control-plane.js",
-            "investigations.css",
-            "investigations.js",
-        }
-        if asset_name not in allowed_assets:
-            from fastapi import HTTPException, status
+                if resource_path.startswith("assets/") or "." in Path(resource_path).name:
+                    raise HTTPException(
+                        status_code=404,
+                        detail="Frontend asset not found.",
+                    )
 
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-        return FileResponse(static_root / asset_name)
+            # React Router handles frontend navigation.
+            return FileResponse(react_index)
+
+        # Until React is built, preserve the original interface.
+        legacy_name = legacy_pages.get(resource_path.strip("/"))
+
+        if legacy_name is not None:
+            return FileResponse(static_root / legacy_name)
+
+        if "." in Path(resource_path).name:
+            raise HTTPException(status_code=404)
+
+        raise HTTPException(
+            status_code=503,
+            detail=("React UI not built. Run: cd frontend && npm install && npm run build"),
+        )
 
     @app.get("/run-inspector/runs/{run_id}", include_in_schema=False)
     def run_inspector_page(run_id: str) -> FileResponse:

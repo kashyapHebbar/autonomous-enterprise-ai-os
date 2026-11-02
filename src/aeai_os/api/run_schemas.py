@@ -496,10 +496,10 @@ def build_run_timeline(
             items.append(
                 RunTimelineItemResponse(
                     timestamp=job.started_at,
-                kind="workflow_job",
-                title=f"{job.workflow_name} workflow claimed",
-                status=WorkflowJobStatus.RUNNING.value,
-                summary=redact_text(job.worker_id),
+                    kind="workflow_job",
+                    title=f"{job.workflow_name} workflow claimed",
+                    status=WorkflowJobStatus.RUNNING.value,
+                    summary=redact_text(job.worker_id),
                     run_id=job.run_id,
                     workflow_job_id=job.id,
                     payload={"attempt_count": job.attempt_count},
@@ -509,10 +509,10 @@ def build_run_timeline(
             items.append(
                 RunTimelineItemResponse(
                     timestamp=job.finished_at,
-                kind="workflow_job",
-                title=f"{job.workflow_name} workflow finished",
-                status=job.status.value,
-                summary=redact_text(job.error_summary),
+                    kind="workflow_job",
+                    title=f"{job.workflow_name} workflow finished",
+                    status=job.status.value,
+                    summary=redact_text(job.error_summary),
                     run_id=job.run_id,
                     workflow_job_id=job.id,
                     payload={"attempt_count": job.attempt_count},

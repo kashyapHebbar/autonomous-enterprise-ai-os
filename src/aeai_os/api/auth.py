@@ -79,9 +79,7 @@ def build_auth_router() -> APIRouter:
             workspace_ids=list(user.workspace_ids),
             active_workspace_id=user.workspace_id,
             permissions=[
-                permission.value
-                for permission in AuthPermission
-                if user.has_permission(permission)
+                permission.value for permission in AuthPermission if user.has_permission(permission)
             ],
         )
 

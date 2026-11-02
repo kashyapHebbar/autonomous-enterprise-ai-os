@@ -327,11 +327,13 @@ def test_orchestrator_security_gate_escalates_external_connector_access():
 
     paused = service.execute_run(run.id, graph)
     tool_event = next(
-        event for event in repository.list_events(run.id)
+        event
+        for event in repository.list_events(run.id)
         if event.event_type == AgentEventType.TOOL_CALL
     )
     approval_request = next(
-        event for event in repository.list_events(run.id)
+        event
+        for event in repository.list_events(run.id)
         if event.event_type == AgentEventType.APPROVAL_REQUEST
         and "escalation_targets" in event.payload
     )
@@ -383,7 +385,8 @@ def test_orchestrator_security_gate_requires_approval_for_sensitive_artifact_acc
 
     paused = service.execute_run(run.id, graph)
     tool_event = next(
-        event for event in repository.list_events(run.id)
+        event
+        for event in repository.list_events(run.id)
         if event.event_type == AgentEventType.TOOL_CALL
         and event.payload["tool"] == "artifact_reader"
     )
@@ -432,7 +435,8 @@ def test_orchestrator_security_gate_can_request_retry_before_agent_execution():
 
     result = service.execute_run(run.id, graph)
     tool_event = next(
-        event for event in repository.list_events(run.id)
+        event
+        for event in repository.list_events(run.id)
         if event.event_type == AgentEventType.TOOL_CALL
     )
 

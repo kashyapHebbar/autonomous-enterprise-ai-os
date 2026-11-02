@@ -19,9 +19,7 @@ def detect_procurement_anomalies(rows: list[dict[str, Any]]) -> dict[str, Any]:
     q3 = _percentile(amounts, 0.75)
     amount_threshold = q3 + 1.5 * (q3 - q1) if len(amounts) >= 4 else float("inf")
     invoice_counts = Counter(
-        _normalized(row.get("invoice_id"))
-        for row in rows
-        if _normalized(row.get("invoice_id"))
+        _normalized(row.get("invoice_id")) for row in rows if _normalized(row.get("invoice_id"))
     )
     transaction_counts = Counter(_transaction_fingerprint(row) for row in rows)
     supplier_amounts: dict[str, list[float]] = defaultdict(list)
@@ -215,9 +213,7 @@ def _severity(score: int) -> str:
     return "low"
 
 
-def _confidence(
-    row: dict[str, Any], row_count: int, signals: list[dict[str, Any]]
-) -> float:
+def _confidence(row: dict[str, Any], row_count: int, signals: list[dict[str, Any]]) -> float:
     populated = sum(
         bool(_normalized(row.get(field)))
         for field in ("invoice_id", "date", "department", "approver")

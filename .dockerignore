@@ -13,3 +13,9 @@ dashboards
 data
 reports
 
+
+.*-backup-*
+**/node_modules
+*.backup-*
+.env
+.env.*

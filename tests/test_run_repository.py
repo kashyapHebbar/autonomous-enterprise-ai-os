@@ -191,10 +191,7 @@ def test_sqlalchemy_artifact_metadata_and_lineage_survive_recreation(tmp_path):
     restored_report = second_repository.get_artifact(run.id, report.id)
     lineage = ArtifactLineageService(second_repository).build_lineage(run.id, report.id)
     upstream_ids = {artifact.id for artifact in lineage.upstream_artifacts}
-    edge_pairs = {
-        (edge.source_artifact_id, edge.target_artifact_id)
-        for edge in lineage.edges
-    }
+    edge_pairs = {(edge.source_artifact_id, edge.target_artifact_id) for edge in lineage.edges}
 
     assert restored_report.storage_backend == "s3"
     assert restored_report.storage_key == "report/procurement.md"

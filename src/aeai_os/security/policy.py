@@ -405,8 +405,7 @@ def default_tool_permission_registry() -> ToolPermissionRegistry:
             PolicyRule(
                 id="sensitive-artifact-approval",
                 description=(
-                    "Gate access to artifacts marked sensitive or containing "
-                    "secret-like metadata."
+                    "Gate access to artifacts marked sensitive or containing secret-like metadata."
                 ),
                 decision=ToolPolicyDecisionStatus.APPROVAL_REQUIRED,
                 reason="Sensitive artifact access requires approval.",
@@ -430,8 +429,7 @@ def build_policy_registry_from_rules(
     permissions: Iterable[ToolPermission] | None = None,
 ) -> ToolPermissionRegistry:
     parsed_rules = [
-        rule if isinstance(rule, PolicyRule) else PolicyRule.model_validate(rule)
-        for rule in rules
+        rule if isinstance(rule, PolicyRule) else PolicyRule.model_validate(rule) for rule in rules
     ]
     base = (
         default_tool_permission_registry()

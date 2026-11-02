@@ -17,6 +17,9 @@ jobs:
     timeout-minutes: 20
 
     steps:
+      - name: Prefer native ARM64 tools
+        run: echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
+
       - name: Check out repository
         uses: actions/checkout@v4
 
@@ -25,8 +28,10 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python3.11 -m pip install --upgrade pip
-          make install
+          python3.11 -m venv "$RUNNER_TEMP/aeai-ci-venv"
+          echo "PYTHON=$RUNNER_TEMP/aeai-ci-venv/bin/python" >> "$GITHUB_ENV"
+          "$RUNNER_TEMP/aeai-ci-venv/bin/python" -m pip install --upgrade pip
+          make install PYTHON="$RUNNER_TEMP/aeai-ci-venv/bin/python"
 
       - name: Lint
         run: make lint

@@ -140,9 +140,7 @@ def test_create_run_can_select_registered_data_source(tmp_path):
     repository = InMemoryRunRepository()
     dataset_path = tmp_path / "procurement.csv"
     dataset_path.write_text("supplier,spend_amount\nAcme,100\n", encoding="utf-8")
-    client = TestClient(
-        create_app(repository=repository, artifact_root=tmp_path / "artifacts")
-    )
+    client = TestClient(create_app(repository=repository, artifact_root=tmp_path / "artifacts"))
     source_response = client.post(
         "/data-sources",
         json={

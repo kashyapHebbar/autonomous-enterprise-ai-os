@@ -124,7 +124,7 @@ def test_procurement_kpis_support_common_public_spend_export_columns(tmp_path):
         "\n".join(
             [
                 "Date,Expense Type,Supplier,Amount (GBP)",
-                '30/03/2025,IT Software,Amazon Business,£699.25',
+                "30/03/2025,IT Software,Amazon Business,£699.25",
                 '17/04/2025,Training,DATACAMP INC.,"£2,128.71"',
                 "Jul-25,Cloud subscriptions,Example Cloud,£600",
             ]

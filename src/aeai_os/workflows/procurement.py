@@ -5,6 +5,7 @@ from pathlib import Path
 from aeai_os.agents.analytics_code import AnalyticsCodeAgent
 from aeai_os.agents.data_retrieval import DataRetrievalAgent
 from aeai_os.agents.evaluation import EvaluationAgent
+from aeai_os.agents.investigation import InvestigationAgent
 from aeai_os.agents.planner import PlannerAgent, PlannerValidationError
 from aeai_os.agents.registry import build_default_registry
 from aeai_os.agents.report import ReportAgent
@@ -43,8 +44,7 @@ def execute_procurement_workflow(
         with start_span("workflow.procurement.execute"):
             if not run.dataset_artifact_id:
                 raise ProcurementWorkflowError(
-                    "A dataset artifact must be attached before executing the "
-                    "procurement workflow."
+                    "A dataset artifact must be attached before executing the procurement workflow."
                 )
 
             try:
@@ -88,6 +88,11 @@ def build_procurement_orchestrator(
                 artifact_root,
                 artifact_store=artifact_store,
                 connector_registry=connector_registry,
+            ),
+            "investigation": InvestigationAgent(
+                repository,
+                artifact_root,
+                artifact_store=artifact_store,
             ),
             "visualization": VisualizationAgent(
                 repository,

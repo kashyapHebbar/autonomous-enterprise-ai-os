@@ -297,11 +297,7 @@ class OrchestratorService:
                         run_id=node.run_id,
                         node_id=node.id,
                         event_type=str(event.get("event_type", AgentEventType.LOG)),
-                        payload={
-                            key: value
-                            for key, value in event.items()
-                            if key != "event_type"
-                        },
+                        payload={key: value for key, value in event.items() if key != "event_type"},
                     )
                 if security_output.status == "waiting_for_approval":
                     outcome = self._pause_for_approval(running, state, security_output)
@@ -541,9 +537,7 @@ class OrchestratorService:
             node_id=node.id,
             run_id=node.run_id,
             connector_id=str(connector_id) if connector_id else None,
-            credential_profile_id=str(credential_profile_id)
-            if credential_profile_id
-            else None,
+            credential_profile_id=str(credential_profile_id) if credential_profile_id else None,
             artifact_type=",".join(artifact_types) if artifact_types else None,
             artifact_sensitive=sensitive,
             metadata=artifact_metadata,

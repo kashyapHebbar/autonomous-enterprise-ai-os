@@ -23,17 +23,12 @@ def test_prometheus_scrape_config_targets_aeai_metrics_endpoint():
 
 
 def test_grafana_dashboard_import_json_references_expected_metrics():
-    dashboard_path = (
-        ROOT
-        / "deploy/grafana/provisioning/dashboards/aeai-operational-dashboard.json"
-    )
+    dashboard_path = ROOT / "deploy/grafana/provisioning/dashboards/aeai-operational-dashboard.json"
     dashboard = json.loads(dashboard_path.read_text(encoding="utf-8"))
 
     panel_titles = {panel["title"] for panel in dashboard["panels"]}
     expressions = " ".join(
-        target["expr"]
-        for panel in dashboard["panels"]
-        for target in panel.get("targets", [])
+        target["expr"] for panel in dashboard["panels"] for target in panel.get("targets", [])
     )
     assert dashboard["uid"] == "aeai-os-operations"
     assert "Run Latency" in panel_titles
@@ -50,9 +45,7 @@ def test_slo_dashboard_references_production_objectives():
     dashboard = json.loads(dashboard_path.read_text(encoding="utf-8"))
     panel_titles = {panel["title"] for panel in dashboard["panels"]}
     expressions = " ".join(
-        target["expr"]
-        for panel in dashboard["panels"]
-        for target in panel.get("targets", [])
+        target["expr"] for panel in dashboard["panels"] for target in panel.get("targets", [])
     )
 
     assert dashboard["uid"] == "aeai-os-slos"

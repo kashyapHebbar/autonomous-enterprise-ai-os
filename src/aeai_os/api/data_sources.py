@@ -149,9 +149,7 @@ def build_data_sources_router(registry: DataSourceRegistry) -> APIRouter:
     ) -> DataSourceValidationResponse:
         try:
             return _validation_to_response(
-                registry.validate(
-                    data_source_id, actor.organization_id, actor.workspace_id
-                )
+                registry.validate(data_source_id, actor.organization_id, actor.workspace_id)
             )
         except DataSourceNotFoundError as exc:
             raise HTTPException(

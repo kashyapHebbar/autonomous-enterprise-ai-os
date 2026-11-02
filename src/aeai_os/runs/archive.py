@@ -42,24 +42,17 @@ def export_run_archive(repository: Any, run_id: str) -> dict[str, Any]:
         "exported_at": utc_now().isoformat(),
         "run": _run_to_archive(run),
         "artifacts": [
-            _artifact_to_archive(artifact)
-            for artifact in repository.list_artifacts(run_id)
+            _artifact_to_archive(artifact) for artifact in repository.list_artifacts(run_id)
         ],
         "graph_nodes": [
-            _graph_node_to_archive(node)
-            for node in repository.list_graph_nodes(run_id)
+            _graph_node_to_archive(node) for node in repository.list_graph_nodes(run_id)
         ],
-        "events": [
-            _event_to_archive(event)
-            for event in repository.list_events(run_id)
-        ],
+        "events": [_event_to_archive(event) for event in repository.list_events(run_id)],
         "evaluations": [
-            _evaluation_to_archive(evaluation)
-            for evaluation in repository.list_evaluations(run_id)
+            _evaluation_to_archive(evaluation) for evaluation in repository.list_evaluations(run_id)
         ],
         "workflow_jobs": [
-            _workflow_job_to_archive(job)
-            for job in repository.list_workflow_jobs(run_id=run_id)
+            _workflow_job_to_archive(job) for job in repository.list_workflow_jobs(run_id=run_id)
         ],
         "checkpoint": _checkpoint_to_archive(checkpoint) if checkpoint else None,
         "notes": {
@@ -90,30 +83,15 @@ def import_run_archive(
 
     restored = repository.restore_run(
         run,
-        artifacts=[
-            _artifact_from_archive(item)
-            for item in archive.get("artifacts", [])
-        ],
-        graph_nodes=[
-            _graph_node_from_archive(item)
-            for item in archive.get("graph_nodes", [])
-        ],
-        events=[
-            _event_from_archive(item)
-            for item in archive.get("events", [])
-        ],
-        evaluations=[
-            _evaluation_from_archive(item)
-            for item in archive.get("evaluations", [])
-        ],
+        artifacts=[_artifact_from_archive(item) for item in archive.get("artifacts", [])],
+        graph_nodes=[_graph_node_from_archive(item) for item in archive.get("graph_nodes", [])],
+        events=[_event_from_archive(item) for item in archive.get("events", [])],
+        evaluations=[_evaluation_from_archive(item) for item in archive.get("evaluations", [])],
         workflow_jobs=[
-            _workflow_job_from_archive(item)
-            for item in archive.get("workflow_jobs", [])
+            _workflow_job_from_archive(item) for item in archive.get("workflow_jobs", [])
         ],
         checkpoint=(
-            _checkpoint_from_archive(archive["checkpoint"])
-            if archive.get("checkpoint")
-            else None
+            _checkpoint_from_archive(archive["checkpoint"]) if archive.get("checkpoint") else None
         ),
     )
     return restored

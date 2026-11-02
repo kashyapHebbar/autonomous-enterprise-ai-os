@@ -42,7 +42,11 @@ db-validate:
 	PYTHONPATH=src $(PYTHON) scripts/manage_database.py validate
 
 dev:
-	PYTHONPATH=src $(PYTHON) -m uvicorn aeai_os.api.app:create_app --factory --reload --host 0.0.0.0 --port 8000
+	$(PYTHON) scripts/launch_ai_os.py
+
+.PHONY: dev-api-only
+dev-api-only:
+	PYTHONPATH=src $(PYTHON) -m uvicorn aeai_os.api.app:create_app --factory --reload --reload-dir src --host 0.0.0.0 --port 8000
 
 up:
 	docker compose up --build

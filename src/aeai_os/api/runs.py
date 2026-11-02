@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import json
 from collections.abc import Iterable
 from copy import deepcopy
 from pathlib import Path
@@ -7,8 +9,30 @@ from typing import Annotated, Any
 from urllib.parse import urlparse
 from uuid import uuid4
 
-from fastapi import APIRouter, Body, File, HTTPException, Query, Response, UploadFile, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Body,
+    File,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    UploadFile,
+    status,
+)
+from fastapi.responses import StreamingResponse
 
+from aeai_os.agents.analyst_tools import (
+    AnalystToolRequest,
+    AnalystToolResponse,
+    investigate_question,
+)
+from aeai_os.agents.run_questions import (
+    RunQuestionRequest,
+    RunQuestionResponse,
+    answer_question,
+)
 from aeai_os.api.auth import RunApprover, RunReader, RunWriter
 from aeai_os.api.run_schemas import (
     AgentEventResponse,
@@ -53,6 +77,7 @@ from aeai_os.deployments import (
     decide_deployment_approval,
     request_deployment_approval,
 )
+from aeai_os.llm.gateway import LLMError, build_llm_gateway
 from aeai_os.observability.tracing import current_trace_id
 from aeai_os.orchestration.service import OrchestrationError, OrchestrationResult
 from aeai_os.runs.archive import (
@@ -71,8 +96,9 @@ from aeai_os.runs.repository import (
     WorkflowJobStateError,
     utc_now,
 )
-from aeai_os.schemas.enums import AgentEventType, ArtifactType
+from aeai_os.schemas.enums import AgentEventType, ArtifactType, RunStatus
 from aeai_os.security.auth import AuthenticatedUser
+from aeai_os.settings import get_settings
 from aeai_os.storage import ArtifactStorageError, ArtifactStore
 from aeai_os.workflows import (
     DynamicWorkflowError,
@@ -82,7 +108,11 @@ from aeai_os.workflows import (
     execute_procurement_workflow,
 )
 from aeai_os.workflows.queue import WorkflowQueueBackend
-from aeai_os.workflows.worker import enqueue_procurement_workflow
+from aeai_os.workflows.worker import (
+    WorkflowWorker,
+    enqueue_dynamic_workflow,
+    enqueue_procurement_workflow,
+)
 
 ALLOWED_UPLOAD_EXTENSIONS = {".csv", ".tsv", ".json", ".parquet"}
 PREVIEWABLE_ARTIFACT_TYPES = {
@@ -116,9 +146,7 @@ def build_runs_router(
     lineage_service = ArtifactLineageService(repository)
     primary_execution_mode = workflow_execution_mode.strip().lower()
     if primary_execution_mode not in {"sync", "async"}:
-        raise ValueError(
-            "workflow_execution_mode must be either 'sync' or 'async'."
-        )
+        raise ValueError("workflow_execution_mode must be either 'sync' or 'async'.")
 
     @router.post("", response_model=RunDetailResponse, status_code=status.HTTP_201_CREATED)
     def create_run(
@@ -213,9 +241,7 @@ def build_runs_router(
     @router.get("", response_model=list[RunResponse])
     def list_runs(user: RunReader) -> list[RunResponse]:
         return [
-            run_to_response(run)
-            for run in repository.list_runs()
-            if _run_is_visible_to(run, user)
+            run_to_response(run) for run in repository.list_runs() if _run_is_visible_to(run, user)
         ]
 
     @router.post("/import", response_model=RunDetailResponse, status_code=status.HTTP_201_CREATED)
@@ -225,9 +251,7 @@ def build_runs_router(
     ) -> RunDetailResponse:
         try:
             archive = deepcopy(request.archive)
-            archive.setdefault("run", {}).setdefault("metadata", {}).update(
-                _tenant_metadata(actor)
-            )
+            archive.setdefault("run", {}).setdefault("metadata", {}).update(_tenant_metadata(actor))
             archive_run_id = str(archive.get("run", {}).get("id") or "").strip()
             if archive_run_id:
                 try:
@@ -279,6 +303,295 @@ def build_runs_router(
             repository.list_events(run_id),
         )
 
+    @router.get("/{run_id}/questions", response_model=list[RunQuestionResponse])
+    def list_run_questions(run_id: str, user: RunReader) -> list[RunQuestionResponse]:
+        _get_run_or_404(repository, run_id, user)
+        return [
+            RunQuestionResponse.model_validate(event.payload["run_question_record"])
+            for event in repository.list_events(run_id)
+            if event.node_id == "run_questions" and "run_question_record" in event.payload
+        ]
+
+    @router.post("/{run_id}/questions", response_model=RunQuestionResponse)
+    def ask_about_run(
+        run_id: str,
+        question: RunQuestionRequest,
+        actor: RunWriter,
+    ) -> RunQuestionResponse:
+        run = _get_run_or_404(repository, run_id, actor)
+        if run.status != RunStatus.COMPLETED:
+            raise HTTPException(
+                status_code=409, detail="Finish the workflow before asking about its results."
+            )
+        settings = get_settings()
+        if not settings.run_questions_enabled:
+            raise HTTPException(
+                status_code=409,
+                detail="Run questions are disabled. Set AEAI_RUN_QUESTIONS_ENABLED=true in the backend terminal.",  # noqa: E501
+            )
+        prior = [
+            event
+            for event in repository.list_events(run_id)
+            if event.node_id == "run_questions" and "run_question_record" in event.payload
+        ]
+        # Reuse an identical saved, run-scoped answer without an additional HF call.
+        # Cached answers retain the original verified evidence references.
+        normalized_question = " ".join(question.question.casefold().split())
+        for earlier in reversed(prior):
+            record = earlier.payload["run_question_record"]
+            if " ".join(str(record.get("question", "")).casefold().split()) == normalized_question:
+                return RunQuestionResponse.model_validate(record)
+        if not settings.llm_enabled or not settings.llm_api_key:
+            raise HTTPException(
+                status_code=503, detail="Hugging Face inference is not configured on the server."
+            )
+        max_questions = max(1, min(settings.run_questions_max_per_run, 100))
+        if len(prior) >= max_questions:
+            raise HTTPException(
+                status_code=429, detail="Question allowance for this run has been reached."
+            )
+        source = next(
+            (
+                artifact
+                for artifact in reversed(repository.list_artifacts(run_id))
+                if artifact.type == ArtifactType.KPI_TABLE
+                and artifact.metadata.get("source") == "analytics_code_agent"
+                and artifact.metadata.get("format") == "json"
+            ),
+            None,
+        )
+        if source is None:
+            raise HTTPException(
+                status_code=422,
+                detail="This workflow has no verified analytical results to ask about.",
+            )
+        try:
+            analysis = artifact_store.read_json(source.uri)
+            if not isinstance(analysis.get("kpis"), dict):
+                raise ValueError("Calculated KPI evidence missing")
+        except (ValueError, ArtifactStorageError, OSError, KeyError):
+            raise HTTPException(
+                status_code=422, detail="Verified analytical evidence is unavailable."
+            ) from None
+        gateway = build_llm_gateway(settings=settings, purpose="briefing")
+        if gateway is None:
+            raise HTTPException(status_code=503, detail="Hugging Face gateway is not configured.")
+        question_id = f"question_{uuid4().hex}"
+        try:
+            result, usage = answer_question(
+                question=question.question.strip(),
+                analysis=analysis,
+                source_artifact_id=source.id,
+                gateway=gateway,
+                settings=settings,
+                question_id=question_id,
+                conversation_history=[
+                    {
+                        "question": str(event.payload["run_question_record"].get("question", "")),
+                        "answer": str(event.payload["run_question_record"].get("answer", "")),
+                    }
+                    for event in prior[-3:]
+                ],
+            )
+        except (LLMError, ValueError, KeyError, TypeError):
+            raise HTTPException(
+                status_code=502,
+                detail="The model could not provide a verified answer. No answer was saved. See the Hugging Face usage ledger for any billed attempt.",  # noqa: E501
+            ) from None
+        record = RunQuestionResponse(
+            id=question_id,
+            question=question.question.strip(),
+            answer=result["answer"],
+            evidence=result["evidence"],
+            limitations=result["limitations"],
+            model=gateway.model,
+            estimated_cost_usd=usage["estimated_cost_usd"],
+            created_at=utc_now().isoformat(),
+        )
+        repository.add_event(
+            AgentEventRecord(
+                id=f"event_{uuid4().hex}",
+                run_id=run_id,
+                node_id="run_questions",
+                event_type=AgentEventType.LOG,
+                created_at=utc_now(),
+                payload={
+                    "message": "User-requested answer grounded in existing verified run evidence.",
+                    "run_question_record": record.model_dump(),
+                    "question_usage_summary": usage,
+                },
+            )
+        )
+        return record
+
+    @router.get("/{run_id}/visualization-cube")
+    def get_visualization_cube(run_id: str, user: RunReader) -> dict[str, Any]:
+        """Read-only, permission-scoped grouped data. No inference or raw rows."""
+        run = _get_run_or_404(repository, run_id, user)
+        if run.status != RunStatus.COMPLETED:
+            raise HTTPException(
+                status_code=409, detail="Complete the investigation before visualizing its results."
+            )
+        artifacts = repository.list_artifacts(run_id)
+        source = next(
+            (
+                a
+                for a in reversed(artifacts)
+                if a.type == ArtifactType.KPI_TABLE
+                and a.metadata.get("source") == "analytics_code_agent"
+                and a.metadata.get("format") == "json"
+            ),
+            None,
+        )
+        dataset = next((a for a in artifacts if a.type == ArtifactType.DATASET), None)
+        empty = {
+            "cells": [],
+            "dimensions": [],
+            "covered_transactions": 0,
+            "suppressed_cells": 0,
+            "note": "Fine-grained filtering is unavailable. Saved overview charts remain accessible.",  # noqa: E501
+        }
+        if not source or not dataset or get_settings().artifact_storage_backend != "local":
+            return empty
+        try:
+            analysis = artifact_store.read_json(source.uri)
+            if not isinstance(analysis, dict) or not isinstance(analysis.get("kpis"), dict):
+                return empty
+            from aeai_os.intelligence.visualizations import build_visualization_cube
+
+            return build_visualization_cube(dataset.uri, analysis, artifact_root)
+        except (ValueError, OSError, KeyError, TypeError, ArtifactStorageError):
+            return empty
+
+    @router.get("/{run_id}/analyst-tools", response_model=list[AnalystToolResponse])
+    def list_analyst_tools(run_id: str, user: RunReader) -> list[AnalystToolResponse]:
+        _get_run_or_404(repository, run_id, user)
+        return [
+            AnalystToolResponse.model_validate(event.payload["analyst_tool_record"])
+            for event in repository.list_events(run_id)
+            if event.node_id == "analyst_tools" and "analyst_tool_record" in event.payload
+        ]
+
+    @router.post("/{run_id}/analyst-tools", response_model=AnalystToolResponse)
+    def calculate_analyst_followup(
+        run_id: str,
+        request: AnalystToolRequest,
+        actor: RunWriter,
+    ) -> AnalystToolResponse:
+        run = _get_run_or_404(repository, run_id, actor)
+        if run.status != RunStatus.COMPLETED:
+            raise HTTPException(
+                status_code=409,
+                detail="Complete the investigation before requesting a new calculation.",
+            )
+        settings = get_settings()
+        if not settings.analyst_tools_enabled:
+            raise HTTPException(
+                status_code=409,
+                detail="New AI calculations are disabled. Enable AEAI_ANALYST_TOOLS_ENABLED first.",
+            )
+        if not settings.llm_enabled or not settings.llm_api_key:
+            raise HTTPException(status_code=503, detail="Hugging Face model is not configured.")
+        prior = [
+            e
+            for e in repository.list_events(run_id)
+            if e.node_id == "analyst_tools" and "analyst_tool_record" in e.payload
+        ]
+        if len(prior) >= max(1, min(settings.analyst_tools_max_per_run, 50)):
+            raise HTTPException(
+                status_code=429, detail="New-calculation allowance reached for this investigation."
+            )
+        all_artifacts = repository.list_artifacts(run_id)
+        source = next(
+            (
+                a
+                for a in reversed(all_artifacts)
+                if a.type == ArtifactType.KPI_TABLE
+                and a.metadata.get("source") == "analytics_code_agent"
+                and a.metadata.get("format") == "json"
+            ),
+            None,
+        )
+        dataset = next((a for a in all_artifacts if a.type == ArtifactType.DATASET), None)
+        if source is None or dataset is None:
+            raise HTTPException(
+                status_code=422,
+                detail="A completed run with a local CSV and calculated evidence is required.",
+            )
+        if settings.artifact_storage_backend != "local":
+            raise HTTPException(
+                status_code=422,
+                detail="New calculations currently support only managed local CSV datasets.",
+            )
+        try:
+            analysis = artifact_store.read_json(source.uri)
+            if not isinstance(analysis, dict) or not isinstance(analysis.get("kpis"), dict):
+                raise ValueError("Verified analytics evidence missing.")
+        except (ValueError, KeyError, OSError, ArtifactStorageError):
+            raise HTTPException(
+                status_code=422, detail="Saved analytics data is unavailable."
+            ) from None
+        gateway = build_llm_gateway(settings=settings, purpose="briefing")
+        if gateway is None:
+            raise HTTPException(status_code=503, detail="AI inference gateway not configured.")
+        question_id = f"analyst_{uuid4().hex}"
+        recent = [e.payload["analyst_tool_record"]["question"] for e in prior[-3:]]
+        try:
+            result, usage = investigate_question(
+                question=request.question.strip(),
+                dataset_uri=dataset.uri,
+                analysis=analysis,
+                source_artifact_id=source.id,
+                artifact_root=artifact_root,
+                gateway=gateway,
+                settings=settings,
+                question_id=question_id,
+                recent_questions=recent,
+            )
+        except ValueError:
+            raise HTTPException(
+                status_code=422,
+                detail="The chosen calculation is unsupported or has insufficient aggregate data. Try a broader spending or monthly trend question.",  # noqa: E501
+            ) from None
+        except (LLMError, TypeError, KeyError):
+            raise HTTPException(
+                status_code=502,
+                detail="Qwen could not select a verified calculation. No result was stored; see the AI usage ledger for charged attempts.",  # noqa: E501
+            ) from None
+        record = AnalystToolResponse(
+            id=question_id,
+            question=request.question.strip(),
+            answer=result["answer"],
+            tool=result["tool"],
+            tool_label=result["tool_label"],
+            chart_kind=result["chart_kind"],
+            chart_title=result["chart_title"],
+            currency=result["currency"],
+            points=result["points"],
+            verified_total=result["verified_total"],
+            evidence_artifact_id=result["evidence_artifact_id"],
+            limitations=result["limitations"],
+            model=gateway.model,
+            estimated_cost_usd=usage["estimated_cost_usd"],
+            model_calls=usage["model_calls"],
+            created_at=utc_now().isoformat(),
+        )
+        repository.add_event(
+            AgentEventRecord(
+                id=f"event_{uuid4().hex}",
+                run_id=run_id,
+                node_id="analyst_tools",
+                event_type=AgentEventType.LOG,
+                created_at=utc_now(),
+                payload={
+                    "message": "User-requested approved analytical calculation completed.",
+                    "analyst_tool_record": record.model_dump(),
+                    "analyst_usage_summary": usage,
+                },
+            )
+        )
+        return record
+
     @router.post(
         "/{run_id}/execute",
         response_model=RunExecutionResponse,
@@ -308,6 +621,109 @@ def build_runs_router(
                 detail=str(exc),
             ) from exc
         return _execution_response(repository, run_id, result)
+
+    @router.post(
+        "/{run_id}/execute/async",
+        response_model=WorkflowJobResponse,
+        status_code=status.HTTP_202_ACCEPTED,
+    )
+    def enqueue_dynamic_execution(
+        run_id: str,
+        actor: RunWriter,
+        background_tasks: BackgroundTasks,
+    ) -> WorkflowJobResponse:
+        """Submit a generic workflow without blocking the HTTP request.
+
+        Local in-memory development runs the job after the response in the API
+        process. SQLAlchemy-backed setups use a dedicated worker process.
+        """
+        _get_run_or_404(repository, run_id, actor)
+        try:
+            job = enqueue_dynamic_workflow(
+                repository=repository,
+                run_id=run_id,
+                queue=workflow_queue,
+            )
+        except ValueError as exc:
+            message = str(exc)
+            code = 400 if "Attach a dataset" in message else 409
+            raise HTTPException(status_code=code, detail=message) from exc
+        _record_audit_event(
+            repository,
+            run_id,
+            actor,
+            action="run.enqueue_dynamic_analysis",
+            target={"run_id": run_id, "workflow_job_id": job.id},
+        )
+        if type(repository) is InMemoryRunRepository:
+            # Local mode: a separate Python process cannot share this repository.
+            # The task executes after the 202 response is sent.
+            def execute_local_job() -> None:
+                worker = WorkflowWorker(
+                    repository=repository,
+                    artifact_root=artifact_root,
+                    queue=workflow_queue,
+                    artifact_store=artifact_store,
+                    connector_registry=connector_registry,
+                )
+                worker.process_next_job()
+
+            background_tasks.add_task(execute_local_job)
+        return workflow_job_to_response(job)
+
+    @router.get("/{run_id}/stream", include_in_schema=True)
+    async def stream_run_progress(
+        run_id: str,
+        request: Request,
+        user: RunReader,
+    ) -> StreamingResponse:
+        """SSE snapshots from persisted state; no fictional progress percentages."""
+        _get_run_or_404(repository, run_id, user)
+
+        async def snapshots():
+            last_payload = None
+            for tick in range(3600):  # Bound each connection to roughly an hour.
+                if await request.is_disconnected():
+                    break
+                try:
+                    current = repository.get_run(run_id)
+                    snapshot = {
+                        "run": run_to_response(current).model_dump(mode="json"),
+                        "nodes": [
+                            graph_node_to_response(node).model_dump(mode="json")
+                            for node in repository.list_graph_nodes(run_id)
+                        ],
+                        "jobs": [
+                            workflow_job_to_response(job).model_dump(mode="json")
+                            for job in repository.list_workflow_jobs(run_id=run_id)
+                        ],
+                        "event_count": len(repository.list_events(run_id)),
+                    }
+                except RunNotFoundError:
+                    break
+                encoded = json.dumps(snapshot, separators=(",", ":"))
+                if encoded != last_payload:
+                    yield f"event: snapshot\ndata: {encoded}\n\n"
+                    last_payload = encoded
+                if current.status in {
+                    RunStatus.COMPLETED,
+                    RunStatus.FAILED,
+                    RunStatus.WAITING_FOR_APPROVAL,
+                }:
+                    yield "event: finished\ndata: {}\n\n"
+                    break
+                if tick % 15 == 14:
+                    yield ": keepalive\n\n"
+                await asyncio.sleep(1)
+
+        return StreamingResponse(
+            snapshots(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache, no-transform",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
     @router.post(
         "/{run_id}/execute/procurement",
@@ -370,8 +786,7 @@ def build_runs_router(
     def list_workflow_jobs(run_id: str, user: RunReader) -> list[WorkflowJobResponse]:
         _get_run_or_404(repository, run_id, user)
         return [
-            workflow_job_to_response(job)
-            for job in repository.list_workflow_jobs(run_id=run_id)
+            workflow_job_to_response(job) for job in repository.list_workflow_jobs(run_id=run_id)
         ]
 
     @router.get(
@@ -546,18 +961,12 @@ def build_runs_router(
     @router.get("/{run_id}/graph-nodes", response_model=list[GraphNodeResponse])
     def list_graph_nodes(run_id: str, user: RunReader) -> list[GraphNodeResponse]:
         _get_run_or_404(repository, run_id, user)
-        return [
-            graph_node_to_response(node)
-            for node in repository.list_graph_nodes(run_id)
-        ]
+        return [graph_node_to_response(node) for node in repository.list_graph_nodes(run_id)]
 
     @router.get("/{run_id}/events", response_model=list[AgentEventResponse])
     def list_events(run_id: str, user: RunReader) -> list[AgentEventResponse]:
         _get_run_or_404(repository, run_id, user)
-        return [
-            agent_event_to_response(event)
-            for event in repository.list_events(run_id)
-        ]
+        return [agent_event_to_response(event) for event in repository.list_events(run_id)]
 
     @router.get("/{run_id}/audit-events", response_model=list[AuditEventResponse])
     def list_audit_events(run_id: str, user: RunReader) -> list[AuditEventResponse]:
@@ -674,8 +1083,7 @@ def build_runs_router(
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=(
-                    "Artifact type is not available for browser preview: "
-                    f"{artifact.type.value}."
+                    f"Artifact type is not available for browser preview: {artifact.type.value}."
                 ),
             )
         try:
@@ -860,8 +1268,7 @@ def _enqueue_procurement_or_400(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
-                "A dataset artifact must be attached before enqueueing "
-                "the procurement workflow."
+                "A dataset artifact must be attached before enqueueing the procurement workflow."
             ),
         )
     job = enqueue_procurement_workflow(

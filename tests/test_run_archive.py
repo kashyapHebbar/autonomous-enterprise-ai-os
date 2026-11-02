@@ -134,10 +134,7 @@ def test_run_archive_exports_sanitized_state_and_imports_for_lineage():
     target_repository = InMemoryRunRepository()
     imported = import_run_archive(target_repository, archive)
     lineage = ArtifactLineageService(target_repository).build_lineage(run.id, report.id)
-    edge_pairs = {
-        (edge.source_artifact_id, edge.target_artifact_id)
-        for edge in lineage.edges
-    }
+    edge_pairs = {(edge.source_artifact_id, edge.target_artifact_id) for edge in lineage.edges}
 
     assert archive["schema_version"] == "aeai.run_archive.v1"
     assert archive["run"]["metadata"]["api_token"] == REDACTED
@@ -151,9 +148,7 @@ def test_run_archive_exports_sanitized_state_and_imports_for_lineage():
     assert imported.id == run.id
     assert target_repository.get_run(run.id).status == RunStatus.COMPLETED
     assert target_repository.get_artifact(run.id, dashboard.id).storage_backend == "s3"
-    assert {dataset.id, dashboard.id} <= {
-        artifact.id for artifact in lineage.upstream_artifacts
-    }
+    assert {dataset.id, dashboard.id} <= {artifact.id for artifact in lineage.upstream_artifacts}
     assert (dashboard.id, report.id) in edge_pairs
 
 
@@ -199,9 +194,7 @@ def test_api_imported_archive_is_visible_to_run_inspector(tmp_path):
         "evaluation",
     }
     assert lineage_response.status_code == 200
-    upstream_ids = {
-        artifact["id"] for artifact in lineage_response.json()["upstream_artifacts"]
-    }
+    upstream_ids = {artifact["id"] for artifact in lineage_response.json()["upstream_artifacts"]}
     assert {dataset.id, dashboard.id} <= upstream_ids
 
 

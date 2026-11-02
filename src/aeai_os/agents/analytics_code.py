@@ -211,9 +211,9 @@ class AnalyticsCodeAgent:
                 installation = self._connector_registry.get_installation(
                     installation_id, organization_id
                 )
-                connector = ConnectorExplorer(
-                    self._connector_registry
-                ).warehouse_connector(installation)
+                connector = ConnectorExplorer(self._connector_registry).warehouse_connector(
+                    installation
+                )
             else:
                 connector = self._warehouse_registry.connector_for_reference(
                     dataset_reference.warehouse

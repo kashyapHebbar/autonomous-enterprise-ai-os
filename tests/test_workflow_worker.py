@@ -23,9 +23,7 @@ def test_workflow_worker_processes_queued_procurement_job(tmp_path):
     repository = InMemoryRunRepository()
     dataset_path = tmp_path / "procurement.csv"
     write_procurement_fixture(dataset_path)
-    run = repository.create_run(
-        "Analyze this procurement dataset and create a dashboard report."
-    )
+    run = repository.create_run("Analyze this procurement dataset and create a dashboard report.")
     repository.add_artifact(
         run_id=run.id,
         artifact_type=ArtifactType.DATASET,
@@ -51,9 +49,7 @@ def test_workflow_worker_processes_queued_procurement_job(tmp_path):
 
 def test_workflow_worker_retries_then_records_final_failure(tmp_path):
     repository = InMemoryRunRepository()
-    run = repository.create_run(
-        "Analyze this procurement dataset and create a dashboard report."
-    )
+    run = repository.create_run("Analyze this procurement dataset and create a dashboard report.")
     job = enqueue_procurement_workflow(repository, run.id, max_attempts=2)
     worker = WorkflowWorker(
         repository=repository,

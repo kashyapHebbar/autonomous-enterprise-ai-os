@@ -50,23 +50,17 @@ def test_azure_key_vault_provider_resolves_json_secret():
 
     provider = AzureKeyVaultCredentialProvider(client_factory=lambda vault: FakeClient())
 
-    assert provider.resolve("azure-key-vault://acme/snowflake") == {
-        "SNOWFLAKE_PASSWORD": "secret"
-    }
+    assert provider.resolve("azure-key-vault://acme/snowflake") == {"SNOWFLAKE_PASSWORD": "secret"}
 
 
 def test_vault_provider_resolves_kv_v2_secret():
     reader = SimpleNamespace(
-        read_secret_version=lambda **kwargs: {
-            "data": {"data": {"SNOWFLAKE_USER": "analyst"}}
-        }
+        read_secret_version=lambda **kwargs: {"data": {"data": {"SNOWFLAKE_USER": "analyst"}}}
     )
     client = SimpleNamespace(secrets=SimpleNamespace(kv=SimpleNamespace(v2=reader)))
     provider = VaultCredentialProvider(client_factory=lambda: client)
 
-    assert provider.resolve("vault://secret/acme/snowflake") == {
-        "SNOWFLAKE_USER": "analyst"
-    }
+    assert provider.resolve("vault://secret/acme/snowflake") == {"SNOWFLAKE_USER": "analyst"}
 
 
 def test_credential_provider_registry_rejects_unknown_scheme():

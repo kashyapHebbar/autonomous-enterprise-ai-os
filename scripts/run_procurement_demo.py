@@ -143,9 +143,7 @@ def main(argv: list[str] | None = None) -> int:
 
     for artifact_type in (ArtifactType.DASHBOARD, ArtifactType.REPORT, ArtifactType.EVALUATION):
         matching = [
-            artifact
-            for artifact in demo.artifacts
-            if artifact["type"] == artifact_type.value
+            artifact for artifact in demo.artifacts if artifact["type"] == artifact_type.value
         ]
         for artifact in matching:
             print(f"{artifact_type.value.title()}: {artifact['uri']}")

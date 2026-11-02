@@ -24,9 +24,7 @@ def authenticated_user_from_oidc_token(
 ) -> AuthenticatedUser:
     """Verify an OIDC access token and map enterprise claims to platform identity."""
     verified = (
-        dict(claims)
-        if claims is not None
-        else _verify_jwt(token, issuer, audience, jwks_url)
+        dict(claims) if claims is not None else _verify_jwt(token, issuer, audience, jwks_url)
     )
     subject = _required_claim(verified, "sub")
     organization_id = _required_claim(verified, organization_claim)

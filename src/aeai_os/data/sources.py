@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import json
+import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 from threading import RLock
 from typing import Any, Literal
+from uuid import uuid4
 
 from aeai_os.connectors import ConnectorRegistry
 from aeai_os.data.warehouse import (
@@ -48,8 +51,10 @@ class DataSourceRecord:
     def dataset_metadata(self) -> dict[str, Any]:
         base_metadata = dict(self.metadata)
         source = "warehouse" if self.source_type in {"sqlite", "snowflake"} else "reference"
-        dataset_format = self.source_type if self.source_type != "local_file" else _local_format(
-            self.dataset_uri
+        dataset_format = (
+            self.source_type
+            if self.source_type != "local_file"
+            else _local_format(self.dataset_uri)
         )
         return {
             **base_metadata,
@@ -91,6 +96,84 @@ class DataSourceRegistry:
         self._env = env
         self._sources: dict[str, DataSourceRecord] = {}
         self._lock = RLock()
+        # Upgrade 11: opt-in local-file catalog. Never persist warehouse secrets.
+        catalog_env = env if env is not None else os.environ
+        catalog_setting = catalog_env.get("AEAI_LOCAL_SOURCE_CATALOG_PATH", "").strip()
+        self._local_catalog_path = Path(catalog_setting).expanduser() if catalog_setting else None
+        self._load_local_catalog()
+
+    def _load_local_catalog(self) -> None:
+        path = self._local_catalog_path
+        if path is None or not path.exists():
+            return
+        if path.is_symlink() or path.stat().st_size > 1024 * 1024:
+            raise ValueError("Local source catalog must be a small regular file.")
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(payload, dict) or payload.get("version") != 1:
+                raise ValueError("Unsupported local source catalog format.")
+            records = payload.get("sources")
+            if not isinstance(records, list) or len(records) > 500:
+                raise ValueError("Local source catalog contains invalid records.")
+            for raw in records:
+                if not isinstance(raw, dict) or raw.get("source_type") != "local_file":
+                    continue
+                record = DataSourceRecord(
+                    id=str(raw["id"]),
+                    name=str(raw["name"]),
+                    source_type="local_file",
+                    connector_id="local-file",
+                    credential_profile_id=None,
+                    dataset_uri=str(raw["dataset_uri"]),
+                    owner=str(raw["owner"]),
+                    organization_id=str(raw["organization_id"]),
+                    workspace_id=str(raw["workspace_id"]),
+                    metadata={},
+                    created_at=datetime.fromisoformat(raw["created_at"]),
+                    updated_at=datetime.fromisoformat(raw["updated_at"]),
+                )
+                self._sources[
+                    _source_key(record.id, record.organization_id, record.workspace_id)
+                ] = record
+        except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
+            raise ValueError("Local source catalog could not be loaded safely.") from exc
+
+    def _save_local_catalog(self) -> None:
+        path = self._local_catalog_path
+        if path is None:
+            return
+        if path.is_symlink():
+            raise ValueError("Refusing to write through a local catalog symlink.")
+        items = [
+            {
+                "id": x.id,
+                "name": x.name,
+                "source_type": "local_file",
+                "dataset_uri": x.dataset_uri,
+                "owner": x.owner,
+                "organization_id": x.organization_id,
+                "workspace_id": x.workspace_id,
+                "created_at": x.created_at.isoformat(),
+                "updated_at": x.updated_at.isoformat(),
+            }
+            for x in self._sources.values()
+            if x.source_type == "local_file"
+        ]
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if len(items) > 500:
+            raise ValueError("Local source catalog has reached its configured limit.")
+        temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+        content = json.dumps({"version": 1, "sources": items}, ensure_ascii=False)
+        try:
+            descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                handle.write(content)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, path)
+            os.chmod(path, 0o600)
+        finally:
+            temporary.unlink(missing_ok=True)
 
     def register(
         self,
@@ -115,14 +198,10 @@ class DataSourceRegistry:
         normalized_workspace = _normalize_required(workspace_id, "Workspace id")
         source_key = _source_key(normalized_id, normalized_organization, normalized_workspace)
         resolved_connector_id = connector_id or _default_connector_id(source_type)
-        resolved_profile_id = credential_profile_id or _default_credential_profile_id(
-            source_type
-        )
+        resolved_profile_id = credential_profile_id or _default_credential_profile_id(source_type)
         with self._lock:
             if source_key in self._sources:
-                raise DataSourceAlreadyExistsError(
-                    f"Data source already exists: {normalized_id}"
-                )
+                raise DataSourceAlreadyExistsError(f"Data source already exists: {normalized_id}")
         now = _now()
         record = DataSourceRecord(
             id=normalized_id,
@@ -144,6 +223,7 @@ class DataSourceRegistry:
         stored = replace(record, latest_validation=validation)
         with self._lock:
             self._sources[source_key] = stored
+            self._save_local_catalog()
             return stored
 
     def list_sources(
@@ -169,9 +249,7 @@ class DataSourceRegistry:
             try:
                 return self._sources[_source_key(data_source_id, organization_id, workspace_id)]
             except KeyError as exc:
-                raise DataSourceNotFoundError(
-                    f"Data source not found: {data_source_id}"
-                ) from exc
+                raise DataSourceNotFoundError(f"Data source not found: {data_source_id}") from exc
 
     def validate(
         self,
@@ -187,6 +265,7 @@ class DataSourceRegistry:
                 latest_validation=validation,
                 updated_at=_now(),
             )
+            self._save_local_catalog()
             return validation
 
     def validate_for_execution(
@@ -278,9 +357,7 @@ class DataSourceRegistry:
             )
             if installation.workspace_id not in {None, source.workspace_id}:
                 raise ValueError("Connector installation is not available in this workspace.")
-            effective_env = self._connector_registry.resolve_installation_environment(
-                installation
-            )
+            effective_env = self._connector_registry.resolve_installation_environment(installation)
             reference = warehouse_reference_from_metadata(
                 source.dataset_uri,
                 _warehouse_metadata(source),

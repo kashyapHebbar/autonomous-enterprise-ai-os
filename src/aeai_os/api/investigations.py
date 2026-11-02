@@ -133,6 +133,25 @@ def build_investigations_router(
             },
         )
 
+    # Upgrade 11: read-only intelligence and workspace health; tenant scoped.
+    @router.get("/intelligence-overview")
+    def intelligence_overview(user: RunReader) -> dict[str, Any]:
+        from aeai_os.intelligence.overview import build_overview
+
+        return build_overview(repository, artifact_store, user)
+
+    @router.get("/workspace-health")
+    def get_workspace_health(user: RunReader) -> dict[str, Any]:
+        from aeai_os.intelligence.overview import workspace_health
+
+        return workspace_health(
+            repository,
+            user,
+            repository_backend=(
+                "sqlalchemy" if hasattr(repository, "_session_factory") else "memory"
+            ),
+        )
+
     @router.get("/{run_id}/{anomaly_id}", response_model=InvestigationResponse)
     def get_investigation(run_id: str, anomaly_id: str, user: RunReader) -> InvestigationResponse:
         return _get_case_or_404(repository, artifact_store, run_id, anomaly_id, user)

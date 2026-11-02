@@ -8,6 +8,7 @@ from aeai_os.connectors.explorer import ConnectorExplorer
 from aeai_os.data import (
     CsvDatasetAdapter,
     DataIngestionError,
+    DatasetAnalysisPlan,
     WarehouseConnectorRegistry,
     WarehouseDatasetAdapter,
     build_dataset_analysis_plan,
@@ -74,11 +75,15 @@ class DataRetrievalAgent:
             schema_artifact_id = self._repository.next_artifact_id()
             quality_artifact_id = self._repository.next_artifact_id()
             preferred_recipe = "procurement" if "procurement" in agent_input.task.lower() else None
-            analysis_plan = build_dataset_analysis_plan(
-                profile,
-                str(agent_input.context.get("state", {}).get("task") or agent_input.task),
-                preferred_recipe=preferred_recipe,
-            )
+            # The planner has already inspected the dataset before the first node.
+            # Reusing its validated decision prevents a second, conflicting recipe choice.
+            analysis_plan = self._plan_from_planning_event(agent_input.run_id)
+            if analysis_plan is None:
+                analysis_plan = build_dataset_analysis_plan(
+                    profile,
+                    str(agent_input.context.get("state", {}).get("task") or agent_input.task),
+                    preferred_recipe=preferred_recipe,
+                )
             schema_document = profile.schema_artifact()
             schema_document["analysis_plan"] = analysis_plan.model_dump()
             schema_payload = self._artifact_store.write_json(
@@ -178,6 +183,18 @@ class DataRetrievalAgent:
             )
             return ConnectorExplorer(self._connector_registry).warehouse_connector(installation)
         return self._warehouse_registry.connector_for_reference(reference)
+
+    def _plan_from_planning_event(self, run_id: str) -> DatasetAnalysisPlan | None:
+        for event in reversed(self._repository.list_events(run_id)):
+            if event.node_id != "planner":
+                continue
+            raw = event.payload.get("analysis_plan")
+            if isinstance(raw, dict):
+                try:
+                    return DatasetAnalysisPlan.model_validate(raw)
+                except ValueError:
+                    return None
+        return None
 
     def _resolve_dataset_artifact(self, agent_input: AgentInput) -> ArtifactRecord:
         artifact_id = (

@@ -76,9 +76,7 @@ def test_langsmith_tracking_config_reads_aeai_env_values():
 
 
 def test_langsmith_tracking_reports_missing_api_key_without_importing_package():
-    config = build_langsmith_tracking_config(
-        env={"AEAI_LANGSMITH_TRACING_ENABLED": "true"}
-    )
+    config = build_langsmith_tracking_config(env={"AEAI_LANGSMITH_TRACING_ENABLED": "true"})
     tracker = build_langsmith_tracker(
         config,
         importer=lambda name: (_ for _ in ()).throw(AssertionError(name)),

@@ -15,9 +15,7 @@ def test_local_connector_browses_previews_and_publishes_workflow_source(tmp_path
     dataset_root.mkdir()
     dataset = dataset_root / "regional_sales.csv"
     dataset.write_text(
-        "order_id,region,revenue,order_date\n"
-        "A-1,North,1200,2026-01-05\n"
-        "A-2,South,900,2026-01-12\n",
+        "order_id,region,revenue,order_date\nA-1,North,1200,2026-01-05\nA-2,South,900,2026-01-12\n",
         encoding="utf-8",
     )
     client = TestClient(create_app(artifact_root=tmp_path / "artifacts"))
@@ -30,9 +28,7 @@ def test_local_connector_browses_previews_and_publishes_workflow_source(tmp_path
         },
     ).json()
 
-    probe = client.post(
-        f"/connectors/installations/{installation['id']}/test?probe=true"
-    )
+    probe = client.post(f"/connectors/installations/{installation['id']}/test?probe=true")
     browse = client.get(f"/connectors/installations/{installation['id']}/browse")
     preview = client.post(
         f"/connectors/installations/{installation['id']}/preview",
@@ -126,9 +122,7 @@ def test_sqlite_connector_browses_previews_publishes_and_executes(tmp_path):
         },
     ).json()
 
-    probe = client.post(
-        f"/connectors/installations/{installation['id']}/test?probe=true"
-    )
+    probe = client.post(f"/connectors/installations/{installation['id']}/test?probe=true")
     browse = client.get(f"/connectors/installations/{installation['id']}/browse")
     preview = client.post(
         f"/connectors/installations/{installation['id']}/preview",
@@ -236,9 +230,7 @@ def test_object_connector_browses_and_previews_without_exposing_credentials(monk
         },
     ).json()
 
-    probe = client.post(
-        f"/connectors/installations/{installation['id']}/test?probe=true"
-    )
+    probe = client.post(f"/connectors/installations/{installation['id']}/test?probe=true")
     browse = client.get(f"/connectors/installations/{installation['id']}/browse")
     preview = client.post(
         f"/connectors/installations/{installation['id']}/preview",
@@ -259,7 +251,7 @@ def test_object_connector_browses_and_previews_without_exposing_credentials(monk
 def test_connector_hub_ui_exposes_explorer_and_source_publish_controls():
     client = TestClient(create_app())
 
-    page = client.get("/app/admin")
+    page = client.get("/legacy-app/admin")
     script = client.get("/app/admin.js")
 
     assert page.status_code == 200

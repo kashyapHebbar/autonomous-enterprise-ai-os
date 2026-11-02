@@ -80,8 +80,5 @@ def test_anomaly_engine_degrades_gracefully_without_optional_fields():
     result = detect_procurement_anomalies(rows)
 
     assert result["anomalies"][0]["row_number"] == 5
-    assert any(
-        signal["code"] == "amount_outlier"
-        for signal in result["anomalies"][0]["signals"]
-    )
+    assert any(signal["code"] == "amount_outlier" for signal in result["anomalies"][0]["signals"])
     assert result["anomalies"][0]["confidence"] < 0.7

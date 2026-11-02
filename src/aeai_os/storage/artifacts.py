@@ -363,9 +363,7 @@ def _validate_public_csv_url(uri: str) -> None:
             f"Unable to resolve public dataset host: {parsed.hostname}"
         ) from exc
     if not addresses:
-        raise ArtifactStorageError(
-            f"Unable to resolve public dataset host: {parsed.hostname}"
-        )
+        raise ArtifactStorageError(f"Unable to resolve public dataset host: {parsed.hostname}")
     if any(not ipaddress.ip_address(address).is_global for address in addresses):
         raise ArtifactStorageError("Public dataset URL resolves to a non-public network address.")
 

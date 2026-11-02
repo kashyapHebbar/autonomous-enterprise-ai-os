@@ -119,9 +119,7 @@ class ConnectorExplorer:
             details={**details, "probe": "live"},
         )
 
-    def browse(
-        self, installation: ConnectorInstallation, path: str = ""
-    ) -> ConnectorBrowseResult:
+    def browse(self, installation: ConnectorInstallation, path: str = "") -> ConnectorBrowseResult:
         normalized_path = path.strip().strip("/")
         if installation.connector_id == "local-file":
             assets = self._browse_local(installation, normalized_path)
@@ -153,16 +151,11 @@ class ConnectorExplorer:
         if installation.connector_id == "local-file":
             path = self._local_asset(installation, asset_id)
             if path.suffix.lower() not in {".csv", ".tsv"}:
-                raise ConnectorInstallationError(
-                    "Preview currently supports CSV and TSV files."
-                )
+                raise ConnectorInstallationError("Preview currently supports CSV and TSV files.")
             delimiter = "\t" if path.suffix.lower() == ".tsv" else ","
             with path.open("r", encoding="utf-8-sig", newline="") as handle:
                 reader = csv.DictReader(handle, delimiter=delimiter)
-                rows = [
-                    dict(row)
-                    for _, row in zip(range(bounded_limit + 1), reader, strict=False)
-                ]
+                rows = [dict(row) for _, row in zip(range(bounded_limit + 1), reader, strict=False)]
             names = list(rows[0]) if rows else list(reader.fieldnames or [])
             columns = [WarehouseColumn(name=name, data_type="unknown") for name in names]
         elif installation.connector_id == "sqlite-local":
@@ -176,13 +169,9 @@ class ConnectorExplorer:
             columns = connector.describe(reference)
             rows = connector.preview_rows(reference, bounded_limit + 1)
         elif installation.connector_id == "artifact-store":
-            columns, rows = self._preview_object(
-                installation, asset_id, bounded_limit + 1
-            )
+            columns, rows = self._preview_object(installation, asset_id, bounded_limit + 1)
         else:
-            raise ConnectorInstallationError(
-                "Dataset preview is not available for this connector."
-            )
+            raise ConnectorInstallationError("Dataset preview is not available for this connector.")
         return ConnectorPreview(
             installation_id=installation.id,
             connector_id=installation.connector_id,
@@ -249,17 +238,13 @@ class ConnectorExplorer:
             return self._sqlite_connector(installation)
         if installation.connector_id == "snowflake-default":
             return self._snowflake_connector(installation)
-        raise ConnectorInstallationError(
-            "The saved installation is not a warehouse connector."
-        )
+        raise ConnectorInstallationError("The saved installation is not a warehouse connector.")
 
-    def _browse_local(
-        self, installation: ConnectorInstallation, path: str
-    ) -> list[ConnectorAsset]:
+    def _browse_local(self, installation: ConnectorInstallation, path: str) -> list[ConnectorAsset]:
         root = self._local_root(installation)
         directory = self._safe_child(root, path)
         if not directory.is_dir():
-            raise ConnectorInstallationError(f"Dataset folder does not exist: {path or '/' }.")
+            raise ConnectorInstallationError(f"Dataset folder does not exist: {path or '/'}.")
         assets = []
         children = sorted(
             directory.iterdir(),
@@ -300,10 +285,14 @@ class ConnectorExplorer:
     ) -> list[ConnectorAsset]:
         if path:
             raise ConnectorInstallationError("SQLite tables are available at the database root.")
-        rows = self._sqlite_connector(installation).execute_query(
-            "SELECT name, type FROM sqlite_master "
-            "WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite_%' ORDER BY name"
-        ).rows
+        rows = (
+            self._sqlite_connector(installation)
+            .execute_query(
+                "SELECT name, type FROM sqlite_master "
+                "WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite_%' ORDER BY name"
+            )
+            .rows
+        )
         return [
             ConnectorAsset(
                 id=str(row["name"]),
@@ -364,8 +353,10 @@ class ConnectorExplorer:
         client, bucket = self._object_client(installation)
         base_prefix = installation.configuration.get("prefix", "").strip("/")
         requested = path.strip("/")
-        if requested and base_prefix and not (
-            requested == base_prefix or requested.startswith(f"{base_prefix}/")
+        if (
+            requested
+            and base_prefix
+            and not (requested == base_prefix or requested.startswith(f"{base_prefix}/"))
         ):
             raise ConnectorInstallationError(
                 "The requested object path is outside the configured prefix."
@@ -428,9 +419,7 @@ class ConnectorExplorer:
             )
         suffix = Path(key).suffix.lower()
         if suffix not in {".csv", ".tsv"}:
-            raise ConnectorInstallationError(
-                "Object preview currently supports CSV and TSV files."
-            )
+            raise ConnectorInstallationError("Object preview currently supports CSV and TSV files.")
         client, bucket = self._object_client(installation)
         try:
             response = client.get_object(Bucket=bucket, Key=key, Range="bytes=0-1048575")
@@ -446,8 +435,7 @@ class ConnectorExplorer:
         )
         rows = [dict(row) for _, row in zip(range(limit), reader, strict=False)]
         columns = [
-            WarehouseColumn(name=name, data_type="unknown")
-            for name in (reader.fieldnames or [])
+            WarehouseColumn(name=name, data_type="unknown") for name in (reader.fieldnames or [])
         ]
         return columns, rows
 

@@ -68,9 +68,7 @@ def run_load_test(
         observations = [future.result() for future in as_completed(futures)]
     elapsed = max(time.perf_counter() - started, 0.000001)
 
-    successful = sum(
-        1 for observation in observations if 200 <= observation.status_code < 400
-    )
+    successful = sum(1 for observation in observations if 200 <= observation.status_code < 400)
     durations = sorted(observation.duration_ms for observation in observations)
     error_rate = (request_count - successful) / request_count
     p95_ms = percentile(durations, 95)

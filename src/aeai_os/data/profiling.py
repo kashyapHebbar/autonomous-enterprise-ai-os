@@ -111,11 +111,7 @@ def profile_tabular_rows(
         raise DataIngestionError("Dataset contains duplicate column names.")
 
     normalized_rows = [
-        {
-            field: _normalize_cell(row.get(field))
-            for field in normalized_fieldnames
-        }
-        for row in rows
+        {field: _normalize_cell(row.get(field)) for field in normalized_fieldnames} for row in rows
     ]
     columns = [_profile_column(field, normalized_rows) for field in normalized_fieldnames]
     missing_cells = sum(column.missing_count for column in columns)

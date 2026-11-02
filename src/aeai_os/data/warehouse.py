@@ -264,12 +264,8 @@ class SnowflakeSettings:
             account=required["SNOWFLAKE_ACCOUNT"],
             user=required["SNOWFLAKE_USER"],
             password=required["SNOWFLAKE_PASSWORD"],
-            warehouse=_snowflake_identifier(
-                required["SNOWFLAKE_WAREHOUSE"], "SNOWFLAKE_WAREHOUSE"
-            ),
-            database=_snowflake_identifier(
-                required["SNOWFLAKE_DATABASE"], "SNOWFLAKE_DATABASE"
-            ),
+            warehouse=_snowflake_identifier(required["SNOWFLAKE_WAREHOUSE"], "SNOWFLAKE_WAREHOUSE"),
+            database=_snowflake_identifier(required["SNOWFLAKE_DATABASE"], "SNOWFLAKE_DATABASE"),
             schema=_snowflake_identifier(required["SNOWFLAKE_SCHEMA"], "SNOWFLAKE_SCHEMA"),
             role=_snowflake_identifier(role, "SNOWFLAKE_ROLE") if role else None,
             connect_timeout_seconds=_parse_positive_int(
@@ -314,10 +310,7 @@ class SnowflakeWarehouseConnector:
         parameters = _merge_parameters(
             reference.parameters, {_INTERNAL_LIMIT_PARAMETER: effective_limit}
         )
-        query = (
-            f"SELECT * FROM {self._source_sql(reference)} "
-            f"LIMIT %({_INTERNAL_LIMIT_PARAMETER})s"
-        )
+        query = f"SELECT * FROM {self._source_sql(reference)} LIMIT %({_INTERNAL_LIMIT_PARAMETER})s"
         return self.execute_query(query, parameters or None).rows
 
     def describe(self, reference: WarehouseDatasetReference) -> list[WarehouseColumn]:

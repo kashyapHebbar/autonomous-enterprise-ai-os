@@ -11,6 +11,11 @@ sys.path.insert(0, str(SRC))
 
 
 def main() -> int:
+    from aeai_os.connectors import (
+        build_connector_installation_repository,
+        build_default_connector_registry,
+        build_default_credential_provider_registry,
+    )
     from aeai_os.runs.factory import build_run_repository
     from aeai_os.settings import get_settings
     from aeai_os.storage import build_artifact_store
@@ -43,6 +48,11 @@ def main() -> int:
     repository = build_run_repository(settings)
     queue = build_workflow_queue(settings, repository)
     artifact_store = build_artifact_store(settings)
+    connector_registry = build_default_connector_registry(
+        settings,
+        installation_store=build_connector_installation_repository(settings),
+        credential_resolver=build_default_credential_provider_registry(),
+    )
     worker = WorkflowWorker(
         repository=repository,
         artifact_root=settings.artifact_root,
@@ -54,6 +64,7 @@ def main() -> int:
             else settings.workflow_queue_timeout_seconds
         ),
         artifact_store=artifact_store,
+        connector_registry=connector_registry,
     )
     if args.loop:
         processed_count = 0

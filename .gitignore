@@ -28,3 +28,13 @@ docker-compose.override.yml
 
 # Local GitHub Actions self-hosted runner
 /actions-runner/
+
+# Local upgrade snapshots and frontend build products
+.*-backup-*/
+*.backup-*
+*.before_react
+node_modules/
+*.tsbuildinfo
+
+# Downloaded full-size public dataset; retain the small reproducible sample
+/examples/government/*_raw.csv

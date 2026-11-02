@@ -1,3 +1,10 @@
+FROM node:22-alpine AS frontend-build
+WORKDIR /frontend
+COPY frontend/package*.json ./
+RUN npm ci
+COPY frontend/ ./
+RUN npm run build
+
 FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -12,6 +19,7 @@ COPY src ./src
 COPY docs ./docs
 COPY examples ./examples
 COPY scripts ./scripts
+COPY --from=frontend-build /frontend/dist ./frontend/dist
 
 RUN python -m pip install --upgrade pip "setuptools>=83" "wheel>=0.46.2" \
     && python -m pip install --no-cache-dir -e ".[analysis,identity,observability,secrets,storage,warehouse]" \

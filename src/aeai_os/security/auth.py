@@ -76,10 +76,7 @@ class AuthenticatedUser:
         return replace(self, workspace_id=selected)
 
     def can_access(self, organization_id: object, workspace_id: object) -> bool:
-        return (
-            organization_id == self.organization_id
-            and workspace_id == self.workspace_id
-        )
+        return organization_id == self.organization_id and workspace_id == self.workspace_id
 
 
 def parse_roles(raw_roles: str | Iterable[str]) -> tuple[UserRole, ...]:
@@ -203,8 +200,7 @@ def parse_token_profiles(
         workspaces = parse_workspace_ids(raw_workspaces)
         profiles[normalized_token] = AuthenticatedUser(
             id=_normalize_required(user_id, "User id"),
-            name=_normalize_optional(user_name)
-            or _normalize_required(user_id, "User id"),
+            name=_normalize_optional(user_name) or _normalize_required(user_id, "User id"),
             roles=parse_roles(roles),
             organization_id=_normalize_required(organization_id, "Organization id"),
             workspace_ids=workspaces,

@@ -19,8 +19,7 @@ class WorkflowQueueBackend(Protocol):
         workflow_name: str,
         payload: dict[str, Any] | None = None,
         max_attempts: int = 3,
-    ) -> WorkflowJobRecord:
-        ...
+    ) -> WorkflowJobRecord: ...
 
     def claim_next(
         self,
@@ -28,14 +27,11 @@ class WorkflowQueueBackend(Protocol):
         worker_id: str,
         workflow_name: str | None = None,
         stale_after_seconds: int | None = None,
-    ) -> WorkflowJobRecord | None:
-        ...
+    ) -> WorkflowJobRecord | None: ...
 
-    def heartbeat(self, *, job_id: str, worker_id: str) -> WorkflowJobRecord:
-        ...
+    def heartbeat(self, *, job_id: str, worker_id: str) -> WorkflowJobRecord: ...
 
-    def complete(self, *, job_id: str, worker_id: str) -> WorkflowJobRecord:
-        ...
+    def complete(self, *, job_id: str, worker_id: str) -> WorkflowJobRecord: ...
 
     def fail(
         self,
@@ -44,32 +40,28 @@ class WorkflowQueueBackend(Protocol):
         worker_id: str,
         error_summary: str,
         retry: bool = True,
-    ) -> WorkflowJobRecord:
-        ...
+    ) -> WorkflowJobRecord: ...
 
     def recover_timed_out(
         self,
         *,
         timeout_seconds: int,
         workflow_name: str | None = None,
-    ) -> list[WorkflowJobRecord]:
-        ...
+    ) -> list[WorkflowJobRecord]: ...
 
     def retry_dead_letter(
         self,
         *,
         job_id: str,
         reason: str | None = None,
-    ) -> WorkflowJobRecord:
-        ...
+    ) -> WorkflowJobRecord: ...
 
     def dismiss_dead_letter(
         self,
         *,
         job_id: str,
         reason: str | None = None,
-    ) -> WorkflowJobRecord:
-        ...
+    ) -> WorkflowJobRecord: ...
 
 
 @dataclass

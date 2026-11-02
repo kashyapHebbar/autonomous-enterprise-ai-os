@@ -136,9 +136,7 @@ class SQLAlchemyRunRepository:
             session.add_all(_artifact_to_model(artifact) for artifact in artifacts or [])
             session.add_all(_graph_node_to_model(node) for node in graph_nodes or [])
             session.add_all(_event_to_model(event) for event in events or [])
-            session.add_all(
-                _evaluation_to_model(evaluation) for evaluation in evaluations or []
-            )
+            session.add_all(_evaluation_to_model(evaluation) for evaluation in evaluations or [])
             session.add_all(_workflow_job_to_model(job) for job in workflow_jobs or [])
             if checkpoint is not None:
                 session.add(_checkpoint_to_model(checkpoint))
@@ -280,9 +278,7 @@ class SQLAlchemyRunRepository:
             self.recover_timed_out_workflow_jobs(timeout_seconds=stale_after_seconds)
         with self._session_factory() as session:
             model = session.scalars(
-                select(WorkflowJobModel)
-                .where(WorkflowJobModel.id == job_id)
-                .with_for_update()
+                select(WorkflowJobModel).where(WorkflowJobModel.id == job_id).with_for_update()
             ).first()
             if model is None:
                 raise WorkflowJobNotFoundError(f"Workflow job not found: {job_id}")
@@ -344,9 +340,7 @@ class SQLAlchemyRunRepository:
             now = utc_now()
             should_retry = retry and model.attempt_count < model.max_attempts
             next_status = (
-                WorkflowJobStatus.QUEUED
-                if should_retry
-                else WorkflowJobStatus.DEAD_LETTER
+                WorkflowJobStatus.QUEUED if should_retry else WorkflowJobStatus.DEAD_LETTER
             )
             model.payload = _append_workflow_failure(
                 model.payload or {},
@@ -466,13 +460,9 @@ class SQLAlchemyRunRepository:
 
                 should_retry = model.attempt_count < model.max_attempts
                 next_status = (
-                    WorkflowJobStatus.QUEUED
-                    if should_retry
-                    else WorkflowJobStatus.DEAD_LETTER
+                    WorkflowJobStatus.QUEUED if should_retry else WorkflowJobStatus.DEAD_LETTER
                 )
-                error_summary = (
-                    f"Workflow job heartbeat timed out after {timeout_seconds} seconds."
-                )
+                error_summary = f"Workflow job heartbeat timed out after {timeout_seconds} seconds."
                 model.payload = _append_workflow_failure(
                     model.payload or {},
                     attempt_count=model.attempt_count,
@@ -726,9 +716,7 @@ class SQLAlchemyRunRepository:
             _get_run_model(session, run_id)
             model = session.get(EvaluationResultModel, evaluation_id)
             if model is None or model.run_id != run_id:
-                raise EvaluationResultNotFoundError(
-                    f"Evaluation result not found: {evaluation_id}"
-                )
+                raise EvaluationResultNotFoundError(f"Evaluation result not found: {evaluation_id}")
             return _evaluation_from_model(model)
 
     def save_checkpoint(self, run_id: str, state: dict[str, Any]) -> RunCheckpointRecord:
@@ -1021,9 +1009,7 @@ def _optional_utc_datetime(value: datetime | None) -> datetime | None:
 def _ensure_job_model_owned_by_worker(model: WorkflowJobModel, worker_id: str) -> None:
     status = WorkflowJobStatus(model.status)
     if status != WorkflowJobStatus.RUNNING:
-        raise WorkflowJobStateError(
-            f"Workflow job {model.id} is {status.value}, not running."
-        )
+        raise WorkflowJobStateError(f"Workflow job {model.id} is {status.value}, not running.")
     if model.worker_id != worker_id:
         raise WorkflowJobOwnershipError(
             f"Workflow job {model.id} is owned by {model.worker_id}, not {worker_id}."

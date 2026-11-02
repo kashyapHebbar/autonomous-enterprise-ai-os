@@ -44,12 +44,8 @@ def test_env_secret_loader_supports_file_convention_and_direct_precedence(tmp_pa
         "AEAI_AUTH_TOKEN_PROFILES_FILE": str(secret_file),
     }
 
-    assert get_env_secret("AEAI_DATABASE_URL", env=env) == (
-        "postgresql://user:file-secret@db/app"
-    )
-    assert get_env_secret("AEAI_AUTH_TOKEN_PROFILES", env=env) == (
-        "direct-token=admin|Admin|admin"
-    )
+    assert get_env_secret("AEAI_DATABASE_URL", env=env) == ("postgresql://user:file-secret@db/app")
+    assert get_env_secret("AEAI_AUTH_TOKEN_PROFILES", env=env) == ("direct-token=admin|Admin|admin")
 
 
 def test_live_run_api_responses_redact_secret_like_values(tmp_path):
@@ -116,8 +112,6 @@ def test_live_run_api_responses_redact_secret_like_values(tmp_path):
     assert "job-secret" not in combined
     assert "checkpoint-secret" not in combined
     assert run_body["metadata"]["credential_profile_id"] == "snowflake-default"
-    assert run_body["artifacts"][0]["metadata"]["credential_profile_id"] == (
-        "snowflake-default"
-    )
+    assert run_body["artifacts"][0]["metadata"]["credential_profile_id"] == ("snowflake-default")
     assert run_body["artifacts"][0]["id"] == artifact.id
     assert archive_body["checkpoint"]["state"]["auth_token"] == REDACTED
