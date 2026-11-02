@@ -13,6 +13,7 @@ services:
       AEAI_PROCUREMENT_WORKFLOW_MAX_ATTEMPTS: "3"
       AEAI_WORKFLOW_QUEUE_BACKEND: redis
       AEAI_REDIS_URL: redis://redis:6379/0
+      AEAI_LOCAL_SOURCE_CATALOG_PATH: artifacts/aeai-local-sources.json
     ports:
       - "8000:8000"
     volumes:
@@ -63,6 +64,7 @@ services:
       AEAI_PROCUREMENT_WORKFLOW_MAX_ATTEMPTS: "3"
       AEAI_WORKFLOW_QUEUE_BACKEND: redis
       AEAI_REDIS_URL: redis://redis:6379/0
+      AEAI_LOCAL_SOURCE_CATALOG_PATH: artifacts/aeai-local-sources.json
     volumes:
       - .:/app
     depends_on:

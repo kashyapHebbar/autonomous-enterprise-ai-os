@@ -420,3 +420,79 @@ def test_sqlalchemy_scheduled_run_survives_reopening(tmp_path, monkeypatch):
     assert (
         store(tmp_path).history(mon["id"], "local-org", "default")[0]["run_id"] == result["run_id"]
     )
+
+
+def test_s3_monitor_executes_and_uses_saved_completeness(tmp_path, monkeypatch):
+    import csv
+
+    from aeai_os.monitoring.engine import RemoteSnapshot
+
+    monkeypatch.setenv("AEAI_LLM_ENABLED", "false")
+    path = tmp_path / "download.csv"
+    with Path("examples/procurement_demo.csv").open() as handle:
+        reader = csv.DictReader(handle)
+        fields = reader.fieldnames
+        rows = list(reader)
+    # Missing nonessential department cells do not prevent procurement analysis.
+    for row in rows:
+        row["department"] = ""
+    with path.open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(rows)
+    uri = "s3://trusted-data/exports/procurement.csv"
+    monkeypatch.setattr(
+        "aeai_os.monitoring.engine.download_s3_snapshot",
+        lambda source, root: RemoteSnapshot(id=source, dataset_uri=str(path)),
+    )
+    s = store(tmp_path)
+    repo = InMemoryRunRepository()
+    monitor = s.create(
+        organization_id="local-org",
+        workspace_id="default",
+        name="S3 quality",
+        task="Analyze procurement spending and supplier anomalies over time",
+        source_id=uri,
+        interval="daily",
+        minimum_completeness=0.99,
+    )
+    s.set_enabled(monitor["id"], "local-org", "default", True)
+    result = execute_claim(
+        s.claim()[0],
+        store=s,
+        registry=object(),
+        repository=repo,
+        artifact_store=LocalArtifactStore(tmp_path / "artifacts"),
+        artifact_root=tmp_path / "artifacts",
+    )
+    assert result["status"] == "completed", result
+    assert repo.get_run(result["run_id"]).metadata["data_source_name"] == "procurement.csv"
+    assert result["metrics"]["completeness"] < 0.99
+    assert "completeness" in {alert["rule"] for alert in s.alerts("local-org", "default")}
+
+
+def test_compose_api_and_workers_share_source_catalog():
+    import yaml
+
+    services = yaml.safe_load(Path("docker-compose.yml").read_text())["services"]
+    paths = {
+        services[name]["environment"]["AEAI_LOCAL_SOURCE_CATALOG_PATH"]
+        for name in ("api", "workflow-worker", "monitoring-worker")
+    }
+    assert paths == {"artifacts/aeai-local-sources.json"}
+
+
+def test_completeness_requires_valid_evidence():
+    from aeai_os.monitoring.engine import extract_metrics
+
+    assert "completeness" not in extract_metrics({"kpis": {}})
+    assert "completeness" not in extract_metrics(
+        {"kpis": {}}, {"row_count": 0, "column_count": 2, "missing_cells": 0}
+    )
+    assert (
+        extract_metrics(
+            {"kpis": {"completeness": 0.9}},
+            {"row_count": 10, "column_count": 2, "missing_cells": 10},
+        )["completeness"]
+        == 0.9
+    )

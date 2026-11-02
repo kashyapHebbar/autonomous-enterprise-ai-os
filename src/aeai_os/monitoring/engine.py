@@ -29,6 +29,10 @@ class RemoteSnapshot:
     dataset_uri: str
     source_type: str = "local_file"
 
+    @property
+    def name(self) -> str:
+        return Path(urlsplit(self.id).path).name or self.id
+
     def dataset_metadata(self) -> dict:
         return {
             "source": "reference",
@@ -135,7 +139,7 @@ def _num(value: Any) -> float | None:
     return number if math.isfinite(number) else None
 
 
-def extract_metrics(analysis: dict) -> dict[str, float]:
+def extract_metrics(analysis: dict, quality: dict | None = None) -> dict[str, float]:
     kpis = analysis.get("kpis", {})
     if not isinstance(kpis, dict):
         return {}
@@ -153,6 +157,14 @@ def extract_metrics(analysis: dict) -> dict[str, float]:
         num = _num(kpis.get(key))
         if num is not None:
             result[key] = round(num, 5)
+    if "completeness" not in result and quality:
+        rows = _num(quality.get("row_count"))
+        columns = _num(quality.get("column_count"))
+        missing = _num(quality.get("missing_cells"))
+        if rows is not None and columns is not None and missing is not None:
+            cells = rows * columns
+            if cells > 0 and 0 <= missing <= cells:
+                result["completeness"] = round(1 - missing / cells, 5)
     return result
 
 
@@ -360,7 +372,18 @@ def execute_claim(
         if source_artifact is None:
             raise RuntimeError("Completed run did not produce a verified analytics artifact")
         analysis = artifact_store.read_json(source_artifact.uri)
-        metrics = extract_metrics(analysis)
+        quality_artifact = next(
+            (
+                artifact
+                for artifact in reversed(repository.list_artifacts(run_id))
+                if artifact.type == ArtifactType.QUALITY_REPORT
+                and artifact.metadata.get("source") == "data_retrieval_agent"
+                and artifact.metadata.get("format") == "json"
+            ),
+            None,
+        )
+        quality = artifact_store.read_json(quality_artifact.uri) if quality_artifact else None
+        metrics = extract_metrics(analysis, quality)
         if not metrics:
             raise RuntimeError("No supported KPI metrics were available")
         previous_metrics = previous["metrics"] if previous else None

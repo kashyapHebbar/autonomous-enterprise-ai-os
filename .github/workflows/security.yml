@@ -17,6 +17,9 @@ jobs:
   dependency-audit:
     runs-on: [self-hosted, macOS, ARM64, aeai-os]
     steps:
+      - name: Prefer native ARM64 tools
+        run: echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
+
       - uses: actions/checkout@v4
       - name: Audit Python dependencies
         run: |
@@ -28,6 +31,9 @@ jobs:
   codeql:
     runs-on: [self-hosted, macOS, ARM64, aeai-os]
     steps:
+      - name: Prefer native ARM64 tools
+        run: echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
+
       - uses: actions/checkout@v4
       - uses: github/codeql-action/init@v4
         with:
@@ -37,6 +43,9 @@ jobs:
   filesystem-and-iac:
     runs-on: [self-hosted, macOS, ARM64, aeai-os]
     steps:
+      - name: Prefer native ARM64 tools
+        run: echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
+
       - uses: actions/checkout@v4
       - name: Render production manifests
         run: kubectl kustomize deploy/kubernetes/overlays/production > "$RUNNER_TEMP/aeai-production.yaml"
@@ -59,6 +68,9 @@ jobs:
   container:
     runs-on: [self-hosted, macOS, ARM64, aeai-os]
     steps:
+      - name: Prefer native ARM64 tools
+        run: echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
+
       - uses: actions/checkout@v4
       - name: Configure non-interactive Docker access
         run: |
